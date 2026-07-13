@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
+import { PlayerProfileDrawer } from '@/components/PlayerProfileDrawer'
 import { api } from '@/lib/api'
 
 const POS_COLOR: Record<string, string> = {
@@ -39,6 +40,7 @@ function PriorityBar({ value }: { value: number }) {
 
 export function Waivers() {
   const [filter, setFilter] = useState<Filter>('ALL')
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['waiver-candidates'],
@@ -226,6 +228,8 @@ export function Waivers() {
                   initial={{ opacity: 0, x: -6 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.014 }}
+                  onClick={() => setSelectedPlayerId(c.player_id)}
+                  style={{ cursor: 'pointer' }}
                 >
                   <td
                     className="py-2.5 pl-3 pr-2"
@@ -318,6 +322,10 @@ export function Waivers() {
           </div>
         )}
       </div>
+      <PlayerProfileDrawer
+        playerId={selectedPlayerId}
+        onClose={() => setSelectedPlayerId(null)}
+      />
     </div>
   )
 }

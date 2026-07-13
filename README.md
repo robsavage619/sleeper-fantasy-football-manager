@@ -11,14 +11,15 @@ submit Sleeper transactions.
 
 Current recommendation surfaces include trade-fit scoring with owner-history evidence labels,
 waiver claim cards with bid ranges/drop candidates/downside, draft decision cards, data-quality
-diagnostics, and a non-mutating recommendation eval endpoint.
+diagnostics, player intelligence drawers, and a non-mutating recommendation eval endpoint.
 
 ## Layout
 
 - `src/sleeper_ffm/scoring/` — the scoring engine (linchpin): stat line → fantasy points.
 - `src/sleeper_ffm/sleeper/` — read-only Sleeper API client (+ dynasty history walk).
 - `src/sleeper_ffm/nflverse/` — historical stats ingestion (`nfl-data-py` → parquet).
-- `src/sleeper_ffm/model/` — valuation, trends, projections, dynasty assets, pick market, owner profiles.
+- `src/sleeper_ffm/model/` — valuation, trends, projections, player profiles, dynasty assets,
+  pick market, owner profiles.
 - `src/sleeper_ffm/prompts/`, `reasoning/` — prompt-builders + the findings store Claude Code writes to.
 - `src/sleeper_ffm/act/`, `schedule/` — manual transaction plans + future confirm-gated actions.
 - `frontend/` — React/Vite/Tailwind dashboard.

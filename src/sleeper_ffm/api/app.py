@@ -17,6 +17,7 @@ from sleeper_ffm.api.routers import history as history_router
 from sleeper_ffm.api.routers import league as league_router
 from sleeper_ffm.api.routers import owners as owners_router
 from sleeper_ffm.api.routers import picks as picks_router
+from sleeper_ffm.api.routers import players as players_router
 from sleeper_ffm.api.routers import prospects as prospects_router
 from sleeper_ffm.api.routers import roster as roster_router
 from sleeper_ffm.api.routers import season as season_router
@@ -48,6 +49,7 @@ def create_app() -> FastAPI:
     app.include_router(league_router.router)
     app.include_router(findings_router.router)
     app.include_router(owners_router.router)
+    app.include_router(players_router.router)
     app.include_router(dossier_router.router)
     app.include_router(history_router.router)
     app.include_router(draft_router.router)

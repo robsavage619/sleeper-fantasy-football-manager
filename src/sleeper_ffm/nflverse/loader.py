@@ -181,6 +181,52 @@ def load_snaps(
     return df
 
 
+def load_injuries(
+    seasons: list[int] | None = None,
+    force: bool = False,
+) -> pl.DataFrame:
+    """Load weekly injury reports from nflverse."""
+    seasons = seasons or [_CURRENT_SEASON]
+    frames: list[pl.DataFrame] = []
+    for season in seasons:
+        dest = NFLVERSE_DIR / "injuries" / f"{season}.parquet"
+        if dest.exists() and not force:
+            frames.append(pl.read_parquet(dest))
+            continue
+        try:
+            df = cast(pl.DataFrame, pl.from_pandas(nfl.import_injuries([season])))
+        except (HTTPError, URLError, OSError) as exc:
+            log.warning("injuries/%d: unavailable from nflverse: %s", season, exc)
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        df.write_parquet(dest)
+        frames.append(df)
+    return pl.concat(frames) if frames else pl.DataFrame()
+
+
+def load_depth_charts(
+    seasons: list[int] | None = None,
+    force: bool = False,
+) -> pl.DataFrame:
+    """Load weekly depth charts from nflverse."""
+    seasons = seasons or [_CURRENT_SEASON]
+    frames: list[pl.DataFrame] = []
+    for season in seasons:
+        dest = NFLVERSE_DIR / "depth_charts" / f"{season}.parquet"
+        if dest.exists() and not force:
+            frames.append(pl.read_parquet(dest))
+            continue
+        try:
+            df = cast(pl.DataFrame, pl.from_pandas(nfl.import_depth_charts([season])))
+        except (HTTPError, URLError, OSError) as exc:
+            log.warning("depth_charts/%d: unavailable from nflverse: %s", season, exc)
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        df.write_parquet(dest)
+        frames.append(df)
+    return pl.concat(frames) if frames else pl.DataFrame()
+
+
 # ---------------------------------------------------------------------------
 # Seasonal aggregates — season-level totals (faster than weekly for age curves)
 # ---------------------------------------------------------------------------

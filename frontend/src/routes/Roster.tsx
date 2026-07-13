@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
+import { PlayerProfileDrawer } from '@/components/PlayerProfileDrawer'
 import { api, type MyRosterPlayer } from '@/lib/api'
 
 const POS_COLOR: Record<string, string> = {
@@ -12,7 +14,15 @@ const POS_COLOR: Record<string, string> = {
 const POSITIONS = ['QB', 'RB', 'WR', 'TE'] as const
 type Position = (typeof POSITIONS)[number]
 
-function PlayerRow({ player, index }: { player: MyRosterPlayer; index: number }) {
+function PlayerRow({
+  player,
+  index,
+  onOpen,
+}: {
+  player: MyRosterPlayer
+  index: number
+  onOpen: (playerId: string) => void
+}) {
   return (
     <motion.div
       initial={{ opacity: 0, x: -6 }}
@@ -24,7 +34,9 @@ function PlayerRow({ player, index }: { player: MyRosterPlayer; index: number })
         gap: 12,
         padding: '8px 16px',
         borderBottom: '1px solid #162035',
+        cursor: 'pointer',
       }}
+      onClick={() => onOpen(player.player_id)}
     >
       <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: '#e8eef6', minWidth: 0 }}>
         {player.name}
@@ -113,7 +125,15 @@ function PlayerRow({ player, index }: { player: MyRosterPlayer; index: number })
   )
 }
 
-function PositionGroup({ position, players }: { position: Position; players: MyRosterPlayer[] }) {
+function PositionGroup({
+  position,
+  players,
+  onOpen,
+}: {
+  position: Position
+  players: MyRosterPlayer[]
+  onOpen: (playerId: string) => void
+}) {
   const color = POS_COLOR[position]
 
   const sorted = [
@@ -164,13 +184,14 @@ function PositionGroup({ position, players }: { position: Position; players: MyR
         </span>
       </div>
       {sorted.map((player, i) => (
-        <PlayerRow key={player.player_id} player={player} index={i} />
+        <PlayerRow key={player.player_id} player={player} index={i} onOpen={onOpen} />
       ))}
     </div>
   )
 }
 
 export function Roster() {
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
   const { data, isLoading, error } = useQuery({
     queryKey: ['my-roster'],
     queryFn: () => api.myRoster(),
@@ -251,10 +272,19 @@ export function Roster() {
       {data && (
         <div className="p-5 grid gap-4">
           {POSITIONS.map((pos) => (
-            <PositionGroup key={pos} position={pos} players={byPosition.get(pos) ?? []} />
+            <PositionGroup
+              key={pos}
+              position={pos}
+              players={byPosition.get(pos) ?? []}
+              onOpen={setSelectedPlayerId}
+            />
           ))}
         </div>
       )}
+      <PlayerProfileDrawer
+        playerId={selectedPlayerId}
+        onClose={() => setSelectedPlayerId(null)}
+      />
     </div>
   )
 }

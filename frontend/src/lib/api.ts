@@ -158,6 +158,96 @@ export type WaiverCandidate = {
   rationale: string
 }
 
+export type PlayerProfile = {
+  player_id: string
+  identity: {
+    player_id: string
+    name: string
+    position: string
+    team: string
+    age: number
+    years_exp: number | null
+    status: string
+    injury_status: string
+    search_rank: number | null
+    gsis_id: string
+  }
+  value: {
+    current_fpar: number
+    dynasty_value: number
+    pick_equivalent: string
+    age_curve: string
+    valuation_season: number
+  }
+  fantasy_summary: {
+    games: number
+    seasons?: number
+    fantasy_points: number
+    points_per_game: number
+    best_week: PlayerWeek | null
+    worst_week: PlayerWeek | null
+    boom_weeks: number
+    bust_weeks: number
+  }
+  season_summaries: PlayerSeasonSummary[]
+  weekly: PlayerWeek[]
+  usage: {
+    recent_targets_per_game: number
+    recent_carries_per_game: number
+    recent_touches_per_game: number
+    recent_points_per_game: number
+    avg_snap_pct: number | null
+    recent_snap_pct: number | null
+  }
+  injuries: Array<{
+    season: number
+    week: number
+    team: string
+    injury: string
+    status: string
+  }>
+  depth: {
+    season: number
+    week: number
+    team: string
+    depth_team: string
+    depth_position: string
+    formation: string
+  } | null
+  data_quality: 'FULL' | 'DEGRADED'
+  warnings: string[]
+}
+
+export type PlayerSeasonSummary = {
+  season: number
+  games: number
+  fantasy_points: number
+  points_per_game: number
+  targets: number
+  carries: number
+  receptions: number
+  passing_yards: number
+  rushing_yards: number
+  receiving_yards: number
+  target_share: number
+  air_yards_share: number
+}
+
+export type PlayerWeek = {
+  season: number
+  week: number
+  team: string
+  opponent: string
+  fantasy_points: number
+  targets: number
+  carries: number
+  receptions: number
+  passing_yards: number
+  rushing_yards: number
+  receiving_yards: number
+  touchdowns: number
+}
+
 export type OwnerProfile = {
   user_id: string
   display_name: string | null
@@ -468,6 +558,8 @@ export const api = {
     post<Finding>('/findings/', { kind, body }),
   myRoster: (season?: number) => get<MyRoster>(`/roster/my${season ? `?season=${season}` : ''}`),
   waiverCandidates: (top = 25) => get<WaiverCandidate[]>(`/season/waivers?top=${top}`),
+  playerProfile: (playerId: string) =>
+    get<PlayerProfile>(`/players/${encodeURIComponent(playerId)}/profile`),
   startSit: (week = 0, season?: number) =>
     get<StartSitRec>(`/season/startsit?week=${week}${season ? `&season=${season}` : ''}`),
   ownerProfiles: () => get<OwnerProfile[]>('/owners/profiles'),

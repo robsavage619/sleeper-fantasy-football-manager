@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
+import { PlayerProfileDrawer } from '@/components/PlayerProfileDrawer'
 import { api, type DraftPlayer } from '@/lib/api'
 
 const POS_COLOR: Record<string, string> = {
@@ -28,10 +29,12 @@ function PlayerRow({
   rank,
   player,
   index,
+  onOpen,
 }: {
   rank: number
   player: DraftPlayer
   index: number
+  onOpen: (playerId: string) => void
 }) {
   const color = POS_COLOR[player.position] ?? '#6a8098'
 
@@ -40,6 +43,8 @@ function PlayerRow({
       initial={{ opacity: 0, x: -6 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: index * 0.014 }}
+      onClick={() => onOpen(player.player_id)}
+      style={{ cursor: 'pointer' }}
     >
       <td className="py-2.5 pl-3 pr-2" style={{ color: '#3d5070', fontSize: 12, fontFamily: "'DM Mono', monospace" }}>
         {rank}
@@ -207,6 +212,7 @@ function PickTimeline({
 export function DraftBoard() {
   const [filter, setFilter] = useState<Filter>('ALL')
   const [sortBy, setSortBy] = useState<'fpar' | 'dynasty_value' | 'age'>('dynasty_value')
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['draft-board'],
@@ -435,7 +441,13 @@ export function DraftBoard() {
               <tbody>
                 <AnimatePresence>
                   {players.map((p, i) => (
-                    <PlayerRow key={p.player_id} rank={i + 1} player={p} index={i} />
+                    <PlayerRow
+                      key={p.player_id}
+                      rank={i + 1}
+                      player={p}
+                      index={i}
+                      onOpen={setSelectedPlayerId}
+                    />
                   ))}
                 </AnimatePresence>
               </tbody>
@@ -449,6 +461,10 @@ export function DraftBoard() {
               </div>
             )}
           </div>
+          <PlayerProfileDrawer
+            playerId={selectedPlayerId}
+            onClose={() => setSelectedPlayerId(null)}
+          />
 
           <div
             className="px-5 py-3 tracking-wider uppercase"
