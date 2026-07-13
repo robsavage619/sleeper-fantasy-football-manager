@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from sleeper_ffm.api.routers import actions as actions_router
 from sleeper_ffm.api.routers import dossier as dossier_router
 from sleeper_ffm.api.routers import draft as draft_router
 from sleeper_ffm.api.routers import findings as findings_router
@@ -55,6 +56,7 @@ def create_app() -> FastAPI:
     app.include_router(season_router.router)
     app.include_router(picks_router.router)
     app.include_router(skill_router.router)
+    app.include_router(actions_router.router)
     return app
 
 

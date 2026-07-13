@@ -61,6 +61,58 @@ def _cfbd_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {key}"}
 
 
+def _fallback_sleeper_prospects(year: int, top: int) -> list[ProspectProfile]:
+    """Build a prospect board from Sleeper rookie dynasty rankings."""
+    from sleeper_ffm.sleeper.client import SleeperClient
+
+    max_years_exp = 0 if year >= 2026 else 1
+    with SleeperClient() as client:
+        players_dump = client.players()
+
+    profiles: list[ProspectProfile] = []
+    for pid, player in players_dump.items():
+        pos = _POS_MAP.get((player.get("position") or "").upper())
+        if pos not in _SKILL_POSITIONS:
+            continue
+
+        years_exp = player.get("years_exp")
+        if years_exp is None or years_exp > max_years_exp:
+            continue
+
+        search_rank = player.get("search_rank")
+        if search_rank is None:
+            continue
+
+        raw_age = player.get("age")
+        age = float(raw_age) if raw_age else None
+        metadata = player.get("metadata") or {}
+        college = player.get("college") or metadata.get("college") or "—"
+        name = player.get("full_name") or player.get("search_full_name") or f"Player {pid}"
+        score = round(max(1.0, 100.0 - min(float(search_rank), 250.0) / 2.5), 1)
+        profiles.append(
+            ProspectProfile(
+                player_id=pid,
+                name=name,
+                position=pos,
+                college=college,
+                year=year,
+                age=age,
+                target_share=0.0,
+                yards_per_reception=0.0,
+                breakout_age=None,
+                recruiting_rank=None,
+                stars=None,
+                dynasty_prospect_score=score,
+                rationale=(
+                    f"Sleeper dynasty fallback: search rank #{search_rank}, {years_exp} years exp"
+                ),
+            )
+        )
+
+    profiles.sort(key=lambda p: p.dynasty_prospect_score, reverse=True)
+    return profiles[:top]
+
+
 def _fetch_usage(year: int, client: httpx.Client) -> list[dict]:
     """Fetch /player/usage for the given year."""
     try:
@@ -189,18 +241,21 @@ def _score_qb(
 def load_prospects(year: int = 2025, top: int = 200) -> list[ProspectProfile]:
     """Fetch CFBD data and return scored dynasty prospect profiles.
 
+    Falls back to Sleeper rookie dynasty rankings when the CFBD feed is not
+    configured or does not return usage data.
+
     Args:
         year: Draft class year (2025 or 2026).
         top: Number of top prospects to return.
 
     Returns:
         Prospects sorted by dynasty_prospect_score descending.
-
-    Raises:
-        ValueError: If CFBD_API_KEY is not set.
     """
-    # Validate key before any network calls
-    _cfbd_headers()  # raises ValueError if missing
+    try:
+        _cfbd_headers()
+    except ValueError as exc:
+        log.warning("CFBD key unavailable, using Sleeper prospect fallback: %s", exc)
+        return _fallback_sleeper_prospects(year=year, top=top)
 
     from sleeper_ffm.sleeper.client import SleeperClient
 
@@ -210,8 +265,11 @@ def load_prospects(year: int = 2025, top: int = 200) -> list[ProspectProfile]:
         advanced_map = _fetch_advanced(year, http_client)
 
     if not usage_list:
-        log.warning("No CFBD usage data returned for year=%s; returning empty list", year)
-        return []
+        log.warning(
+            "No CFBD usage data returned for year=%s; using Sleeper prospect fallback",
+            year,
+        )
+        return _fallback_sleeper_prospects(year=year, top=top)
 
     # Sleeper player index for name matching
     try:

@@ -24,8 +24,6 @@ def draft_prospects(year: int = 2025, top: int = 50) -> list[dict]:
 
     try:
         profiles = load_prospects(year=year, top=top)
-    except ValueError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         log.exception("load_prospects failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc

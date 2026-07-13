@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import logging
+import time
 
 from fastapi import APIRouter, Query
 
@@ -17,6 +18,8 @@ from sleeper_ffm.sleeper.client import SleeperClient
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/season", tags=["season"])
+_NARRATIVE_CACHE: dict[str, tuple[float, dict]] = {}
+_NARRATIVE_TTL_SECONDS = 600
 
 
 @router.get("/waivers")
@@ -83,11 +86,14 @@ def startsit(
 
 
 @router.get("/narrative")
-def narrative() -> dict:
+def narrative(refresh: bool = Query(default=False)) -> dict:
     """Assemble the weekly GM context prompt for Claude Code reasoning.
 
     Pulls live state: current starters, this week's matchup, trending waiver adds,
     and positional trade angles — and packages them into a structured prompt.
+
+    Args:
+        refresh: Force a fresh rebuild instead of using the 10-minute cache.
 
     Returns:
         Dict with ``prompt`` (ready to paste into Claude Code), ``week``,
@@ -97,8 +103,15 @@ def narrative() -> dict:
 
     from sleeper_ffm.prompts.narrative import build_narrative_context
 
+    cache_key = "default"
+    cached = _NARRATIVE_CACHE.get(cache_key)
+    if cached and not refresh and (time.time() - cached[0]) < _NARRATIVE_TTL_SECONDS:
+        return cached[1]
+
     ctx = build_narrative_context()
-    return dataclasses.asdict(ctx)
+    payload = dataclasses.asdict(ctx)
+    _NARRATIVE_CACHE[cache_key] = (time.time(), payload)
+    return payload
 
 
 @router.get("/trends")

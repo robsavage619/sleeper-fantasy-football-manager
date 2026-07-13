@@ -154,6 +154,7 @@ export function Prospects() {
   })
 
   const prospects = (data ?? []).filter((p) => filter === 'ALL' || p.position === filter)
+  const fallbackMode = (data ?? []).some((p) => p.rationale.includes('Sleeper dynasty fallback'))
 
   return (
     <div>
@@ -225,6 +226,21 @@ export function Prospects() {
         </div>
 
         <div className="flex-1" />
+        {fallbackMode && (
+          <span
+            style={{
+              fontSize: 10,
+              color: '#d4860c',
+              letterSpacing: '0.18em',
+              padding: '3px 8px',
+              border: '1px solid rgba(212,134,12,0.3)',
+              background: 'rgba(212,134,12,0.08)',
+              borderRadius: 2,
+            }}
+          >
+            SLEEPER FALLBACK
+          </span>
+        )}
         <span style={{ fontSize: 11, color: '#2d4060', letterSpacing: '0.15em' }}>
           {prospects.length} PROSPECTS
         </span>
@@ -233,6 +249,26 @@ export function Prospects() {
       {isLoading && (
         <div className="p-8 text-center tracking-widest uppercase" style={{ color: '#3d5070', fontSize: 12 }}>
           LOADING PROSPECTS…
+        </div>
+      )}
+
+      {fallbackMode && !error && (
+        <div
+          className="mx-5 mt-4 p-4"
+          style={{
+            background: 'rgba(212,134,12,0.07)',
+            border: '1px solid rgba(212,134,12,0.22)',
+            boxShadow: 'inset 3px 0 0 #d4860c',
+            borderRadius: 2,
+          }}
+        >
+          <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 18, fontWeight: 800, color: '#d4860c', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+            CFBD feed unavailable
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12, color: '#8aa0b8', lineHeight: 1.5 }}>
+            Showing Sleeper dynasty search-rank fallback so the board stays useful without `CFBD_API_KEY`.
+            Usage metrics remain blank until the college feed is configured.
+          </div>
         </div>
       )}
 
@@ -284,7 +320,7 @@ export function Prospects() {
             className="py-10 text-center tracking-widest uppercase"
             style={{ color: '#3d5070', fontSize: 12 }}
           >
-            NO PROSPECTS FOUND
+            {error ? 'PROSPECT FEED UNAVAILABLE' : 'NO PROSPECTS FOUND'}
           </div>
         )}
       </div>

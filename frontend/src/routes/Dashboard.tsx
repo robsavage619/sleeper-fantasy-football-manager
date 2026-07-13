@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import type { ReactNode } from 'react'
-import { api, type StartSitRec } from '@/lib/api'
+import { api, type StartSitRec, type WarRoomAction } from '@/lib/api'
 
 function Panel({
   label,
@@ -96,6 +96,11 @@ export function Dashboard() {
     queryFn: () => api.startSit(),
     enabled: state?.season_type === 'regular',
   })
+  const { data: actions } = useQuery({
+    queryKey: ['war-room-actions'],
+    queryFn: () => api.warRoomActions(12),
+    refetchInterval: 60_000,
+  })
 
   const leagueAny = league as Record<string, unknown> | undefined
 
@@ -144,6 +149,8 @@ export function Dashboard() {
         <StartSitPanel rec={startSit} week={state?.week ?? null} />
       )}
 
+      <ActionQueue actions={actions ?? []} />
+
       {/* Main grid: intel feed + wire */}
       <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 260px' }}>
         <Panel label="INTEL · FINDINGS" accent="#00b8cc">
@@ -155,6 +162,90 @@ export function Dashboard() {
         </Panel>
       </div>
     </div>
+  )
+}
+
+const ACTION_COLOR: Record<WarRoomAction['kind'], string> = {
+  TRADE: '#00b8cc',
+  WAIVER: '#3a8cd4',
+  PICK: '#d4860c',
+  LINEUP: '#1a9b5e',
+  SYSTEM: '#c93328',
+}
+
+function ActionQueue({ actions }: { actions: WarRoomAction[] }) {
+  const top = actions.slice(0, 6)
+  return (
+    <Panel label="ACTION QUEUE · NEXT BEST MOVES" accent="#d4860c">
+      {top.length === 0 ? (
+        <div className="p-5" style={{ color: '#3d5070', fontSize: 12 }}>
+          No live actions. Data source may still be warming.
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-px" style={{ background: '#162035' }}>
+          {top.map((action, index) => {
+            const color = ACTION_COLOR[action.kind]
+            return (
+              <motion.div
+                key={action.action_id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.035 }}
+                style={{
+                  background: '#0c1625',
+                  padding: '14px 16px',
+                  minHeight: 148,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                  boxShadow: `inset 3px 0 0 ${color}`,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color, letterSpacing: '0.12em' }}>
+                    {action.kind}
+                  </span>
+                  <span style={{
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: '0.18em',
+                    padding: '2px 6px',
+                    color: action.urgency === 'HIGH' ? '#060a12' : '#6a8098',
+                    background: action.urgency === 'HIGH' ? color : 'transparent',
+                    border: `1px solid ${color}55`,
+                    borderRadius: 1,
+                  }}>
+                    {action.urgency}
+                  </span>
+                </div>
+                <div style={{
+                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontSize: 22,
+                  fontWeight: 800,
+                  color: '#e8eef6',
+                  lineHeight: 1,
+                  letterSpacing: '0.03em',
+                  textTransform: 'uppercase',
+                }}>
+                  {action.title}
+                </div>
+                <div style={{ fontSize: 12, color: '#8aa0b8', lineHeight: 1.45, flex: 1 }}>
+                  {action.command}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: '#3d5070' }}>
+                    {action.source}
+                  </span>
+                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: '#3d5070' }}>
+                    {action.confidence} CONF
+                  </span>
+                </div>
+              </motion.div>
+            )
+          })}
+        </div>
+      )}
+    </Panel>
   )
 }
 
