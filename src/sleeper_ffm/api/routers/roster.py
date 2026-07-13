@@ -6,7 +6,7 @@ import logging
 
 from fastapi import APIRouter, Query
 
-from sleeper_ffm.config import MY_ROSTER_ID
+from sleeper_ffm.config import DEFAULT_VALUE_SEASON, MY_ROSTER_ID
 from sleeper_ffm.model.dynasty import PlayerAsset, value_player
 from sleeper_ffm.model.valuation import SKILL_POSITIONS, _rookie_fpar, build_player_assets
 from sleeper_ffm.sleeper.client import SleeperClient
@@ -75,24 +75,26 @@ def _build_player_rows(
             )
 
         dynasty_value = value_player(asset)
-        rows.append({
-            "player_id": pid,
-            "name": asset.name,
-            "position": asset.position,
-            "age": asset.age,
-            "team": asset.team,
-            "fpar": asset.current_fpar,
-            "dynasty_value": dynasty_value,
-            "is_starter": is_starter,
-            "is_taxi": is_taxi,
-            "is_reserve": is_reserve,
-        })
+        rows.append(
+            {
+                "player_id": pid,
+                "name": asset.name,
+                "position": asset.position,
+                "age": asset.age,
+                "team": asset.team,
+                "fpar": asset.current_fpar,
+                "dynasty_value": dynasty_value,
+                "is_starter": is_starter,
+                "is_taxi": is_taxi,
+                "is_reserve": is_reserve,
+            }
+        )
 
     return sorted(rows, key=lambda x: x["dynasty_value"], reverse=True)
 
 
 @router.get("/my")
-def my_roster(season: int = Query(default=2024)) -> dict:
+def my_roster(season: int = Query(default=DEFAULT_VALUE_SEASON)) -> dict:
     """Rob's current roster with dynasty values for each skill-position player.
 
     Args:
@@ -125,7 +127,7 @@ def my_roster(season: int = Query(default=2024)) -> dict:
 
 
 @router.get("/all")
-def all_rosters(season: int = Query(default=2024)) -> list[dict]:
+def all_rosters(season: int = Query(default=DEFAULT_VALUE_SEASON)) -> list[dict]:
     """All league rosters with dynasty value summaries.
 
     Args:
@@ -153,13 +155,15 @@ def all_rosters(season: int = Query(default=2024)) -> list[dict]:
             {"name": p["name"], "position": p["position"], "value": p["dynasty_value"]}
             for p in player_rows[:3]
         ]
-        results.append({
-            "roster_id": roster.roster_id,
-            "owner_id": roster.owner_id,
-            "player_count": len(player_rows),
-            "total_dynasty_value": total_value,
-            "starters": starter_count,
-            "top_3_players": top_3,
-        })
+        results.append(
+            {
+                "roster_id": roster.roster_id,
+                "owner_id": roster.owner_id,
+                "player_count": len(player_rows),
+                "total_dynasty_value": total_value,
+                "starters": starter_count,
+                "top_3_players": top_3,
+            }
+        )
 
     return sorted(results, key=lambda x: x["total_dynasty_value"], reverse=True)

@@ -3,13 +3,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from sleeper_ffm.config import LEAGUE_ID
+from sleeper_ffm.config import CURRENT_LEAGUE_YEAR, LEAGUE_ID
 from sleeper_ffm.sleeper.client import SleeperClient
 
 log = logging.getLogger(__name__)
 
 _BASE: dict[int, float] = {1: 80.0, 2: 50.0, 3: 25.0, 4: 10.0}
-_CURRENT_YEAR = 2026
+_CURRENT_YEAR = CURRENT_LEAGUE_YEAR
 _DECAY = 0.85
 _FUTURE_SEASONS = ["2027", "2028"]
 _ALL_ROUNDS = [1, 2, 3, 4]

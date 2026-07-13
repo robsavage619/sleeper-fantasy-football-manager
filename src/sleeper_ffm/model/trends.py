@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 import polars as pl
 
+from sleeper_ffm.config import DEFAULT_VALUE_SEASON
 from sleeper_ffm.nflverse.loader import load_id_map, load_weekly
 from sleeper_ffm.scoring.engine import load_scoring, score, stats_from_nflverse
 
@@ -50,13 +51,13 @@ def compute_trends(
     games are included.
 
     Args:
-        seasons: Seasons to analyze. Defaults to [2024].
+        seasons: Seasons to analyze. Defaults to the latest completed NFL season.
         n_recent_weeks: Number of recent weeks to treat as the trend window.
 
     Returns:
         TrendSignals sorted by signal_strength descending.
     """
-    seasons = seasons or [2024]
+    seasons = seasons or [DEFAULT_VALUE_SEASON]
 
     weekly = load_weekly(seasons=seasons)
     if weekly.is_empty():
@@ -65,8 +66,7 @@ def compute_trends(
 
     # Filter to regular season skill positions
     filtered = weekly.filter(
-        pl.col("season_type").eq("REG")
-        & pl.col("position").is_in(list(SKILL_POSITIONS))
+        pl.col("season_type").eq("REG") & pl.col("position").is_in(list(SKILL_POSITIONS))
     )
     if filtered.is_empty():
         log.debug("compute_trends: no skill-position REG rows after filter")
@@ -91,8 +91,7 @@ def compute_trends(
         id_map = load_id_map()
         for row in (
             id_map.filter(
-                pl.col("gsis_id").str.starts_with("00-")
-                & pl.col("sleeper_id").is_not_null()
+                pl.col("gsis_id").str.starts_with("00-") & pl.col("sleeper_id").is_not_null()
             )
             .select(["gsis_id", "sleeper_id", "age"])
             .iter_rows(named=True)
@@ -143,12 +142,8 @@ def compute_trends(
     recent_agg = recent_df.group_by("player_id").agg(recent_agg_exprs)
 
     # Join and gate on minimum sample size
-    joined = (
-        season_agg.join(recent_agg, on="player_id", how="left")
-        .filter(
-            pl.col("season_games").ge(8)
-            & pl.col("recent_games").ge(n_recent_weeks)
-        )
+    joined = season_agg.join(recent_agg, on="player_id", how="left").filter(
+        pl.col("season_games").ge(8) & pl.col("recent_games").ge(n_recent_weeks)
     )
 
     signals: list[TrendSignal] = []

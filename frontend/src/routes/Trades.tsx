@@ -569,7 +569,6 @@ export function Trades() {
     + givePicks.reduce((s, p) => s + p.value, 0)
   const getValue = getPlayers.reduce((s, p) => s + p.dynasty_value, 0)
     + getPicks.reduce((s, p) => s + p.value, 0)
-  const delta = getValue - giveValue
   const hasAssets = giveValue > 0 || getValue > 0
 
   function addGivePlayer(p: PlayerSlot) {

@@ -37,10 +37,10 @@ class BoardState:
     draft_id: str
     total_rounds: int
     total_teams: int
-    picks_made: list[DraftPick]           # all picks so far (chronological)
-    my_picks: list[DraftPick]             # only Rob's picks
-    taken_player_ids: set[str]            # player_ids already off the board
-    my_slot: int                          # pick slot in round (1-10)
+    picks_made: list[DraftPick]  # all picks so far (chronological)
+    my_picks: list[DraftPick]  # only Rob's picks
+    taken_player_ids: set[str]  # player_ids already off the board
+    my_slot: int  # pick slot in round (1-10)
     # slot_to_roster_id[slot] = roster_id (1-indexed str keys)
     slot_to_roster_id: dict[str, int] = field(default_factory=dict)
 
@@ -65,10 +65,7 @@ class BoardState:
     @property
     def my_pick_numbers(self) -> list[int]:
         """All overall pick numbers that belong to Rob (linear draft, fixed slot)."""
-        return [
-            self.my_slot + (r * self.total_teams)
-            for r in range(self.total_rounds)
-        ]
+        return [self.my_slot + (r * self.total_teams) for r in range(self.total_rounds)]
 
     @property
     def next_my_pick(self) -> int | None:
@@ -124,7 +121,10 @@ def sync_board(
 
     log.info(
         "board sync: %d/%d picks made, my slot=%d, my picks=%d",
-        len(picks_made), total_rounds * total_teams, my_slot, len(my_picks),
+        len(picks_made),
+        total_rounds * total_teams,
+        my_slot,
+        len(my_picks),
     )
 
     return BoardState(
@@ -207,7 +207,7 @@ def build_full_pool(
 
     Args:
         board: Current board state (defines which players are already taken).
-        seasons: nflverse seasons for veteran FPAR computation (default [2024]).
+        seasons: nflverse seasons for veteran FPAR computation.
         sleeper_players: Pre-fetched Sleeper player dump (fetched if None).
         rookie_max_rank: Max Sleeper search_rank to include for rookies.
     """

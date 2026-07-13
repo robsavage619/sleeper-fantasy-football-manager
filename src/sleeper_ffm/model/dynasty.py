@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from sleeper_ffm.config import CURRENT_LEAGUE_YEAR
+
 # ---------------------------------------------------------------------------
 # Age curves (empirical priors — updated from nflverse backfill)
 # These represent expected peak-to-decline shape; values are multiplicative
@@ -118,6 +120,7 @@ class RosterAssets:
 # Core valuation functions
 # ---------------------------------------------------------------------------
 
+
 def value_player(player: PlayerAsset) -> float:
     """Compute a player's dynasty value in FPAR units.
 
@@ -142,12 +145,12 @@ def value_player(player: PlayerAsset) -> float:
     # How far past peak is the player?
     seasons_past_peak = max(0.0, player.age - peak_age)
     # Adjust base for players already on the decline
-    adjusted_base = base_fpar * (decay ** seasons_past_peak)
+    adjusted_base = base_fpar * (decay**seasons_past_peak)
 
     # Project forward, discounting each future season
     total = 0.0
     for t in range(_PROJECTION_HORIZON):
-        season_fpar = adjusted_base * (decay ** t)
+        season_fpar = adjusted_base * (decay**t)
         discount = (1.0 - _DISCOUNT_RATE) ** t
         total += season_fpar * discount
 
@@ -185,9 +188,9 @@ def value_pick(pick: PickAsset) -> float:
     # Adjust for class strength (>1 = loaded class worth more)
     base *= pick.class_strength
 
-    # Time discount: a 2027 pick is worth less today than a 2026 pick
+    # Time discount: future picks are worth less than the current league year.
     try:
-        seasons_out = max(0, int(pick.season) - 2026)
+        seasons_out = max(0, int(pick.season) - CURRENT_LEAGUE_YEAR)
     except ValueError:
         seasons_out = 1
     discount = (1.0 - _DISCOUNT_RATE) ** seasons_out
@@ -198,6 +201,7 @@ def value_pick(pick: PickAsset) -> float:
 # ---------------------------------------------------------------------------
 # Roster + league asset tables
 # ---------------------------------------------------------------------------
+
 
 def asset_table(roster: RosterAssets) -> list[dict]:
     """Return a flat list of all assets with their individual dynasty values.
@@ -211,24 +215,28 @@ def asset_table(roster: RosterAssets) -> list[dict]:
     """
     rows: list[dict] = []
     for p in roster.players:
-        rows.append({
-            "type": "player",
-            "id": p.player_id,
-            "label": f"{p.name} ({p.position}, age {p.age:.0f})",
-            "value": value_player(p),
-            "position": p.position,
-            "age": p.age,
-            "current_fpar": p.current_fpar,
-            "is_taxi": p.is_taxi,
-        })
+        rows.append(
+            {
+                "type": "player",
+                "id": p.player_id,
+                "label": f"{p.name} ({p.position}, age {p.age:.0f})",
+                "value": value_player(p),
+                "position": p.position,
+                "age": p.age,
+                "current_fpar": p.current_fpar,
+                "is_taxi": p.is_taxi,
+            }
+        )
     for pk in roster.picks:
-        rows.append({
-            "type": "pick",
-            "id": f"{pk.season}_R{pk.round}",
-            "label": f"{pk.season} Round {pk.round}",
-            "value": value_pick(pk),
-            "season": pk.season,
-            "round": pk.round,
-            "class_strength": pk.class_strength,
-        })
+        rows.append(
+            {
+                "type": "pick",
+                "id": f"{pk.season}_R{pk.round}",
+                "label": f"{pk.season} Round {pk.round}",
+                "value": value_pick(pk),
+                "season": pk.season,
+                "round": pk.round,
+                "class_strength": pk.class_strength,
+            }
+        )
     return sorted(rows, key=lambda x: x["value"], reverse=True)

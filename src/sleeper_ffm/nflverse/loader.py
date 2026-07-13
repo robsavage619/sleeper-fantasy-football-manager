@@ -25,7 +25,7 @@ from sleeper_ffm.config import NFLVERSE_DIR
 
 log = logging.getLogger(__name__)
 
-# Seasons available in nflverse. 2024 is the most recent complete season as of 2026-07.
+# Seasons available in nflverse. 2025 is the latest completed NFL season as of 2026-07.
 _FIRST_SEASON = 2014
 _CURRENT_SEASON = 2025
 
@@ -33,6 +33,7 @@ _CURRENT_SEASON = 2025
 # ---------------------------------------------------------------------------
 # ID crosswalk — the join key between Sleeper player IDs and nflverse stats
 # ---------------------------------------------------------------------------
+
 
 def load_id_map(force: bool = False) -> pl.DataFrame:
     """Load the nflverse player ID crosswalk (gsis_id ↔ sleeper_id ↔ pfr/espn).
@@ -61,6 +62,7 @@ def load_id_map(force: bool = False) -> pl.DataFrame:
 # ---------------------------------------------------------------------------
 # Weekly box scores — core scoring engine input
 # ---------------------------------------------------------------------------
+
 
 def load_weekly(
     seasons: list[int] | None = None,
@@ -113,6 +115,7 @@ def _weekly_path(season: int) -> Path:
 # Snap counts — opportunity/trend signal
 # ---------------------------------------------------------------------------
 
+
 def load_snaps(
     seasons: list[int] | None = None,
     force: bool = False,
@@ -145,6 +148,7 @@ def load_snaps(
 # Seasonal aggregates — season-level totals (faster than weekly for age curves)
 # ---------------------------------------------------------------------------
 
+
 def load_seasonal(
     seasons: list[int] | None = None,
     force: bool = False,
@@ -176,6 +180,7 @@ def load_seasonal(
 # ---------------------------------------------------------------------------
 # Schedules + rosters — SoS and depth context
 # ---------------------------------------------------------------------------
+
 
 def load_schedules(
     seasons: list[int] | None = None,
@@ -210,6 +215,7 @@ def load_rosters(
 # ---------------------------------------------------------------------------
 # Full backfill — call once to seed the data directory
 # ---------------------------------------------------------------------------
+
 
 def ingest(
     seasons: list[int] | None = None,

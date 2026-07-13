@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
+from sleeper_ffm.config import DEFAULT_VALUE_SEASON
 from sleeper_ffm.model.dynasty import PlayerAsset
 from sleeper_ffm.nflverse.loader import load_id_map, load_weekly
 from sleeper_ffm.scoring.engine import load_scoring, score, stats_from_nflverse
@@ -45,10 +46,10 @@ def _normalize_name(name: str) -> str:
 # Replacement rank per position for a 10-team 1QB dynasty.
 # Player at this rank is the baseline "available on waivers" level.
 _REPLACEMENT_RANK: dict[str, int] = {
-    "QB": 12,   # 1 QB x 10 + 2 cushion
-    "RB": 36,   # 3 RB x 10 + 6 FLEX slots
-    "WR": 42,   # 3 WR x 10 + 12 FLEX slots
-    "TE": 12,   # 1 TE x 10 + 2 cushion
+    "QB": 12,  # 1 QB x 10 + 2 cushion
+    "RB": 36,  # 3 RB x 10 + 6 FLEX slots
+    "WR": 42,  # 3 WR x 10 + 12 FLEX slots
+    "TE": 12,  # 1 TE x 10 + 2 cushion
 }
 
 SKILL_POSITIONS: frozenset[str] = frozenset({"QB", "RB", "WR", "TE"})
@@ -61,22 +62,19 @@ def score_weekly(
     """Score each regular-season game-week; return df with ``fp_sffm`` column.
 
     Args:
-        seasons: Seasons to score (default: [2024]).
+        seasons: Seasons to score (default: latest completed NFL season).
         scoring: Override scoring settings (defaults to league settings).
 
     Returns:
         Weekly df (REG only) augmented with a ``fp_sffm`` column.
     """
-    seasons = seasons or [2024]
+    seasons = seasons or [DEFAULT_VALUE_SEASON]
     scoring = scoring or load_scoring()
 
     weekly = load_weekly(seasons=seasons)
     reg = weekly.filter(pl.col("season_type") == "REG")
 
-    fps = [
-        score(stats_from_nflverse(row), scoring)
-        for row in reg.iter_rows(named=True)
-    ]
+    fps = [score(stats_from_nflverse(row), scoring) for row in reg.iter_rows(named=True)]
     return reg.with_columns(pl.Series("fp_sffm", fps, dtype=pl.Float64))
 
 
@@ -91,22 +89,23 @@ def compute_season_totals(
         ``season_fp``, ``games_played``, ``sleeper_id_str``
 
     Args:
-        seasons: Seasons to process (default: [2024]).
+        seasons: Seasons to process (default: latest completed NFL season).
         scoring: Override scoring settings.
     """
-    seasons = seasons or [2024]
+    seasons = seasons or [DEFAULT_VALUE_SEASON]
     scored = score_weekly(seasons=seasons, scoring=scoring)
 
     season_totals = (
-        scored
-        .filter(pl.col("position").is_in(list(SKILL_POSITIONS)))
+        scored.filter(pl.col("position").is_in(list(SKILL_POSITIONS)))
         .group_by(["player_id", "season", "position"])
-        .agg([
-            pl.col("fp_sffm").sum().alias("season_fp"),
-            pl.col("fp_sffm").len().alias("games_played"),
-            pl.col("player_display_name").first().alias("name"),
-            pl.col("recent_team").last().alias("team"),
-        ])
+        .agg(
+            [
+                pl.col("fp_sffm").sum().alias("season_fp"),
+                pl.col("fp_sffm").len().alias("games_played"),
+                pl.col("player_display_name").first().alias("name"),
+                pl.col("recent_team").last().alias("team"),
+            ]
+        )
         .filter(pl.col("season_fp") > 0)
         .rename({"player_id": "gsis_id"})
     )
@@ -114,17 +113,10 @@ def compute_season_totals(
     # Join Sleeper IDs from the crosswalk
     id_map = load_id_map()
     id_slim = (
-        id_map
-        .select(["gsis_id", "sleeper_id"])
-        .filter(
-            pl.col("gsis_id").is_not_null()
-            & pl.col("sleeper_id").is_not_null()
-        )
+        id_map.select(["gsis_id", "sleeper_id"])
+        .filter(pl.col("gsis_id").is_not_null() & pl.col("sleeper_id").is_not_null())
         .with_columns(
-            pl.col("sleeper_id")
-            .cast(pl.Int64, strict=False)
-            .cast(pl.Utf8)
-            .alias("sleeper_id_str")
+            pl.col("sleeper_id").cast(pl.Int64, strict=False).cast(pl.Utf8).alias("sleeper_id_str")
         )
         .filter(pl.col("sleeper_id_str").is_not_null())
         .select(["gsis_id", "sleeper_id_str"])
@@ -149,9 +141,7 @@ def replacement_thresholds(totals: pl.DataFrame) -> dict[str, float]:
     """
     thresholds: dict[str, float] = {}
     for pos, rank in _REPLACEMENT_RANK.items():
-        pos_df = totals.filter(pl.col("position") == pos).sort(
-            "season_fp", descending=True
-        )
+        pos_df = totals.filter(pl.col("position") == pos).sort("season_fp", descending=True)
         if len(pos_df) >= rank:
             thresholds[pos] = float(pos_df["season_fp"][rank - 1])
         else:
@@ -231,7 +221,7 @@ def build_player_assets(
     when ordered — caller should pass most recent last to get correct average).
 
     Args:
-        seasons: Seasons to use (default [2024]). More seasons = smoother FPAR.
+        seasons: Seasons to use (default: latest completed NFL season).
         scoring: Override scoring settings.
         sleeper_players: Pre-fetched Sleeper player dump. Fetched live if None.
 
@@ -240,23 +230,21 @@ def build_player_assets(
     """
     from sleeper_ffm.sleeper.client import SleeperClient
 
-    seasons = seasons or [2024]
+    seasons = seasons or [DEFAULT_VALUE_SEASON]
     log.info("building player assets from seasons %s", seasons)
 
     totals = compute_season_totals(seasons=seasons, scoring=scoring)
 
     # For multi-season: average season_fp across seasons per player.
     if len(seasons) > 1:
-        avg_totals = (
-            totals
-            .group_by(["gsis_id", "position"])
-            .agg([
+        avg_totals = totals.group_by(["gsis_id", "position"]).agg(
+            [
                 pl.col("season_fp").mean().alias("season_fp"),
                 pl.col("games_played").mean().alias("games_played"),
                 pl.col("name").last().alias("name"),
                 pl.col("team").last().alias("team"),
                 pl.col("sleeper_id_str").last().alias("sleeper_id_str"),
-            ])
+            ]
         )
     else:
         avg_totals = totals
@@ -367,7 +355,7 @@ def build_draft_pool(
 
     Args:
         rostered_ids: Set of Sleeper player IDs already on a fantasy roster.
-        seasons: Seasons for veteran FPAR (default [2024]).
+        seasons: Seasons for veteran FPAR (default: latest completed NFL season).
         scoring: Override scoring settings.
         sleeper_players: Pre-fetched player dump (fetched live if None).
         rookie_max_rank: Discard rookies ranked worse than this.

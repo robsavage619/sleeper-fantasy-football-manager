@@ -17,6 +17,7 @@ import datetime
 import logging
 from dataclasses import dataclass
 
+from sleeper_ffm.config import DEFAULT_VALUE_SEASON
 from sleeper_ffm.model.dynasty import PlayerAsset, value_player
 
 log = logging.getLogger(__name__)
@@ -67,7 +68,7 @@ def value_trade_pick(pick_id: str) -> float:
         return 0.0
     base = _ROUND_BASE_VALUE.get(p.round, 5.0)
     years_ahead = max(0, p.season - _CURRENT_YEAR)
-    return round(base * (_FUTURE_YEAR_DECAY ** years_ahead), 2)
+    return round(base * (_FUTURE_YEAR_DECAY**years_ahead), 2)
 
 
 def _pick_label(pick_id: str) -> str:
@@ -142,7 +143,7 @@ def build_trade_prompt(
         get_player_ids: Sleeper player IDs Rob is receiving.
         give_pick_ids: Pick IDs Rob gives (e.g. ["2026_2_6"]).
         get_pick_ids: Pick IDs Rob receives.
-        seasons: nflverse seasons for FPAR computation (default [2024]).
+        seasons: nflverse seasons for FPAR computation (default: latest completed NFL season).
         vault_notes: Optional vault research to inject.
 
     Returns:
@@ -150,7 +151,7 @@ def build_trade_prompt(
     """
     from sleeper_ffm.model.valuation import build_player_assets
 
-    seasons = seasons or [2024]
+    seasons = seasons or [DEFAULT_VALUE_SEASON]
 
     all_ids = set(give_player_ids) | set(get_player_ids)
     if all_ids:
@@ -176,8 +177,10 @@ def build_trade_prompt(
     get_positions = [p.position for p in get_players if p]
 
     verdict_lean = (
-        "ACCEPT (net positive)" if delta > 10
-        else "DECLINE (net negative)" if delta < -10
+        "ACCEPT (net positive)"
+        if delta > 10
+        else "DECLINE (net negative)"
+        if delta < -10
         else "CLOSE (within 10 dynasty pts)"
     )
 
@@ -207,8 +210,8 @@ Get:  {_side_label(get_player_ids, get_pick_ids)}
 - Quant lean: {verdict_lean}
 
 ## Roster Context
-- Giving away: {', '.join(give_positions) if give_positions else 'picks only'}
-- Receiving:   {', '.join(get_positions) if get_positions else 'picks only'}
+- Giving away: {", ".join(give_positions) if give_positions else "picks only"}
+- Receiving:   {", ".join(get_positions) if get_positions else "picks only"}
 - Net positional shift: {_position_delta(give_positions, get_positions)}
 {vault_section}
 ## Your Task

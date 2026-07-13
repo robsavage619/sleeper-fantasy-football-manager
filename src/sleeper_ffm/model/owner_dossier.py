@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass, field
 
 from sleeper_ffm.api.routers.roster import _build_player_rows
+from sleeper_ffm.config import DEFAULT_VALUE_SEASON
 from sleeper_ffm.model.owner_profile import _classify
 from sleeper_ffm.model.valuation import build_player_assets
 from sleeper_ffm.sleeper.client import SleeperClient
@@ -191,7 +192,7 @@ def _contention(players: list[dict], total: float) -> ContentionWindow:
     return ContentionWindow(score=score, label=label, window=window, rationale=rationale)
 
 
-def build_dossier(roster_id: int, season: int = 2024) -> OwnerDossier:
+def build_dossier(roster_id: int, season: int = DEFAULT_VALUE_SEASON) -> OwnerDossier:
     """Build the full dossier for one roster.
 
     Args:
@@ -244,9 +245,7 @@ def build_dossier(roster_id: int, season: int = 2024) -> OwnerDossier:
 
     # Slots this roster has traded away (their original pick, now held by others)
     traded_away_set = {
-        (p.season, p.round)
-        for p in picks
-        if p.roster_id == roster_id and p.owner_id != roster_id
+        (p.season, p.round) for p in picks if p.roster_id == roster_id and p.owner_id != roster_id
     }
 
     # Own original picks not traded away
@@ -276,7 +275,6 @@ def build_dossier(roster_id: int, season: int = 2024) -> OwnerDossier:
         key=lambda x: (int(x["season"]), x["round"]),
     )
 
-    picks_owned_count = len(picks_owned)
     archetype, archetype_rationale = _classify(
         len(roster.taxi or []), len(picks_traded_away), len(roster.players)
     )

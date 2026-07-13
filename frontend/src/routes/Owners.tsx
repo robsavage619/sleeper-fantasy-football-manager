@@ -2,6 +2,12 @@ import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
+import { AxisBottom, AxisLeft } from '@visx/axis'
+import { Group } from '@visx/group'
+import { ParentSize } from '@visx/responsive'
+import { scaleLinear } from '@visx/scale'
+import { Circle, Line } from '@visx/shape'
+import { Text } from '@visx/text'
 import {
   api,
   type OwnerProfile,
@@ -239,8 +245,8 @@ function Section({ title, kicker, children, span = 2, accent = '#3a7cc0' }: { ti
 }
 
 // ── SCOUTING VERDICT (hero) ──────────────────────────────────────────────────
-function ScoutVerdict({ profile, skill, history, dossier }: {
-  profile: OwnerProfile; skill?: OwnerSkillIndex; history?: OwnerHistory; dossier?: OwnerDossier
+function ScoutVerdict({ skill, history, dossier }: {
+  skill?: OwnerSkillIndex; history?: OwnerHistory; dossier?: OwnerDossier
 }) {
   const threat = skill ? THREAT[skill.skill_tier] : null
   const nickname = history?.behavioral_type ?? 'SCOUTING…'
@@ -664,6 +670,142 @@ function SkillBreakdown({ skill, allSkills }: { skill: OwnerSkillIndex; allSkill
   )
 }
 
+// ── SKILL VS LUCK ────────────────────────────────────────────────────────────
+function SkillLuckQuadrant({ skills, profiles, onSelect }: {
+  skills: OwnerSkillIndex[]
+  profiles: OwnerProfile[]
+  onSelect: (rosterId: number) => void
+}) {
+  const profileByRoster = new Map(profiles.map(p => [p.roster_id, p]))
+  const plotted = skills.filter(s => Number.isFinite(s.skill_score) && Number.isFinite(s.schedule_luck))
+  const widthFloor = 620
+  const height = 360
+  const margin = { top: 28, right: 28, bottom: 54, left: 58 }
+  const innerHeight = height - margin.top - margin.bottom
+  const season = plotted.find(s => s.skill_season)?.skill_season
+
+  if (plotted.length === 0) return null
+
+  return (
+    <div style={{
+      background: C.panel, border: `1px solid ${C.border}`, borderRadius: 2,
+      boxShadow: `inset 3px 0 0 ${C.cyan}`, overflow: 'hidden',
+    }}>
+      <div style={{ padding: '14px 18px 8px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontFamily: barlow, fontSize: 23, fontWeight: 800, color: C.text, letterSpacing: '0.05em', textTransform: 'uppercase' }}>SKILL VS LUCK</span>
+          <span style={{ fontFamily: mono, fontSize: 10, color: C.dim }}>{season ? `${season} schedule sample` : 'schedule sample'}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <TagPill text="RIGHT = LUCKY" />
+          <TagPill text="UP = SKILLED" />
+        </div>
+      </div>
+
+      <ParentSize>
+        {({ width }) => {
+          const chartWidth = Math.max(widthFloor, width)
+          const innerWidth = chartWidth - margin.left - margin.right
+          const luckMax = Math.max(2, ...plotted.map(s => Math.abs(s.schedule_luck)))
+          const scoreMin = Math.max(0, Math.min(55, ...plotted.map(s => s.skill_score)) - 5)
+          const scoreMax = Math.min(100, Math.max(55, ...plotted.map(s => s.skill_score)) + 5)
+          const xScale = scaleLinear<number>({
+            domain: [-luckMax, luckMax],
+            range: [0, innerWidth],
+            nice: true,
+          })
+          const yScale = scaleLinear<number>({
+            domain: [scoreMin, scoreMax],
+            range: [innerHeight, 0],
+            nice: true,
+          })
+          const xZero = xScale(0)
+          const yStrong = yScale(55)
+
+          return (
+            <div style={{ overflowX: 'auto' }}>
+              <svg width={chartWidth} height={height} role="img" aria-label="Owner skill versus schedule luck quadrant">
+                <Group left={margin.left} top={margin.top}>
+                  <rect x={0} y={0} width={innerWidth} height={innerHeight} fill={C.deep} opacity={0.72} />
+                  <rect x={xZero} y={0} width={innerWidth - xZero} height={yStrong} fill="rgba(26,155,94,0.10)" />
+                  <rect x={0} y={0} width={xZero} height={yStrong} fill="rgba(0,184,204,0.09)" />
+                  <rect x={xZero} y={yStrong} width={innerWidth - xZero} height={innerHeight - yStrong} fill="rgba(212,134,12,0.08)" />
+                  <rect x={0} y={yStrong} width={xZero} height={innerHeight - yStrong} fill="rgba(106,128,152,0.06)" />
+
+                  <Line from={{ x: xZero, y: 0 }} to={{ x: xZero, y: innerHeight }} stroke={C.borderHi} strokeWidth={1} />
+                  <Line from={{ x: 0, y: yStrong }} to={{ x: innerWidth, y: yStrong }} stroke={C.borderHi} strokeWidth={1} />
+
+                  <Text x={innerWidth - 10} y={18} textAnchor="end" fontFamily={barlow} fontSize={14} fontWeight={800} fill={C.green} letterSpacing={1}>SKILLED + LUCKY</Text>
+                  <Text x={10} y={18} textAnchor="start" fontFamily={barlow} fontSize={14} fontWeight={800} fill={C.cyan} letterSpacing={1}>SKILLED + UNLUCKY</Text>
+                  <Text x={innerWidth - 10} y={innerHeight - 10} textAnchor="end" fontFamily={barlow} fontSize={14} fontWeight={800} fill={C.amber} letterSpacing={1}>SELL INTO</Text>
+                  <Text x={10} y={innerHeight - 10} textAnchor="start" fontFamily={barlow} fontSize={14} fontWeight={800} fill={C.dim} letterSpacing={1}>WEAK + UNLUCKY</Text>
+
+                  <AxisLeft
+                    scale={yScale}
+                    numTicks={5}
+                    stroke={C.borderHi}
+                    tickStroke={C.borderHi}
+                    tickLabelProps={() => ({ fill: C.muted, fontFamily: mono, fontSize: 10, textAnchor: 'end', dx: '-0.35em', dy: '0.33em' })}
+                  />
+                  <AxisBottom
+                    top={innerHeight}
+                    scale={xScale}
+                    numTicks={7}
+                    stroke={C.borderHi}
+                    tickStroke={C.borderHi}
+                    tickFormat={(v) => `${Number(v) > 0 ? '+' : ''}${Number(v).toFixed(1)}`}
+                    tickLabelProps={() => ({ fill: C.muted, fontFamily: mono, fontSize: 10, textAnchor: 'middle', dy: '0.45em' })}
+                  />
+
+                  <Text x={innerWidth / 2} y={innerHeight + 42} textAnchor="middle" fontFamily={barlow} fontSize={11} fill={C.dim} letterSpacing={2}>SCHEDULE LUCK · ACTUAL WINS - ALL-PLAY EXPECTED WINS</Text>
+                  <Text x={-44} y={innerHeight / 2} angle={-90} textAnchor="middle" fontFamily={barlow} fontSize={11} fill={C.dim} letterSpacing={2}>TRUE OWNER SKILL INDEX</Text>
+
+                  {plotted.map(skill => {
+                    const profile = profileByRoster.get(skill.roster_id)
+                    const name = profile?.display_name ?? skill.display_name ?? `Roster ${skill.roster_id}`
+                    const isMe = skill.roster_id === MY_ROSTER_ID
+                    const color = TIER_COLOR[skill.skill_tier]
+                    const x = xScale(skill.schedule_luck)
+                    const y = yScale(skill.skill_score)
+                    return (
+                      <Group key={skill.roster_id}>
+                        <Circle
+                          cx={x}
+                          cy={y}
+                          r={isMe ? 8 : 6}
+                          fill={color}
+                          fillOpacity={isMe ? 1 : 0.82}
+                          stroke={isMe ? C.text : C.bg}
+                          strokeWidth={isMe ? 2 : 1}
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => onSelect(skill.roster_id)}
+                        />
+                        <Text
+                          x={x + 10}
+                          y={y + 4}
+                          fontFamily={barlow}
+                          fontSize={11}
+                          fontWeight={700}
+                          fill={isMe ? C.text : C.muted}
+                          letterSpacing={0.6}
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => onSelect(skill.roster_id)}
+                        >
+                          {name}
+                        </Text>
+                      </Group>
+                    )
+                  })}
+                </Group>
+              </svg>
+            </div>
+          )
+        }}
+      </ParentSize>
+    </div>
+  )
+}
+
 // ── TRADE FEED ───────────────────────────────────────────────────────────────
 function TradeFeed({ history }: { history?: OwnerHistory }) {
   if (!history) return <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>Loading history…</span>
@@ -708,7 +850,7 @@ function TradeFeed({ history }: { history?: OwnerHistory }) {
 }
 
 // ── HOW TO ATTACK ────────────────────────────────────────────────────────────
-function buildAttackAngles(profile: OwnerProfile, dossier?: OwnerDossier, history?: OwnerHistory, skill?: OwnerSkillIndex): string[] {
+function buildAttackAngles(dossier?: OwnerDossier, history?: OwnerHistory, skill?: OwnerSkillIndex): string[] {
   const angles: string[] = []
   const label = dossier?.contention.label
 
@@ -781,7 +923,7 @@ function GMDrawer({ profile, skill, allSkills, history, onClose }: {
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
 
-  const attackAngles = buildAttackAngles(profile, dossier, history, skill)
+  const attackAngles = buildAttackAngles(dossier, history, skill)
 
   return (
     <>
@@ -825,7 +967,7 @@ function GMDrawer({ profile, skill, allSkills, history, onClose }: {
 
         {/* body */}
         <div style={{ padding: 18, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'start' }}>
-          <ScoutVerdict profile={profile} skill={skill} history={history} dossier={dossier} />
+          <ScoutVerdict skill={skill} history={history} dossier={dossier} />
 
           {!isMe && history && (
             <Section title="HEAD TO HEAD" kicker="you vs them" span={2} accent={C.cyan}>
@@ -927,7 +1069,17 @@ export function Owners() {
         </div>
       </div>
 
-      <div className="p-5 grid grid-cols-2 gap-4">
+      <div className="p-5 flex flex-col gap-4">
+        {skillData && profiles && (
+          <SkillLuckQuadrant
+            skills={skillData}
+            profiles={profiles}
+            onSelect={setSelectedRosterId}
+          />
+        )}
+      </div>
+
+      <div className="px-5 pb-5 grid grid-cols-2 gap-4">
         {(profiles ?? []).map((profile, i) => (
           <OwnerCard key={profile.user_id} profile={profile} index={i} skill={skillByRosterId.get(profile.roster_id)} history={historyByRosterId.get(profile.roster_id)} onClick={() => setSelectedRosterId(profile.roster_id)} />
         ))}

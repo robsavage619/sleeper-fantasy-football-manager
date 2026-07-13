@@ -383,7 +383,7 @@ export function DraftBoard() {
             className="px-5 py-3 tracking-wider uppercase"
             style={{ borderTop: '1px solid #162035', fontSize: 10, color: '#2d4060' }}
           >
-            FPAR = FANTASY PTS ABOVE REPLACEMENT (2024) · DYNASTY = AGE-CURVE ADJUSTED · ROOKIES VIA SLEEPER SEARCH RANK
+            FPAR = FANTASY PTS ABOVE REPLACEMENT · DYNASTY = AGE-CURVE ADJUSTED · ROOKIES VIA SLEEPER SEARCH RANK
           </div>
         </>
       )}

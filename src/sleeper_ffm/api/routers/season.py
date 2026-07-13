@@ -8,6 +8,7 @@ import logging
 
 from fastapi import APIRouter, Query
 
+from sleeper_ffm.config import DEFAULT_VALUE_SEASON
 from sleeper_ffm.model.trends import compute_trends
 from sleeper_ffm.season.startsit import build_startsit
 from sleeper_ffm.season.waivers import analyze_waivers
@@ -54,7 +55,7 @@ def waivers(top: int = Query(default=25)) -> list[dict]:
 @router.get("/startsit")
 def startsit(
     week: int = Query(default=0, description="NFL week (0 = current)"),
-    season: int = Query(default=2024, description="NFL season year"),
+    season: int = Query(default=DEFAULT_VALUE_SEASON, description="NFL season year"),
 ) -> dict:
     """Optimal start/sit lineup for Rob's roster.
 
@@ -74,7 +75,7 @@ def startsit(
         with SleeperClient() as c:
             state = c.state_nfl()
         resolved_week = state.week or 1
-        if season == 2024 and state.season:
+        if season == DEFAULT_VALUE_SEASON and state.season:
             with contextlib.suppress(ValueError):
                 season = int(state.season)
     rec = build_startsit(week=resolved_week, season=season)

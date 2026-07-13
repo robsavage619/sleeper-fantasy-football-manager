@@ -8,6 +8,7 @@ import logging
 
 import typer
 
+from sleeper_ffm.config import DEFAULT_VALUE_SEASON
 from sleeper_ffm.nflverse.loader import ingest as nflverse_ingest
 from sleeper_ffm.reasoning.findings import load_findings_from_disk, post_finding
 from sleeper_ffm.scoring import load_scoring, score
@@ -92,7 +93,9 @@ def ingest(
 def draft_board(
     top: int = typer.Option(30, "--top", help="How many available players to show in the prompt."),
     prompt_only: bool = typer.Option(False, "--prompt-only", help="Just print the Claude prompt."),
-    season: int = typer.Option(2024, "--season", help="Season to use for player FPAR."),
+    season: int = typer.Option(
+        DEFAULT_VALUE_SEASON, "--season", help="Season to use for player FPAR."
+    ),
 ) -> None:
     """Show the live draft board and generate a Claude Code prompt for the next pick.
 
@@ -140,7 +143,9 @@ def trade_prompt(
     get: str = typer.Option(..., "--get", help="Comma-separated Sleeper player IDs to receive"),
     give_picks: str = typer.Option("", "--give-picks", help="Pick IDs to give (YEAR_ROUND_SLOT)"),
     get_picks: str = typer.Option("", "--get-picks", help="Comma-separated pick IDs to receive"),
-    season: int = typer.Option(2024, "--season", help="Season to use for player FPAR"),
+    season: int = typer.Option(
+        DEFAULT_VALUE_SEASON, "--season", help="Season to use for player FPAR"
+    ),
 ) -> None:
     """Build a Claude Code prompt for evaluating a dynasty trade offer.
 
@@ -167,7 +172,7 @@ def trade_prompt(
 @app.command("startsit")
 def startsit_cmd(
     week: int = typer.Option(0, "--week", help="NFL week (0 = current week from Sleeper state)."),
-    season: int = typer.Option(2024, "--season", help="NFL season year."),
+    season: int = typer.Option(DEFAULT_VALUE_SEASON, "--season", help="NFL season year."),
 ) -> None:
     """Optimal start/sit lineup for the week.
 
@@ -248,7 +253,9 @@ def finding_post(
 
 @app.command("roster")
 def roster_overview(
-    season: int = typer.Option(2024, "--season", help="Season for context (unused in profiles)."),
+    season: int = typer.Option(
+        DEFAULT_VALUE_SEASON, "--season", help="Season for context (unused in profiles)."
+    ),
 ) -> None:
     """League-wide owner behavioral profiles — roster composition and archetypes."""
     from rich.console import Console
@@ -287,7 +294,7 @@ def roster_overview(
 def trends_cmd(
     top: int = typer.Option(20, "--top", help="Number of signals to show."),
     direction: str = typer.Option("all", "--direction", help="rising | falling | all"),
-    season: int = typer.Option(2024, "--season", help="Season to analyze."),
+    season: int = typer.Option(DEFAULT_VALUE_SEASON, "--season", help="Season to analyze."),
 ) -> None:
     """Target-share and FPAR trend signals — breakout and decline candidates."""
     from rich.console import Console

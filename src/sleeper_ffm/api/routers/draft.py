@@ -6,13 +6,15 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
+from sleeper_ffm.config import DEFAULT_VALUE_SEASON
+
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/draft", tags=["draft"])
 
 
 @router.get("/board")
-def draft_board(top: int = 50, season: int = 2024) -> dict:
+def draft_board(top: int = 50, season: int = DEFAULT_VALUE_SEASON) -> dict:
     """Return the live draft board: board state + top available players.
 
     Combines veteran nflverse FPAR with rookie Sleeper search_rank heuristic.
@@ -57,7 +59,7 @@ def draft_board(top: int = 50, season: int = 2024) -> dict:
 
 
 @router.get("/prompt")
-def draft_prompt(top: int = 25, season: int = 2024) -> dict:
+def draft_prompt(top: int = 25, season: int = DEFAULT_VALUE_SEASON) -> dict:
     """Generate a Claude Code prompt for the current pick decision."""
     from sleeper_ffm.draft.assistant import build_full_pool, build_pick_prompt, sync_board
 

@@ -7,7 +7,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from sleeper_ffm.config import MY_ROSTER_ID
+from sleeper_ffm.config import DEFAULT_VALUE_SEASON, MY_ROSTER_ID
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ def analyze_trade(req: TradeAnalysisRequest) -> dict:
     from sleeper_ffm.model.valuation import build_player_assets
     from sleeper_ffm.prompts.trade import build_trade_prompt, value_trade_pick
 
-    seasons = req.seasons or [2024]
+    seasons = req.seasons or [DEFAULT_VALUE_SEASON]
     all_ids = set(req.give_player_ids) | set(req.get_player_ids)
 
     if all_ids:
@@ -51,13 +51,11 @@ def analyze_trade(req: TradeAnalysisRequest) -> dict:
     give_players = [asset_map[pid] for pid in req.give_player_ids if pid in asset_map]
     get_players = [asset_map[pid] for pid in req.get_player_ids if pid in asset_map]
 
-    give_value = (
-        sum(value_player(p) for p in give_players)
-        + sum(value_trade_pick(pid) for pid in req.give_pick_ids)
+    give_value = sum(value_player(p) for p in give_players) + sum(
+        value_trade_pick(pid) for pid in req.give_pick_ids
     )
-    get_value = (
-        sum(value_player(p) for p in get_players)
-        + sum(value_trade_pick(pid) for pid in req.get_pick_ids)
+    get_value = sum(value_player(p) for p in get_players) + sum(
+        value_trade_pick(pid) for pid in req.get_pick_ids
     )
     delta = get_value - give_value
     verdict = "ACCEPT" if delta > 10 else "DECLINE" if delta < -10 else "CLOSE"

@@ -9,10 +9,12 @@ from __future__ import annotations
 from pathlib import Path
 
 # This league (verified 2026-07-12): "The League", 2026, dynasty, PPR, 10 teams.
+CURRENT_LEAGUE_YEAR = 2026
+LATEST_COMPLETED_NFL_SEASON = 2025
 LEAGUE_ID = "1335321166146990080"
 DRAFT_ID = "1335321166155358208"  # annual rookie/offseason draft (4 rounds, linear)
 MY_USER_ID = "507751121488523264"  # robsavage on Sleeper
-MY_ROSTER_ID = 2                   # Rob's roster in this league
+MY_ROSTER_ID = 2  # Rob's roster in this league
 SLEEPER_BASE = "https://api.sleeper.app/v1"
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
@@ -26,3 +28,15 @@ VAULT_DIR = Path.home() / "Vault" / "savage_vault"
 
 for _d in (DATA_DIR, CACHE_DIR, NFLVERSE_DIR):
     _d.mkdir(parents=True, exist_ok=True)
+
+
+def _latest_cached_weekly_season() -> int | None:
+    cached_seasons = [
+        int(path.stem)
+        for path in (NFLVERSE_DIR / "weekly").glob("*.parquet")
+        if path.stem.isdigit()
+    ]
+    return max(cached_seasons) if cached_seasons else None
+
+
+DEFAULT_VALUE_SEASON = _latest_cached_weekly_season() or LATEST_COMPLETED_NFL_SEASON
