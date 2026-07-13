@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+@theme {
+  --font-family-display: 'Barlow Condensed', system-ui, sans-serif;
+  --font-family-sans: 'Inter', system-ui, sans-serif;
+  --font-family-mono: 'DM Mono', 'Fira Code', monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #060a12;
+  color: #e8eef6;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #162035;
+  border-radius: 1px;
+}
+
+/* War room table rows */
+.war-table {
+  border-collapse: collapse;
+}
+.war-table tbody tr {
+  border-bottom: 1px solid #162035;
+  transition: background 0.1s;
+}
+.war-table tbody tr:hover {
+  background: #0c1625;
+}
+
+/* Pulse animation for live indicator */
+@keyframes warPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.war-pulse {
+  animation: warPulse 1.8s ease-in-out infinite;
+}

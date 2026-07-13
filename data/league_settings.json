@@ -1,0 +1,38 @@
+{
+  "_note": "Verified snapshot from Sleeper API 2026-07-12. The Sleeper client refreshes this; logic reads it, never hardcodes.",
+  "league_id": "1335321166146990080",
+  "name": "The League",
+  "season": "2026",
+  "status": "pre_draft",
+  "type": 2,
+  "scoring_type": "dynasty_ppr",
+  "total_rosters": 10,
+  "previous_league_id": "1224409539437154304",
+  "draft_id": "1335321166155358208",
+  "roster_positions": ["QB","RB","RB","RB","WR","WR","WR","TE","FLEX","FLEX","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN","BN"],
+  "settings": {
+    "type": 2,
+    "num_teams": 10,
+    "max_keepers": 1,
+    "taxi_slots": 3,
+    "taxi_years": 2,
+    "reserve_slots": 2,
+    "waiver_budget": 500,
+    "waiver_type": 2,
+    "waiver_day_of_week": 2,
+    "pick_trading": 1,
+    "trade_deadline": 13,
+    "playoff_week_start": 15,
+    "playoff_teams": 6,
+    "draft_rounds": 4
+  },
+  "scoring_settings": {
+    "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -1.0, "pass_2pt": 2.0,
+    "pass_td_40p": 2.5, "bonus_pass_yd_300": 2.5, "bonus_pass_yd_400": 5.0, "bonus_pass_cmp_25": 2.5,
+    "rush_yd": 0.1, "rush_td": 6.0, "rush_2pt": 2.0, "rush_td_40p": 2.5,
+    "bonus_rush_yd_100": 2.5, "bonus_rush_yd_200": 5.0, "bonus_rush_att_20": 1.0,
+    "rec": 1.0, "rec_yd": 0.1, "rec_td": 6.0, "rec_2pt": 2.0, "rec_td_40p": 2.5,
+    "bonus_rec_yd_100": 2.5, "bonus_rec_yd_200": 5.0,
+    "fum_lost": -1.0, "fum": -1.0, "fum_rec_td": 6.0
+  }
+}

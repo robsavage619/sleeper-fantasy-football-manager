@@ -1,0 +1,79 @@
+[project]
+name = "sleeper-fantasy-football-manager"
+version = "0.1.0"
+description = "AI dynasty fantasy football GM. Scoring-aware valuation, dynasty asset model, Claude Code reasoning."
+readme = "README.md"
+authors = [
+    { name = "Rob Savage", email = "63321971+robsavage619@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "apscheduler>=3.10",
+    "cfbd>=4.5",
+    "duckdb>=1.1",
+    "fastapi>=0.115",
+    "httpx>=0.28",
+    "nfl-data-py>=0.3.2",
+    "pandas>=2.2",
+    "playwright>=1.48",
+    "polars>=1.10",
+    "pyarrow>=17",
+    "pydantic>=2.9",
+    "typer>=0.12",
+    "uvicorn[standard]>=0.32",
+]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.380",
+    "pytest>=8.3",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+sffm = "sleeper_ffm.cli:app"
+
+[tool.uv.build-backend]
+module-name = "sleeper_ffm"
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # bugbear
+    "UP",     # pyupgrade
+    "SIM",    # simplify
+    "RUF",    # ruff-specific
+    "N",      # pep8-naming
+    "D",      # pydocstyle (Google)
+]
+ignore = [
+    "D100",   # missing docstring in module
+    "D104",   # missing docstring in package
+    "D203",   # 1-blank-line-before-class (conflicts with D211)
+    "D213",   # multi-line-summary-second-line (conflicts with D212)
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["typer.Option", "typer.Argument"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+include = ["src", "tests"]
+exclude = ["**/__pycache__", ".venv"]

@@ -216,3 +216,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project data cache (keep league_settings.json, ignore heavy caches)
+.venv/
+data/cache/
+data/nflverse/
+data/findings.jsonl
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
