@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
+import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, type SimulationLinkDatum, type SimulationNodeDatum } from 'd3-force'
 import { AxisBottom, AxisLeft } from '@visx/axis'
 import { Group } from '@visx/group'
 import { ParentSize } from '@visx/responsive'
@@ -37,6 +38,9 @@ const ARCH_STYLE: Record<OwnerProfile['archetype'], { color: string; bg: string;
 }
 const ARCH_BORDER: Record<OwnerProfile['archetype'], string> = {
   REBUILDER: '#d4860c', CONTENDER: '#1a9b5e', BALANCED: '#00b8cc', UNKNOWN: '#3d5070',
+}
+const TRADE_NODE_COLOR: Record<OwnerProfile['archetype'], string> = {
+  REBUILDER: '#3a8cd4', CONTENDER: '#d4860c', BALANCED: '#6a8098', UNKNOWN: '#3d5070',
 }
 const TIER_COLOR: Record<OwnerSkillIndex['skill_tier'], string> = {
   ELITE: '#00b8cc', STRONG: '#1a9b5e', AVERAGE: '#d4860c', WEAK: '#c93328',
@@ -806,6 +810,184 @@ function SkillLuckQuadrant({ skills, profiles, onSelect }: {
   )
 }
 
+type TradeGraphNode = SimulationNodeDatum & {
+  id: string
+  rosterId: number
+  name: string
+  archetype: OwnerProfile['archetype']
+  tradeCount: number
+}
+
+type TradeGraphLink = SimulationLinkDatum<TradeGraphNode> & {
+  source: string | TradeGraphNode
+  target: string | TradeGraphNode
+  count: number
+}
+
+function TradeNetworkGraph({ profiles, histories, onSelect }: {
+  profiles: OwnerProfile[]
+  histories: OwnerHistory[]
+  onSelect: (rosterId: number) => void
+}) {
+  const graph = useMemo(() => {
+    const profileByRoster = new Map(profiles.map(p => [p.roster_id, p]))
+    const historyByRoster = new Map(histories.map(h => [h.roster_id, h]))
+    const nodes: TradeGraphNode[] = profiles.map((profile, index) => {
+      const angle = (index / Math.max(1, profiles.length)) * Math.PI * 2
+      return {
+        id: String(profile.roster_id),
+        rosterId: profile.roster_id,
+        name: profile.display_name ?? profile.user_id,
+        archetype: profile.archetype,
+        tradeCount: historyByRoster.get(profile.roster_id)?.trade_count ?? 0,
+        x: 360 + Math.cos(angle) * 180,
+        y: 190 + Math.sin(angle) * 120,
+      }
+    })
+
+    const edgeMap = new Map<string, TradeGraphLink>()
+    for (const history of histories) {
+      for (const partner of history.trade_partners) {
+        if (!profileByRoster.has(partner.roster_id)) continue
+        const a = Math.min(history.roster_id, partner.roster_id)
+        const b = Math.max(history.roster_id, partner.roster_id)
+        if (a === b) continue
+        const key = `${a}:${b}`
+        const existing = edgeMap.get(key)
+        if (!existing || partner.count > existing.count) {
+          edgeMap.set(key, { source: String(a), target: String(b), count: partner.count })
+        }
+      }
+    }
+
+    const links = [...edgeMap.values()]
+    const simulation = forceSimulation<TradeGraphNode>(nodes)
+      .force('link', forceLink<TradeGraphNode, TradeGraphLink>(links).id(d => d.id).distance(d => 140 - Math.min(d.count, 8) * 8).strength(0.58))
+      .force('charge', forceManyBody<TradeGraphNode>().strength(-420))
+      .force('center', forceCenter(360, 190))
+      .force('collide', forceCollide<TradeGraphNode>().radius(d => 34 + Math.min(d.tradeCount, 30) * 0.25))
+      .stop()
+
+    for (let i = 0; i < 220; i += 1) simulation.tick()
+    return { nodes, links }
+  }, [profiles, histories])
+
+  if (profiles.length === 0 || histories.length === 0) return null
+
+  return (
+    <div style={{
+      background: C.panel, border: `1px solid ${C.border}`, borderRadius: 2,
+      boxShadow: `inset 3px 0 0 ${C.amber}`, overflow: 'hidden',
+    }}>
+      <div style={{ padding: '14px 18px 8px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontFamily: barlow, fontSize: 23, fontWeight: 800, color: C.text, letterSpacing: '0.05em', textTransform: 'uppercase' }}>TRADE NETWORK</span>
+          <span style={{ fontFamily: mono, fontSize: 10, color: C.dim }}>edge width = deal count</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <TagPill text="REBUILDERS BLUE" />
+          <TagPill text="CONTENDERS AMBER" />
+          <TagPill text="BALANCED MUTED" />
+        </div>
+      </div>
+
+      <ParentSize>
+        {({ width }) => {
+          const chartWidth = Math.max(620, width)
+          const height = 420
+          const scaleX = chartWidth / 720
+          const scaleY = height / 380
+          const linkMax = Math.max(1, ...graph.links.map(l => l.count))
+          const nodeMax = Math.max(1, ...graph.nodes.map(n => n.tradeCount))
+
+          return (
+            <div style={{ overflowX: 'auto' }}>
+              <svg width={chartWidth} height={height} role="img" aria-label="Owner trade network graph">
+                <rect x={0} y={0} width={chartWidth} height={height} fill={C.deep} opacity={0.72} />
+                <Group left={0} top={16}>
+                  {graph.links.map((link, index) => {
+                    const source = link.source as TradeGraphNode
+                    const target = link.target as TradeGraphNode
+                    return (
+                      <g key={`${source.id}-${target.id}-${index}`}>
+                        <Line
+                          from={{ x: (source.x ?? 0) * scaleX, y: (source.y ?? 0) * scaleY }}
+                          to={{ x: (target.x ?? 0) * scaleX, y: (target.y ?? 0) * scaleY }}
+                          stroke={C.borderHi}
+                          strokeWidth={1 + (link.count / linkMax) * 7}
+                          strokeOpacity={0.38 + (link.count / linkMax) * 0.34}
+                        />
+                        {link.count >= 3 && (
+                          <Text
+                            x={(((source.x ?? 0) + (target.x ?? 0)) / 2) * scaleX}
+                            y={(((source.y ?? 0) + (target.y ?? 0)) / 2) * scaleY - 4}
+                            textAnchor="middle"
+                            fontFamily={mono}
+                            fontSize={10}
+                            fill={C.muted}
+                          >
+                            {link.count}
+                          </Text>
+                        )}
+                      </g>
+                    )
+                  })}
+
+                  {graph.nodes.map(node => {
+                    const x = (node.x ?? 0) * scaleX
+                    const y = (node.y ?? 0) * scaleY
+                    const isMe = node.rosterId === MY_ROSTER_ID
+                    const color = TRADE_NODE_COLOR[node.archetype]
+                    const radius = 9 + (node.tradeCount / nodeMax) * 12
+                    return (
+                      <Group key={node.id}>
+                        <Circle
+                          cx={x}
+                          cy={y}
+                          r={radius}
+                          fill={color}
+                          fillOpacity={isMe ? 1 : 0.86}
+                          stroke={isMe ? C.text : C.bg}
+                          strokeWidth={isMe ? 2.5 : 1.25}
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => onSelect(node.rosterId)}
+                        />
+                        <Text
+                          x={x + radius + 7}
+                          y={y + 4}
+                          fontFamily={barlow}
+                          fontSize={12}
+                          fontWeight={800}
+                          fill={isMe ? C.text : C.muted}
+                          letterSpacing={0.7}
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => onSelect(node.rosterId)}
+                        >
+                          {node.name}
+                        </Text>
+                        <Text
+                          x={x}
+                          y={y + radius + 15}
+                          textAnchor="middle"
+                          fontFamily={mono}
+                          fontSize={9}
+                          fill={C.faint}
+                        >
+                          {node.tradeCount}
+                        </Text>
+                      </Group>
+                    )
+                  })}
+                </Group>
+              </svg>
+            </div>
+          )
+        }}
+      </ParentSize>
+    </div>
+  )
+}
+
 // ── TRADE FEED ───────────────────────────────────────────────────────────────
 function TradeFeed({ history }: { history?: OwnerHistory }) {
   if (!history) return <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>Loading history…</span>
@@ -1074,6 +1256,13 @@ export function Owners() {
           <SkillLuckQuadrant
             skills={skillData}
             profiles={profiles}
+            onSelect={setSelectedRosterId}
+          />
+        )}
+        {historyData && profiles && (
+          <TradeNetworkGraph
+            profiles={profiles}
+            histories={historyData.owners}
             onSelect={setSelectedRosterId}
           />
         )}
