@@ -353,6 +353,32 @@ export type WarRoomAction = {
   confidence: 'LOW' | 'MED' | 'HIGH'
   command: string
   source: string
+  acceptance_score?: number | null
+}
+
+export type TradeAsset = {
+  asset_id: string
+  kind: 'player' | 'pick'
+  label: string
+  position: 'QB' | 'RB' | 'WR' | 'TE' | null
+  value: number
+}
+
+export type TradeOfferRecommendation = {
+  partner_roster_id: number
+  partner_name: string
+  acceptance_score: number
+  confidence: 'LOW' | 'MED' | 'HIGH'
+  priority: number
+  give: TradeAsset[]
+  receive: TradeAsset[]
+  give_value: number
+  receive_value: number
+  value_delta: number
+  target_need: string
+  partner_need: string
+  rationale: string
+  command: string
 }
 
 export const api = {
@@ -390,6 +416,7 @@ export const api = {
     give_pick_ids: string[]
     get_pick_ids: string[]
   }) => post<TradeAnalysis>('/trades/analyze', body),
+  tradeOffers: (top = 8) => get<TradeOfferRecommendation[]>(`/trades/offers?top=${top}`),
   narrative: () => get<NarrativeContext>('/season/narrative'),
   warRoomActions: (top = 12) => get<WarRoomAction[]>(`/war-room/actions?top=${top}`),
 }

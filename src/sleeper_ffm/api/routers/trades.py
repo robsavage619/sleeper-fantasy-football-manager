@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 
 from fastapi import APIRouter, HTTPException
@@ -75,6 +76,18 @@ def analyze_trade(req: TradeAnalysisRequest) -> dict:
         "verdict": verdict,
         "prompt": prompt,
     }
+
+
+@router.get("/offers")
+def trade_offers(top: int = 8) -> list[dict]:
+    """Return acceptance-scored outgoing trade offer recommendations."""
+    from sleeper_ffm.model.trade_acceptance import recommend_trade_offers
+
+    try:
+        return [dataclasses.asdict(offer) for offer in recommend_trade_offers(top=top)]
+    except Exception as exc:
+        log.exception("failed to build trade offer recommendations")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.get("/picks")

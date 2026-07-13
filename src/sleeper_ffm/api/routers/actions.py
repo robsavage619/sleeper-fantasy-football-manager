@@ -28,6 +28,7 @@ class WarRoomAction:
     confidence: str
     command: str
     source: str
+    acceptance_score: int | None = None
 
 
 _ACTION_RE = re.compile(r"Action:\s*(?P<action>.+)$")
@@ -49,7 +50,7 @@ def _system_action(action_id: str, title: str, detail: str) -> WarRoomAction:
     )
 
 
-def _trade_actions(limit: int) -> list[WarRoomAction]:
+def _narrative_trade_actions(limit: int) -> list[WarRoomAction]:
     """Build player-specific trade actions from the narrative intelligence."""
     from sleeper_ffm.prompts.narrative import build_narrative_context
 
@@ -73,6 +74,42 @@ def _trade_actions(limit: int) -> list[WarRoomAction]:
                 confidence="MED",
                 command=command,
                 source="season/narrative",
+            )
+        )
+    return actions
+
+
+def _trade_actions(limit: int) -> list[WarRoomAction]:
+    """Build acceptance-scored trade actions, falling back to narrative probes."""
+    from sleeper_ffm.model.trade_acceptance import recommend_trade_offers
+
+    try:
+        offers = recommend_trade_offers(top=limit)
+    except Exception:
+        log.exception("acceptance-scored trade offers failed; using narrative probes")
+        return _narrative_trade_actions(limit)
+
+    if not offers:
+        return _narrative_trade_actions(limit)
+
+    actions: list[WarRoomAction] = []
+    for offer in offers[:limit]:
+        actions.append(
+            WarRoomAction(
+                action_id=f"trade-offer-{offer.partner_roster_id}",
+                kind="TRADE",
+                priority=max(60, offer.priority),
+                urgency="HIGH" if offer.acceptance_score >= 74 else "MED",
+                title=f"{offer.acceptance_score}% to {offer.partner_name}",
+                detail=(
+                    f"{offer.rationale}; give {offer.give_value:.1f}, "
+                    f"receive {offer.receive_value:.1f}, delta {offer.value_delta:+.1f}"
+                ),
+                target=offer.partner_name,
+                confidence=offer.confidence,
+                command=offer.command,
+                source="trades/offers",
+                acceptance_score=offer.acceptance_score,
             )
         )
     return actions

@@ -205,18 +205,33 @@ function ActionQueue({ actions }: { actions: WarRoomAction[] }) {
                   <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color, letterSpacing: '0.12em' }}>
                     {action.kind}
                   </span>
-                  <span style={{
-                    fontSize: 9,
-                    fontWeight: 700,
-                    letterSpacing: '0.18em',
-                    padding: '2px 6px',
-                    color: action.urgency === 'HIGH' ? '#060a12' : '#6a8098',
-                    background: action.urgency === 'HIGH' ? color : 'transparent',
-                    border: `1px solid ${color}55`,
-                    borderRadius: 1,
-                  }}>
-                    {action.urgency}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {action.acceptance_score != null && (
+                      <span style={{
+                        fontSize: 9,
+                        fontWeight: 800,
+                        letterSpacing: '0.12em',
+                        padding: '2px 6px',
+                        color: '#060a12',
+                        background: color,
+                        borderRadius: 1,
+                      }}>
+                        {action.acceptance_score}% YES
+                      </span>
+                    )}
+                    <span style={{
+                      fontSize: 9,
+                      fontWeight: 700,
+                      letterSpacing: '0.18em',
+                      padding: '2px 6px',
+                      color: action.urgency === 'HIGH' ? '#060a12' : '#6a8098',
+                      background: action.urgency === 'HIGH' ? color : 'transparent',
+                      border: `1px solid ${color}55`,
+                      borderRadius: 1,
+                    }}>
+                      {action.urgency}
+                    </span>
+                  </div>
                 </div>
                 <div style={{
                   fontFamily: "'Barlow Condensed', sans-serif",
