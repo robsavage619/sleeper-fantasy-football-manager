@@ -15,3 +15,6 @@ api.fantasycalc.com
 
 # DynastyProcess fallback CSVs (Phase 1)
 dynastyprocess.com
+
+# CollegeFootballData (CFBD) college prospect stats/recruiting/bio (Phase 3)
+api.collegefootballdata.com

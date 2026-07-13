@@ -18,8 +18,25 @@ const TABLE_COLS = [
   { label: 'AGE', className: 'py-2 px-2 w-12' },
   { label: 'TEAM', className: 'py-2 px-2 w-14' },
   { label: 'FPAR', className: 'py-2 px-2 w-16 text-right' },
+  { label: 'MKT', className: 'py-2 px-2 w-16 text-right' },
   { label: 'DYNASTY', className: 'py-2 pl-2 pr-4 w-20 text-right' },
 ]
+
+const TIER_COLORS: Record<string, string> = {
+  T1: '#c93328',
+  T2: '#d4860c',
+  T3: '#3a8cd4',
+  T4: '#3d5070',
+  T5: '#2a3a50',
+}
+
+function tierLabel(dynastyValue: number): string {
+  if (dynastyValue >= 350) return 'T1'
+  if (dynastyValue >= 200) return 'T2'
+  if (dynastyValue >= 100) return 'T3'
+  if (dynastyValue >= 50)  return 'T4'
+  return 'T5'
+}
 
 const POS_FILTER = ['ALL', 'QB', 'RB', 'WR', 'TE'] as const
 type Filter = (typeof POS_FILTER)[number]
@@ -37,6 +54,9 @@ function PlayerRow({
   onOpen: (playerId: string) => void
 }) {
   const color = POS_COLOR[player.position] ?? '#6a8098'
+  const tier = tierLabel(player.dynasty_value)
+  const tierColor = TIER_COLORS[tier] ?? '#3d5070'
+  const signal = player.signal ?? 'HOLD'
 
   return (
     <motion.tr
@@ -50,25 +70,74 @@ function PlayerRow({
         {rank}
       </td>
       <td className="py-2.5 px-2" style={{ borderLeft: `2px solid ${color}` }}>
-        <span className="font-medium" style={{ fontSize: 13, color: '#e8eef6' }}>
-          {player.name}
-        </span>
-        {player.is_rookie && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+          <span className="font-medium" style={{ fontSize: 13, color: '#e8eef6' }}>
+            {player.name}
+          </span>
           <span
-            className="ml-2 tracking-wider uppercase"
             style={{
-              fontSize: 9,
+              fontSize: 8,
               fontWeight: 700,
-              padding: '2px 5px',
-              color: '#c8820a',
-              background: 'rgba(200, 130, 10, 0.12)',
-              border: '1px solid rgba(200, 130, 10, 0.3)',
+              padding: '1px 4px',
+              color: tierColor,
+              background: `${tierColor}18`,
+              border: `1px solid ${tierColor}40`,
               borderRadius: 1,
+              letterSpacing: '0.08em',
+              fontFamily: "'DM Mono', monospace",
             }}
           >
-            ROOK
+            {tier}
           </span>
-        )}
+          {signal === 'STEAL' && (
+            <span
+              style={{
+                fontSize: 8,
+                fontWeight: 700,
+                padding: '1px 4px',
+                color: '#1a9b5e',
+                background: 'rgba(26, 155, 94, 0.1)',
+                border: '1px solid rgba(26, 155, 94, 0.3)',
+                borderRadius: 1,
+                letterSpacing: '0.06em',
+              }}
+            >
+              ★ STEAL
+            </span>
+          )}
+          {signal === 'REACH' && (
+            <span
+              style={{
+                fontSize: 8,
+                fontWeight: 700,
+                padding: '1px 4px',
+                color: '#c93328',
+                background: 'rgba(201, 51, 40, 0.1)',
+                border: '1px solid rgba(201, 51, 40, 0.3)',
+                borderRadius: 1,
+                letterSpacing: '0.06em',
+              }}
+            >
+              ⚠ REACH
+            </span>
+          )}
+          {player.is_rookie && (
+            <span
+              className="tracking-wider uppercase"
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                padding: '2px 5px',
+                color: '#c8820a',
+                background: 'rgba(200, 130, 10, 0.12)',
+                border: '1px solid rgba(200, 130, 10, 0.3)',
+                borderRadius: 1,
+              }}
+            >
+              ROOK
+            </span>
+          )}
+        </div>
       </td>
       <td className="py-2.5 px-2">
         <span
@@ -98,6 +167,12 @@ function PlayerRow({
         style={{ fontSize: 13, color: '#1a9b5e', fontFamily: "'DM Mono', monospace" }}
       >
         {player.fpar.toFixed(1)}
+      </td>
+      <td
+        className="py-2.5 px-2 text-right tabular-nums"
+        style={{ fontSize: 12, color: '#3d5070', fontFamily: "'DM Mono', monospace" }}
+      >
+        {player.market_fpar != null ? player.market_fpar.toFixed(1) : '—'}
       </td>
       <td
         className="py-2.5 pl-2 pr-4 text-right tabular-nums"
@@ -470,7 +545,7 @@ export function DraftBoard() {
             className="px-5 py-3 tracking-wider uppercase"
             style={{ borderTop: '1px solid #162035', fontSize: 10, color: '#2d4060' }}
           >
-            FPAR = FANTASY PTS ABOVE REPLACEMENT · DYNASTY = AGE-CURVE ADJUSTED · ROOKIES VIA SLEEPER SEARCH RANK
+            FPAR = FANTASY PTS ABOVE REPLACEMENT · DYNASTY = AGE-CURVE ADJUSTED · MKT = FANTASYCALC ANNUAL FPAR · T1–T5 = DYNASTY TIER · ★ STEAL &gt;20% ABOVE MARKET · ⚠ REACH &gt;25% BELOW
           </div>
         </>
       )}

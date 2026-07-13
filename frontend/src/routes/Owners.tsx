@@ -18,6 +18,8 @@ import {
   type DossierPlayer,
   type PositionRank,
   type DossierPick,
+  type TransactionValue,
+  type DraftProfile,
 } from '@/lib/api'
 
 const MY_ROSTER_ID = 2
@@ -1086,7 +1088,277 @@ function HowToAttack({ angles }: { angles: string[] }) {
   )
 }
 
-// ── the drawer ───────────────────────────────────────────────────────────────
+// ── transaction value (waivers + trades) ─────────────────────────────────────
+function TxSubHead({ text, accent }: { text: string; accent?: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+      <span style={{ fontFamily: barlow, fontSize: 13, fontWeight: 800, letterSpacing: '0.14em', color: accent ?? C.muted, textTransform: 'uppercase' }}>{text}</span>
+      <div style={{ flex: 1, height: 1, background: C.border }} />
+    </div>
+  )
+}
+
+function TxBigStat({ value, label, color, rank }: { value: string; label: string; color: string; rank?: number }) {
+  return (
+    <div style={{ flex: 1, minWidth: 92, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 3, padding: '10px 12px' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+        <span style={{ fontFamily: barlow, fontSize: 27, fontWeight: 800, color, lineHeight: 1 }}>{value}</span>
+        {rank != null && <span style={{ fontFamily: mono, fontSize: 10, color: C.dim }}>#{rank}</span>}
+      </div>
+      <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: '0.06em', color: C.muted, marginTop: 4, textTransform: 'uppercase' }}>{label}</div>
+    </div>
+  )
+}
+
+function LineupSourceBar({ draft, waiver, trade }: { draft: number; waiver: number; trade: number }) {
+  const total = draft + waiver + trade || 1
+  const segs = [
+    { key: 'draft', label: 'DRAFT', pts: draft, color: C.dim },
+    { key: 'trade', label: 'TRADE', pts: trade, color: C.cyan },
+    { key: 'waiver', label: 'WAIVER', pts: waiver, color: C.green },
+  ].filter((s) => s.pts > 0)
+  return (
+    <div>
+      <div style={{ display: 'flex', height: 20, borderRadius: 2, overflow: 'hidden', border: `1px solid ${C.border}` }}>
+        {segs.map((s) => (
+          <div key={s.key} title={`${s.label}: ${s.pts.toFixed(0)} pts`} style={{ width: `${(s.pts / total) * 100}%`, background: s.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontFamily: mono, fontSize: 9, color: s.key === 'draft' ? C.text : C.bg, fontWeight: 700 }}>
+              {Math.round((s.pts / total) * 100)}%
+            </span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 14, marginTop: 6 }}>
+        {segs.map((s) => (
+          <span key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 5, fontFamily: mono, fontSize: 10, color: C.muted }}>
+            <span style={{ width: 8, height: 8, background: s.color, borderRadius: 1 }} />
+            {s.label} {s.pts.toFixed(0)}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function TradeCard({ deal, label, accent }: { deal: TransactionValue['trade_deals'][number]; label: string; accent: string }) {
+  const assets = (list: TransactionValue['trade_deals'][number]['received'], picks: number) => {
+    const names = list.map((a) => `${a.name} (${a.points.toFixed(0)})`)
+    if (picks) names.push(`${picks} pick${picks > 1 ? 's' : ''}`)
+    return names.length ? names.join(', ') : '—'
+  }
+  return (
+    <div style={{ background: C.panel, border: `1px solid ${C.border}`, boxShadow: `inset 3px 0 0 ${accent}`, borderRadius: 3, padding: '9px 11px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+        <span style={{ fontFamily: barlow, fontSize: 10, letterSpacing: '0.18em', color: accent, textTransform: 'uppercase' }}>{label} · vs {deal.partner}</span>
+        <span style={{ fontFamily: mono, fontSize: 15, fontWeight: 700, color: deal.net_points >= 0 ? C.green : C.red }}>
+          {deal.net_points >= 0 ? '+' : ''}{deal.net_points.toFixed(0)}
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, fontFamily: mono, fontSize: 11 }}>
+        <div><span style={{ color: C.green, marginRight: 6 }}>GOT</span><span style={{ color: C.text }}>{assets(deal.received, deal.picks_received)}</span></div>
+        <div><span style={{ color: C.red, marginRight: 6 }}>GAVE</span><span style={{ color: C.muted }}>{assets(deal.given, deal.picks_given)}</span></div>
+      </div>
+    </div>
+  )
+}
+
+function TransactionValuePanel({ rosterId }: { rosterId: number }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['transactionValue'],
+    queryFn: api.transactionValue,
+    staleTime: 5 * 60 * 1000,
+  })
+  const tv: TransactionValue | undefined = data?.find((t) => t.roster_id === rosterId)
+
+  if (isLoading && !data)
+    return <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>Crunching weekly box scores…</span>
+  if (!tv)
+    return <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>No transaction data.</span>
+
+  const all = data ?? []
+  const rankOf = (val: number, key: (t: TransactionValue) => number) =>
+    all.filter((t) => key(t) > val).length + 1
+  const waiverRank = rankOf(tv.waiver_started_points, (t) => t.waiver_started_points)
+  const netRank = rankOf(tv.trade_net_points, (t) => t.trade_net_points)
+  const netColor = tv.trade_net_points >= 0 ? C.green : C.red
+  const maxPickup = Math.max(...tv.top_pickups.map((p) => p.points), 1)
+  const best = tv.trade_deals[0]
+  const worst = tv.trade_deals.length > 1 ? tv.trade_deals[tv.trade_deals.length - 1] : undefined
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ fontFamily: mono, fontSize: 10, color: C.dim, marginTop: -2 }}>
+        {tv.season} season · ranked vs {all.length} managers
+      </div>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <TxBigStat value={tv.waiver_started_points.toFixed(0)} label="waiver pts started" color={C.green} rank={waiverRank} />
+        <TxBigStat value={`${tv.trade_net_points >= 0 ? '+' : ''}${tv.trade_net_points.toFixed(0)}`} label="trade net pts" color={netColor} rank={netRank} />
+        <TxBigStat value={`${tv.waiver_adds}`} label="waiver adds" color={C.muted} />
+        <TxBigStat value={`${tv.trade_count}`} label="trades made" color={C.muted} />
+      </div>
+
+      <div>
+        <TxSubHead text="Lineup Production Source" />
+        <LineupSourceBar draft={tv.draft_started_points} waiver={tv.waiver_started_points} trade={tv.trade_started_points} />
+      </div>
+
+      {tv.top_pickups.length > 0 && (
+        <div>
+          <TxSubHead text="Top Waiver Pickups" accent={C.green} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {tv.top_pickups.map((p, i) => (
+              <div key={p.player_id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontFamily: mono, fontSize: 11, color: C.dim, width: 14 }}>{i + 1}</span>
+                <PlayerHeadshot playerId={p.player_id} name={p.name} size={26} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: barlow, fontSize: 13, fontWeight: 600, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+                  <div style={{ height: 3, background: C.border, borderRadius: 1, marginTop: 2 }}>
+                    <div style={{ width: `${(p.points / maxPickup) * 100}%`, height: '100%', background: C.green, borderRadius: 1 }} />
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: C.green }}>{p.points.toFixed(0)}</span>
+                  <span style={{ fontFamily: mono, fontSize: 9, color: C.dim, marginLeft: 5 }}>{p.started_points.toFixed(0)} ST</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tv.trade_deals.length > 0 && (
+        <div>
+          <TxSubHead text={`Trades · ${tv.trade_deals.length}`} accent={C.cyan} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {best && <TradeCard deal={best} label={worst ? 'Best trade' : 'Trade'} accent={C.green} />}
+            {worst && <TradeCard deal={worst} label="Worst trade" accent={C.red} />}
+          </div>
+          <div style={{ fontFamily: mono, fontSize: 9, color: C.dim, marginTop: 6 }}>
+            Net = post-trade points received − points given away, that season.
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── draft profile (how they draft + best picks) ──────────────────────────────
+function PositionMixBar({ mix }: { mix: Record<string, number> }) {
+  const order = ['RB', 'WR', 'TE', 'QB']
+  const total = order.reduce((s, p) => s + (mix[p] ?? 0), 0) || 1
+  const segs = order.filter((p) => (mix[p] ?? 0) > 0)
+  return (
+    <div>
+      <div style={{ display: 'flex', height: 18, borderRadius: 2, overflow: 'hidden', border: `1px solid ${C.border}` }}>
+        {segs.map((p) => (
+          <div key={p} title={`${p}: ${mix[p]}`} style={{ width: `${((mix[p] ?? 0) / total) * 100}%`, background: POS_COLOR[p], display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontFamily: mono, fontSize: 9, color: C.bg, fontWeight: 700 }}>{p}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 12, marginTop: 6, flexWrap: 'wrap' }}>
+        {segs.map((p) => (
+          <span key={p} style={{ display: 'flex', alignItems: 'center', gap: 5, fontFamily: mono, fontSize: 10, color: C.muted }}>
+            <span style={{ width: 8, height: 8, background: POS_COLOR[p], borderRadius: 1 }} />
+            {p} {mix[p]}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function DraftPickRow({ pick, index, maxVal }: { pick: DraftProfile['best_picks'][number]; index: number; maxVal: number }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <span style={{ fontFamily: mono, fontSize: 11, color: C.dim, width: 14 }}>{index + 1}</span>
+      <PlayerHeadshot playerId={pick.player_id} name={pick.name} size={26} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontFamily: barlow, fontSize: 13, fontWeight: 600, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pick.name}</span>
+          <span style={{ fontFamily: mono, fontSize: 9, color: POS_COLOR[pick.position] ?? C.dim }}>{pick.position}</span>
+          {pick.rostered && <span title="still on their roster" style={{ width: 6, height: 6, borderRadius: '50%', background: C.cyan, flexShrink: 0 }} />}
+        </div>
+        <div style={{ height: 3, background: C.border, borderRadius: 1, marginTop: 2 }}>
+          <div style={{ width: `${(pick.value / maxVal) * 100}%`, height: '100%', background: C.amber, borderRadius: 1 }} />
+        </div>
+      </div>
+      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+        <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: C.amber }}>{pick.value.toLocaleString()}</span>
+        <span style={{ fontFamily: mono, fontSize: 9, color: C.dim, marginLeft: 5 }}>{`'${pick.season.slice(2)} R${pick.round}`}</span>
+      </div>
+    </div>
+  )
+}
+
+function DraftProfilePanel({ rosterId }: { rosterId: number }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['draftProfile'],
+    queryFn: api.draftProfile,
+    staleTime: 5 * 60 * 1000,
+  })
+  const dp: DraftProfile | undefined = data?.find((d) => d.roster_id === rosterId)
+
+  if (isLoading && !data)
+    return <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>Grading their draft history…</span>
+  if (!dp) return <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>No draft data.</span>
+
+  const all = data ?? []
+  const hitRank = all.filter((d) => d.hit_rate > dp.hit_rate).length + 1
+  const maxVal = Math.max(...dp.best_picks.map((p) => p.value), 1)
+  const steal = dp.best_steal
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <TxBigStat value={`${Math.round(dp.hit_rate * 100)}%`} label="hit rate" color={C.green} rank={hitRank} />
+        <TxBigStat value={dp.hits.toString()} label="dynasty hits" color={C.amber} />
+        <TxBigStat value={dp.avg_pick_value.toLocaleString()} label="avg pick value" color={C.muted} />
+        <TxBigStat value={dp.total_picks.toString()} label={`picks · ${dp.seasons_drafted}yr`} color={C.muted} />
+      </div>
+
+      {Object.keys(dp.position_mix).length > 0 && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontFamily: barlow, fontSize: 13, fontWeight: 800, letterSpacing: '0.14em', color: C.muted, textTransform: 'uppercase' }}>How They Draft</span>
+            <span style={{ fontFamily: mono, fontSize: 10, color: C.cyan, border: `1px solid ${C.cyan}55`, borderRadius: 1, padding: '1px 5px' }}>{dp.position_lean}</span>
+            <div style={{ flex: 1, height: 1, background: C.border }} />
+          </div>
+          <PositionMixBar mix={dp.position_mix} />
+        </div>
+      )}
+
+      {dp.best_picks.length > 0 && (
+        <div>
+          <TxSubHead text="Best Draft Picks" accent={C.amber} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {dp.best_picks.map((p, i) => (
+              <DraftPickRow key={`${p.player_id}-${p.season}`} pick={p} index={i} maxVal={maxVal} />
+            ))}
+          </div>
+          <div style={{ fontFamily: mono, fontSize: 9, color: C.dim, marginTop: 6 }}>
+            Value = current dynasty market value (FantasyCalc) · <span style={{ color: C.cyan }}>●</span> still rostered
+          </div>
+        </div>
+      )}
+
+      {steal && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', background: C.panel, border: `1px solid ${C.border}`, boxShadow: `inset 3px 0 0 ${C.green}`, borderRadius: 3 }}>
+          <PlayerHeadshot playerId={steal.player_id} name={steal.name} size={30} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: barlow, fontSize: 9, letterSpacing: '0.2em', color: C.green, textTransform: 'uppercase' }}>
+              DRAFT STEAL · {steal.season} ROUND {steal.round}
+            </div>
+            <div style={{ fontFamily: barlow, fontSize: 16, fontWeight: 700, color: C.text }}>{steal.name}</div>
+          </div>
+          <div style={{ fontFamily: mono, fontSize: 16, fontWeight: 700, color: C.green }}>{steal.value.toLocaleString()}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function GMDrawer({ profile, skill, allSkills, history, onClose }: {
   profile: OwnerProfile; skill?: OwnerSkillIndex; allSkills: OwnerSkillIndex[]; history?: OwnerHistory; onClose: () => void
 }) {
@@ -1159,6 +1431,14 @@ function GMDrawer({ profile, skill, allSkills, history, onClose }: {
 
           <Section title="HOW THEY TRADE" kicker="7-season transaction history" span={2}>
             {history ? <TradeBehavior history={history} /> : <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>Loading transaction history…</span>}
+          </Section>
+
+          <Section title="TRANSACTION VALUE" kicker="fantasy points added via waivers & trades" span={2} accent={C.green}>
+            <TransactionValuePanel rosterId={profile.roster_id} />
+          </Section>
+
+          <Section title="DRAFT PROFILE" kicker="how they draft · best picks all-time" span={2} accent={C.amber}>
+            <DraftProfilePanel rosterId={profile.roster_id} />
           </Section>
 
           {dossierError && (

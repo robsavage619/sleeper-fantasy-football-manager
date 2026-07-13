@@ -28,7 +28,12 @@ _POS_MAP = {
 
 @dataclass
 class ProspectProfile:
-    """Dynasty prospect enriched with CFBD usage and recruiting signals."""
+    """Dynasty prospect enriched with CFBD usage and recruiting signals.
+
+    ``usage_rate`` is CFBD's ``usage.overall`` — the share of the team's
+    offensive plays this player was involved in. CFBD does not track pass
+    targets, so this is a play-involvement proxy, not literal target share.
+    """
 
     player_id: str | None
     name: str
@@ -36,7 +41,7 @@ class ProspectProfile:
     college: str
     year: int
     age: float | None
-    target_share: float
+    usage_rate: float
     yards_per_reception: float
     breakout_age: float | None
     recruiting_rank: int | None
@@ -97,7 +102,7 @@ def _fallback_sleeper_prospects(year: int, top: int) -> list[ProspectProfile]:
                 college=college,
                 year=year,
                 age=age,
-                target_share=0.0,
+                usage_rate=0.0,
                 yards_per_reception=0.0,
                 breakout_age=None,
                 recruiting_rank=None,
@@ -146,21 +151,48 @@ def _fetch_recruiting(year: int, client: httpx.Client) -> dict[str, dict]:
     return {_normalise_name(r.get("name", "")): r for r in recruits if r.get("name")}
 
 
-def _fetch_advanced(year: int, client: httpx.Client) -> dict[str, dict]:
-    """Fetch /stats/season/advanced and return name -> record map."""
+def _fetch_player_season_stats(
+    year: int, client: httpx.Client
+) -> dict[str, dict[str, dict[str, float]]]:
+    """Fetch /stats/player/season and pivot long-format rows into a per-player stat tree.
+
+    CFBD returns one row per (player, category, statType), e.g.
+    ``{"player": "X", "category": "receiving", "statType": "YPR", "stat": "13.2"}``.
+    This pivots to ``{normalised_name: {category: {statType: float}}}``.
+
+    Note: an earlier version of this loader called ``/stats/season/advanced``,
+    which is TEAM-level only (no per-player field at all) and silently
+    returned nothing useful. This is the real player-level source, verified
+    against CFBD's own API server source.
+    """
     try:
         resp = client.get(
-            f"{CFBD_BASE}/stats/season/advanced",
+            f"{CFBD_BASE}/stats/player/season",
             params={"year": year, "seasonType": "regular"},
             headers=_cfbd_headers(),
             timeout=20,
         )
         resp.raise_for_status()
-        stats: list[dict] = resp.json()
+        rows: list[dict] = resp.json()
     except httpx.HTTPError as exc:
-        log.warning("CFBD /stats/season/advanced request failed: %s", exc)
+        log.warning("CFBD /stats/player/season request failed: %s", exc)
         return {}
-    return {_normalise_name(s.get("player", "")): s for s in stats if s.get("player")}
+
+    pivoted: dict[str, dict[str, dict[str, float]]] = {}
+    for row in rows:
+        name = row.get("player")
+        category = row.get("category")
+        stat_type = row.get("statType")
+        raw_stat = row.get("stat")
+        if not name or not category or not stat_type or raw_stat is None:
+            continue
+        try:
+            value = float(raw_stat)
+        except (TypeError, ValueError):
+            continue
+        key = _normalise_name(name)
+        pivoted.setdefault(key, {}).setdefault(category, {})[stat_type] = value
+    return pivoted
 
 
 def _build_sleeper_index(players_dump: dict[str, dict]) -> dict[str, str]:
@@ -175,38 +207,41 @@ def _build_sleeper_index(players_dump: dict[str, dict]) -> dict[str, str]:
 
 def _score_wr_te(
     usage: dict,
-    adv: dict,
+    season_stats: dict,
     recruiting_rank: int | None,
 ) -> tuple[float, float, float, str]:
-    """Return (target_share, ypr, raw_score, rationale) for WR/TE."""
-    usage_data = usage.get("usage", {}) or {}
-    target_share = float(usage_data.get("passingDowns", 0) or 0)
-    # CFBD usage.passingDowns is a share proxy; prefer usage.passingShares if present
-    rec_target_share = float(usage_data.get("overall", 0) or 0)
-    if rec_target_share:
-        target_share = rec_target_share
+    """Return (usage_rate, ypr, raw_score, rationale) for WR/TE.
 
-    receiving = adv.get("receiving", {}) or {}
-    ypr = float(receiving.get("yardsPerReception", 0) or 0)
+    ``usage_rate`` is CFBD's ``usage.overall`` — share of team offensive plays
+    this player was involved in. CFBD does not track targets, so this is a
+    play-involvement proxy, not literal target share.
+    """
+    usage_data = usage.get("usage", {}) or {}
+    usage_rate = float(usage_data.get("overall", 0) or usage_data.get("passingDowns", 0) or 0)
+
+    receiving = season_stats.get("receiving", {}) or {}
+    ypr = float(receiving.get("YPR", 0) or 0)
+    if not ypr and receiving.get("YDS") and receiving.get("REC"):
+        ypr = receiving["YDS"] / receiving["REC"]
 
     rank_bonus = 15 if (recruiting_rank is not None and recruiting_rank < 50) else 0
-    raw = target_share * 200 + ypr * 3 + rank_bonus
+    raw = usage_rate * 200 + ypr * 3 + rank_bonus
 
-    rationale = f"{target_share:.1%} target share, {ypr:.1f} YPR"
+    rationale = f"{usage_rate:.1%} usage rate, {ypr:.1f} YPR"
     if rank_bonus:
         rationale += f", top-50 recruit (#{recruiting_rank})"
-    return target_share, ypr, raw, rationale
+    return usage_rate, ypr, raw, rationale
 
 
 def _score_rb(
     usage: dict,
-    adv: dict,
+    season_stats: dict,
     age: float | None,
     recruiting_rank: int | None,
 ) -> tuple[float, str]:
     """Return (raw_score, rationale) for RB."""
-    rushing = adv.get("rushing", {}) or {}
-    total_yards = float(rushing.get("rushingYards", 0) or 0)
+    rushing = season_stats.get("rushing", {}) or {}
+    total_yards = float(rushing.get("YDS", 0) or 0)
 
     age_bonus = 10 if (age is not None and age < 22) else 0
     rank_bonus = 15 if (recruiting_rank is not None and recruiting_rank < 50) else 0
@@ -221,13 +256,15 @@ def _score_rb(
 
 
 def _score_qb(
-    adv: dict,
+    season_stats: dict,
     recruiting_rank: int | None,
 ) -> tuple[float, str]:
     """Return (raw_score, rationale) for QB."""
-    passing = adv.get("passing", {}) or {}
-    comp_pct = float(passing.get("completionPercentage", 0) or 0)
-    ypa = float(passing.get("yardsPerAttempt", 0) or 0)
+    passing = season_stats.get("passing", {}) or {}
+    comp_pct = float(passing.get("PCT", 0) or 0)
+    ypa = float(passing.get("YPA", 0) or 0)
+    if not ypa and passing.get("YDS") and passing.get("ATT"):
+        ypa = passing["YDS"] / passing["ATT"]
 
     rank_bonus = 10 if (recruiting_rank is not None and recruiting_rank < 100) else 0
     raw = comp_pct * 0.5 + ypa * 5 + rank_bonus
@@ -236,6 +273,114 @@ def _score_qb(
     if rank_bonus:
         rationale += f", top-100 recruit (#{recruiting_rank})"
     return raw, rationale
+
+
+def fetch_bio(name: str) -> dict | None:
+    """Fetch height/weight/hometown bio via CFBD /player/search.
+
+    Returns None when CFBD_API_KEY is not configured or no match is found.
+    """
+    try:
+        headers = _cfbd_headers()
+    except ValueError:
+        return None
+
+    with httpx.Client(timeout=20) as client:
+        try:
+            resp = client.get(
+                f"{CFBD_BASE}/player/search",
+                params={"searchTerm": name},
+                headers=headers,
+                timeout=20,
+            )
+            resp.raise_for_status()
+            matches: list[dict] = resp.json()
+        except httpx.HTTPError as exc:
+            log.warning("CFBD /player/search request failed: %s", exc)
+            return None
+
+    norm_name = _normalise_name(name)
+    match = next(
+        (m for m in matches if _normalise_name(m.get("name", "")) == norm_name),
+        matches[0] if matches else None,
+    )
+    if match is None:
+        return None
+    return {
+        "height": match.get("height"),
+        "weight": match.get("weight"),
+        "hometown": match.get("hometown"),
+        "jersey": match.get("jersey"),
+    }
+
+
+def _extract_stat_row(pos: str, usage_entry: dict, season_stats: dict) -> dict:
+    """Return a compact per-season stat snapshot keyed for the given position."""
+    if pos in ("WR", "TE"):
+        usage_data = usage_entry.get("usage", {}) or {}
+        usage_rate = float(usage_data.get("overall", 0) or usage_data.get("passingDowns", 0) or 0)
+        receiving = season_stats.get("receiving", {}) or {}
+        ypr = float(receiving.get("YPR", 0) or 0)
+        if not ypr and receiving.get("YDS") and receiving.get("REC"):
+            ypr = receiving["YDS"] / receiving["REC"]
+        return {
+            "usage_rate": round(usage_rate, 3),
+            "yards_per_reception": round(ypr, 1),
+        }
+    if pos == "RB":
+        rushing = season_stats.get("rushing", {}) or {}
+        return {"rushing_yards": int(rushing.get("YDS", 0) or 0)}
+    if pos == "QB":
+        passing = season_stats.get("passing", {}) or {}
+        ypa = float(passing.get("YPA", 0) or 0)
+        if not ypa and passing.get("YDS") and passing.get("ATT"):
+            ypa = passing["YDS"] / passing["ATT"]
+        return {
+            "completion_pct": round(float(passing.get("PCT", 0) or 0), 1),
+            "yards_per_attempt": round(ypa, 1),
+        }
+    return {}
+
+
+def fetch_season_history(
+    name: str,
+    position: str,
+    draft_year: int,
+    lookback: int = 2,
+) -> list[dict]:
+    """Fetch up to `lookback` prior seasons plus the draft year for a named player.
+
+    Returns an empty list when CFBD_API_KEY is not configured or no matching
+    season data is found (name-matched against each year's full usage list,
+    since CFBD does not expose a single-player lookup).
+    """
+    try:
+        _cfbd_headers()
+    except ValueError:
+        return []
+
+    norm_name = _normalise_name(name)
+    history: list[dict] = []
+    with httpx.Client(timeout=20) as client:
+        for offset in range(lookback, -1, -1):
+            yr = draft_year - offset
+            usage_list = _fetch_usage(yr, client)
+            usage_entry = next(
+                (
+                    u
+                    for u in usage_list
+                    if _normalise_name(u.get("player") or u.get("name") or "") == norm_name
+                ),
+                None,
+            )
+            if usage_entry is None:
+                continue
+            season_stats_map = _fetch_player_season_stats(yr, client)
+            player_stats = season_stats_map.get(norm_name, {})
+            stat_row = _extract_stat_row(position, usage_entry, player_stats)
+            if stat_row:
+                history.append({"season": yr, **stat_row})
+    return history
 
 
 def load_prospects(year: int = 2025, top: int = 200) -> list[ProspectProfile]:
@@ -262,7 +407,7 @@ def load_prospects(year: int = 2025, top: int = 200) -> list[ProspectProfile]:
     with httpx.Client(timeout=20) as http_client:
         usage_list = _fetch_usage(year, http_client)
         recruiting_map = _fetch_recruiting(year, http_client)
-        advanced_map = _fetch_advanced(year, http_client)
+        season_stats_map = _fetch_player_season_stats(year, http_client)
 
     if not usage_list:
         log.warning(
@@ -297,7 +442,7 @@ def load_prospects(year: int = 2025, top: int = 200) -> list[ProspectProfile]:
 
         player_id = sleeper_index.get(norm_name)
         recruit = recruiting_map.get(norm_name, {})
-        adv = advanced_map.get(norm_name, {})
+        player_season_stats = season_stats_map.get(norm_name, {})
 
         recruiting_rank: int | None = None
         stars: int | None = None
@@ -312,17 +457,19 @@ def load_prospects(year: int = 2025, top: int = 200) -> list[ProspectProfile]:
             raw_age = players_dump.get(player_id, {}).get("age")
             age = float(raw_age) if raw_age else None
 
-        target_share = 0.0
+        usage_rate = 0.0
         ypr = 0.0
         rationale = ""
         raw_score = 0.0
 
         if pos in ("WR", "TE"):
-            target_share, ypr, raw_score, rationale = _score_wr_te(entry, adv, recruiting_rank)
+            usage_rate, ypr, raw_score, rationale = _score_wr_te(
+                entry, player_season_stats, recruiting_rank
+            )
         elif pos == "RB":
-            raw_score, rationale = _score_rb(entry, adv, age, recruiting_rank)
+            raw_score, rationale = _score_rb(entry, player_season_stats, age, recruiting_rank)
         elif pos == "QB":
-            raw_score, rationale = _score_qb(adv, recruiting_rank)
+            raw_score, rationale = _score_qb(player_season_stats, recruiting_rank)
 
         profile = ProspectProfile(
             player_id=player_id,
@@ -331,7 +478,7 @@ def load_prospects(year: int = 2025, top: int = 200) -> list[ProspectProfile]:
             college=college,
             year=year,
             age=age,
-            target_share=target_share,
+            usage_rate=usage_rate,
             yards_per_reception=ypr,
             breakout_age=None,  # requires multi-year data; reserved for future pass
             recruiting_rank=recruiting_rank,

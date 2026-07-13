@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re as _re
 import time
 from pathlib import Path
 from urllib.request import urlopen
@@ -86,7 +87,74 @@ def fetch() -> dict[str, float]:
     return result
 
 
-import re as _re
+def _height_inches(raw: object) -> int | None:
+    """Parse a FantasyCalc height (inches as a string, e.g. '72') to an int."""
+    if raw is None:
+        return None
+    try:
+        return int(float(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+def fetch_full() -> dict[str, dict]:
+    """Return the full FantasyCalc consensus record for every player, by Sleeper ID.
+
+    Unlike :func:`fetch` (raw value only), this surfaces the whole market
+    picture the dynasty community actually trades on: overall/positional rank,
+    tier, 30-day value trend, ADP, roster% and trade frequency (liquidity),
+    market volatility (moving std dev → how divided the market is), the
+    redraft-vs-dynasty split (ascending-youth vs win-now), NFL draft capital,
+    and bio. Every field is optional; missing values are ``None``.
+
+    Returns:
+        ``{sleeper_id: record}`` where ``record`` carries ``value``,
+        ``overall_rank``, ``position_rank``, ``tier``, ``trend_30day``,
+        ``adp``, ``roster_pct``, ``trade_frequency``, ``volatility``,
+        ``volatility_pct``, ``redraft_value``, ``redraft_dynasty_diff``,
+        ``draft_year``, ``draft_round``, ``draft_pick``, ``height``,
+        ``weight``, ``college``, ``team``, ``age``, ``years_exp``.
+        Empty dict if the fetch fails.
+    """
+    try:
+        raw = _load_raw()
+    except Exception as exc:
+        log.warning("fantasycalc: fetch_full failed: %s", exc)
+        return {}
+
+    result: dict[str, dict] = {}
+    for entry in raw:
+        player = entry.get("player") or {}
+        sleeper_id = player.get("sleeperId") or player.get("sleeperPlayerId")
+        if not sleeper_id:
+            continue
+        draft = player.get("maybeDraftInfo") or {}
+        result[str(sleeper_id)] = {
+            "value": entry.get("value"),
+            "overall_rank": entry.get("overallRank"),
+            "position_rank": entry.get("positionRank"),
+            "tier": entry.get("maybeTier"),
+            "trend_30day": entry.get("trend30Day"),
+            "adp": entry.get("maybeAdp"),
+            "roster_pct": entry.get("maybeRosterPercent"),
+            "trade_frequency": entry.get("maybeTradeFrequency"),
+            "volatility": entry.get("maybeMovingStandardDeviation"),
+            "volatility_pct": entry.get("maybeMovingStandardDeviationPerc"),
+            "redraft_value": entry.get("redraftValue"),
+            "redraft_dynasty_diff": entry.get("redraftDynastyValueDifference"),
+            "draft_year": draft.get("year"),
+            "draft_round": draft.get("round"),
+            "draft_pick": draft.get("pick"),
+            "height": _height_inches(player.get("maybeHeight")),
+            "weight": player.get("maybeWeight"),
+            "college": player.get("maybeCollege"),
+            "team": player.get("maybeTeam"),
+            "age": player.get("maybeAge"),
+            "years_exp": player.get("maybeYoe"),
+        }
+
+    log.debug("fantasycalc: %d full records with sleeper IDs", len(result))
+    return result
 
 _PICK_ROUND_RE = _re.compile(r"\b(\d+)(?:st|nd|rd|th)\b", _re.IGNORECASE)
 _PICK_YEAR_RE = _re.compile(r"\b(20\d{2})\b")
@@ -118,8 +186,10 @@ def fetch_picks() -> dict[tuple[str, int], float]:
         value = entry.get("value")
         if value is None:
             continue
-        if pos != "PICK" and "pick" not in name.lower() and not any(
-            w in name.lower() for w in ("1st", "2nd", "3rd", "4th", "round")
+        if (
+            pos != "PICK"
+            and "pick" not in name.lower()
+            and not any(w in name.lower() for w in ("1st", "2nd", "3rd", "4th", "round"))
         ):
             continue
 
