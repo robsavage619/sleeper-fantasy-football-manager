@@ -216,7 +216,7 @@ function ActionQueue({ actions }: { actions: WarRoomAction[] }) {
                         background: color,
                         borderRadius: 1,
                       }}>
-                        {action.acceptance_score}% YES
+                        {action.acceptance_score} FIT
                       </span>
                     )}
                     <span style={{
@@ -373,6 +373,11 @@ function StartSitPanel({ rec, week }: { rec: StartSitRec | undefined; week: numb
         <span className="ml-3" style={{ fontSize: 11, color: '#6a8098' }}>
           {rec.total_projected_pts.toFixed(1)} proj
         </span>
+        {rec.data_quality === 'DEGRADED' && (
+          <span className="ml-3" style={{ fontSize: 11, color: AMBER }}>
+            DEGRADED · {rec.warnings[0] ?? 'projection fallback active'}
+          </span>
+        )}
       </div>
     )
   }
@@ -396,6 +401,11 @@ function StartSitPanel({ rec, week }: { rec: StartSitRec | undefined; week: numb
         <span style={{ fontSize: 11, color: '#6a8098' }}>
           vs CURRENT · {rec.current_projected_pts.toFixed(1)} PROJ
         </span>
+        {rec.data_quality === 'DEGRADED' && (
+          <span style={{ fontSize: 11, color: AMBER }}>
+            DEGRADED · {rec.warnings.length} WARNING{rec.warnings.length === 1 ? '' : 'S'}
+          </span>
+        )}
       </div>
       <div className="px-4 py-2 flex flex-wrap gap-x-6 gap-y-1">
         {rec.changes.map((c) => {

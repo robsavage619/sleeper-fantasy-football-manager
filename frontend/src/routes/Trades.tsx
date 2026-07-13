@@ -36,7 +36,7 @@ const ordinal = (n: number) => ORDINALS[n - 1] ?? `${n}th`
 const ROUND_BASE: Record<number, number> = { 1: 80, 2: 50, 3: 25, 4: 10 }
 function pickValue(season: string | number, round: number): number {
   const yearsAhead = Math.max(0, Number(season) - CURRENT_YEAR)
-  return Math.round((ROUND_BASE[round] ?? 5) * Math.pow(0.85, yearsAhead) * 10) / 10
+  return Math.round((ROUND_BASE[round] ?? 5) * Math.pow(0.88, yearsAhead) * 10) / 10
 }
 
 function makePickId(season: string | number, round: number): string {
@@ -565,11 +565,10 @@ export function Trades() {
 
   const myPicksOwned: DossierPick[] = myDossier?.picks_owned ?? []
 
-  const giveValue = givePlayers.reduce((s, p) => s + p.dynasty_value, 0)
-    + givePicks.reduce((s, p) => s + p.value, 0)
-  const getValue = getPlayers.reduce((s, p) => s + p.dynasty_value, 0)
-    + getPicks.reduce((s, p) => s + p.value, 0)
-  const hasAssets = giveValue > 0 || getValue > 0
+  const hasGiveAssets = givePlayers.length > 0 || givePicks.length > 0
+  const hasGetAssets = getPlayers.length > 0 || getPicks.length > 0
+  const hasAssets = hasGiveAssets || hasGetAssets
+  const canAnalyze = partnerId !== null && hasGiveAssets && hasGetAssets
 
   function addGivePlayer(p: PlayerSlot) {
     if (!givePlayers.find(x => x.player_id === p.player_id)) {
@@ -600,6 +599,10 @@ export function Trades() {
   }
 
   async function runAnalysis() {
+    if (!canAnalyze) {
+      setAnalyzeError('Select a trade partner and at least one asset on both sides.')
+      return
+    }
     setAnalyzing(true)
     setAnalyzeError(null)
     try {
@@ -646,8 +649,8 @@ export function Trades() {
       : C.muted
     : C.muted
 
-  // Player modal pool: GIVE = my roster, GET = partner's roster (or my roster if no partner)
-  const getModalPlayers = partnerPlayers.length > 0 ? partnerPlayers : myPlayers
+  // Player modal pool: GIVE = my roster, GET = selected partner's roster.
+  const getModalPlayers = partnerId !== null ? partnerPlayers : []
 
   return (
     <div style={{ padding: '20px 24px' }}>
@@ -723,7 +726,13 @@ export function Trades() {
           picks={getPicks}
           onRemovePlayer={id => { setGetPlayers(p => p.filter(x => x.player_id !== id)); setAnalysis(null) }}
           onRemovePick={id => { setGetPicks(p => p.filter(x => x.id !== id)); setAnalysis(null) }}
-          onAddPlayer={() => setPlayerModal('get')}
+          onAddPlayer={() => {
+            if (partnerId === null) {
+              setAnalyzeError('Select a trade partner before adding GET players.')
+              return
+            }
+            setPlayerModal('get')
+          }}
           onAddPick={() => setPickModal('get')}
         />
       </div>
@@ -732,15 +741,15 @@ export function Trades() {
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <button
           onClick={runAnalysis}
-          disabled={!hasAssets || analyzing}
+          disabled={!canAnalyze || analyzing}
           style={{
             flex: 1, padding: '11px 0',
-            background: hasAssets && !analyzing ? C.cyan : C.border,
+            background: canAnalyze && !analyzing ? C.cyan : C.border,
             border: 'none', borderRadius: 2,
-            cursor: hasAssets && !analyzing ? 'pointer' : 'default',
+            cursor: canAnalyze && !analyzing ? 'pointer' : 'default',
             fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800,
             fontSize: 17, letterSpacing: '0.08em',
-            color: hasAssets && !analyzing ? C.bg : C.muted,
+            color: canAnalyze && !analyzing ? C.bg : C.muted,
             transition: 'background 0.12s',
           }}
         >
@@ -806,6 +815,16 @@ export function Trades() {
                   </div>
                 </div>
               </div>
+              {analysis.data_quality === 'DEGRADED' && analysis.warnings.length > 0 && (
+                <div style={{
+                  background: C.bg, border: `1px solid ${C.amber}55`,
+                  borderLeft: `3px solid ${C.amber}`, borderRadius: 2,
+                  color: C.amber, fontSize: 11, fontFamily: "'DM Mono', monospace",
+                  padding: '8px 10px', marginBottom: 12,
+                }}>
+                  {analysis.warnings.join(' · ')}
+                </div>
+              )}
 
               <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>

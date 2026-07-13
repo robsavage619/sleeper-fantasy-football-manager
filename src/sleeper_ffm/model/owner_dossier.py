@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass, field
 
 from sleeper_ffm.api.routers.roster import _build_player_rows
-from sleeper_ffm.config import DEFAULT_VALUE_SEASON
+from sleeper_ffm.config import DEFAULT_VALUE_SEASON, DRAFT_ID
 from sleeper_ffm.model.owner_profile import _classify
 from sleeper_ffm.model.valuation import build_player_assets
 from sleeper_ffm.sleeper.client import SleeperClient
@@ -210,6 +210,7 @@ def build_dossier(roster_id: int, season: int = DEFAULT_VALUE_SEASON) -> OwnerDo
         users = c.users()
         sleeper_players = c.players()
         picks = c.traded_picks()
+        draft = c.draft(DRAFT_ID)
 
     roster = next((r for r in rosters if r.roster_id == roster_id), None)
     if roster is None:
@@ -241,7 +242,8 @@ def build_dossier(roster_id: int, season: int = DEFAULT_VALUE_SEASON) -> OwnerDo
     data_seasons = {p.season for p in picks if int(p.season) >= current_year}
     data_seasons |= {str(current_year), str(current_year + 1)}
     live_seasons = sorted(data_seasons)
-    live_rounds = sorted({p.round for p in picks}) or [1, 2, 3, 4]
+    draft_rounds = int(draft.settings.get("rounds", 4) or 4)
+    live_rounds = list(range(1, draft_rounds + 1))
 
     # Slots this roster has traded away (their original pick, now held by others)
     traded_away_set = {

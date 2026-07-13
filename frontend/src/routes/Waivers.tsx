@@ -68,7 +68,7 @@ export function Waivers() {
             fontWeight: 600,
           }}
         >
-          ⚠ All waiver claims require explicit approval before submission
+          READ-ONLY RECOMMENDATIONS · NO CLAIMS ARE SUBMITTED FROM THIS APP
         </span>
       </div>
 
@@ -89,7 +89,7 @@ export function Waivers() {
             className="tracking-[0.3em] uppercase"
             style={{ fontSize: 11, color: '#6a8098' }}
           >
-            FAAB $500 · TUESDAY · ⚠ APPROVAL REQUIRED
+            FAAB $500 · TUESDAY · READ-ONLY
           </span>
         </div>
       </div>

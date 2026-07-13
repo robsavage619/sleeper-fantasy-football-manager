@@ -142,14 +142,10 @@ def _build_trade_event(
     waiver_budget = txn.get("waiver_budget") or []
     roster_ids = txn.get("roster_ids") or []
 
-    partner_season_roster: int | None = next(
-        (r for r in roster_ids if r != this_roster), None
-    )
+    partner_season_roster: int | None = next((r for r in roster_ids if r != this_roster), None)
 
     received: list[str] = [
-        _player_name(pid, players_dump)
-        for pid, rid in adds.items()
-        if rid == this_roster
+        _player_name(pid, players_dump) for pid, rid in adds.items() if rid == this_roster
     ]
     received += [
         f"{p.get('season')} R{p.get('round')}"
@@ -157,9 +153,7 @@ def _build_trade_event(
         if p.get("owner_id") == this_roster
     ]
     received += [
-        f"${b.get('amount', 0)} FAAB"
-        for b in waiver_budget
-        if b.get("receiver") == this_roster
+        f"${b.get('amount', 0)} FAAB" for b in waiver_budget if b.get("receiver") == this_roster
     ]
 
     sent: list[str] = [
@@ -172,11 +166,7 @@ def _build_trade_event(
         for p in draft_picks
         if p.get("previous_owner_id") == this_roster
     ]
-    sent += [
-        f"${b.get('amount', 0)} FAAB"
-        for b in waiver_budget
-        if b.get("sender") == this_roster
-    ]
+    sent += [f"${b.get('amount', 0)} FAAB" for b in waiver_budget if b.get("sender") == this_roster]
 
     partner_current: int | None = (
         season_roster_to_current.get(partner_season_roster)
@@ -446,9 +436,7 @@ def _behavioral_tags(r: _RawStats, m_tps: float, m_fps: float, m_adds: float) ->
 def _approachability(r: _RawStats, last_season: str | None, newest: str | None) -> str:
     """Classify how open the owner is to dealing, from recency and partner spread."""
     stale = (
-        last_season is not None
-        and newest is not None
-        and _years_behind(last_season, newest) > 1
+        last_season is not None and newest is not None and _years_behind(last_season, newest) > 1
     )
     if last_season is None or r.trade_count == 0 or stale:
         return "DORMANT"
@@ -538,9 +526,7 @@ def _finalize(
         trades_per = Counter(t.season for t in acc.trades)
         trades_by_season = [{"season": s, "count": trades_per.get(s, 0)} for s in seasons_asc]
 
-        sizes = [
-            len([a for a in (t.received + t.sent) if "FAAB" not in a]) for t in acc.trades
-        ]
+        sizes = [len([a for a in (t.received + t.sent) if "FAAB" not in a]) for t in acc.trades]
         avg_trade_size = round(sum(sizes) / len(sizes), 1) if sizes else 0.0
 
         last_activity = (

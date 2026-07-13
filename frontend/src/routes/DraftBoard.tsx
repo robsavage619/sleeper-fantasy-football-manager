@@ -150,7 +150,7 @@ function PickTimeline({
             className="tracking-widest uppercase"
             style={{ fontSize: 11, color: 'rgba(201, 51, 40, 0.5)' }}
           >
-            MAKE YOUR SELECTION
+            REVIEW BOARD · DRAFT IN SLEEPER
           </span>
         </motion.div>
       )}

@@ -100,8 +100,9 @@ def _trade_actions(limit: int) -> list[WarRoomAction]:
                 kind="TRADE",
                 priority=max(60, offer.priority),
                 urgency="HIGH" if offer.acceptance_score >= 74 else "MED",
-                title=f"{offer.acceptance_score}% to {offer.partner_name}",
+                title=f"{offer.confidence} fit: {offer.partner_name}",
                 detail=(
+                    f"heuristic score {offer.acceptance_score}/100; "
                     f"{offer.rationale}; give {offer.give_value:.1f}, "
                     f"receive {offer.receive_value:.1f}, delta {offer.value_delta:+.1f}"
                 ),

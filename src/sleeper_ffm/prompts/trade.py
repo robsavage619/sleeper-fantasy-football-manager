@@ -13,70 +13,82 @@ Context packaged:
 
 from __future__ import annotations
 
-import datetime
 import logging
+import re
 from dataclasses import dataclass
 
 from sleeper_ffm.config import DEFAULT_VALUE_SEASON
-from sleeper_ffm.model.dynasty import PlayerAsset, value_player
+from sleeper_ffm.model.dynasty import PickAsset, PlayerAsset, value_pick, value_player
 
 log = logging.getLogger(__name__)
 
-_CURRENT_YEAR: int = datetime.date.today().year
-
-# Trade-specific pick valuations (distinct from value_pick in dynasty.py).
-# Calibrated to trade context: round 1 ≈ a solid WR2, round 4 ≈ a flier.
-_ROUND_BASE_VALUE: dict[int, float] = {
-    1: 80.0,
-    2: 50.0,
-    3: 25.0,
-    4: 10.0,
-}
-_FUTURE_YEAR_DECAY: float = 0.85
+_PICK_RE = re.compile(r"^(?P<season>\d{4})[_-]R?(?P<round>[1-9])(?:[_-](?P<slot>\d+))?$")
 
 
 @dataclass
 class _ParsedPick:
     season: int
     round: int
-    slot: int
+    slot: int | None = None
 
 
 def _parse_pick_id(pick_id: str) -> _ParsedPick:
-    """Parse "2026_2_6" → _ParsedPick(season=2026, round=2, slot=6)."""
-    parts = pick_id.split("_")
-    if len(parts) != 3:
-        raise ValueError(f"expected YEAR_ROUND_SLOT, got {pick_id!r}")
-    return _ParsedPick(season=int(parts[0]), round=int(parts[1]), slot=int(parts[2]))
+    """Parse pick IDs like ``2026_R2``, ``2026_2``, or ``2026_2_6``."""
+    match = _PICK_RE.match(pick_id.strip())
+    if match is None:
+        raise ValueError(f"expected YEAR_RROUND or YEAR_ROUND_SLOT, got {pick_id!r}")
+    round_ = int(match.group("round"))
+    if round_ < 1 or round_ > 4:
+        raise ValueError(f"unsupported draft round {round_} in {pick_id!r}")
+    slot = match.group("slot")
+    return _ParsedPick(
+        season=int(match.group("season")),
+        round=round_,
+        slot=int(slot) if slot else None,
+    )
+
+
+def validate_trade_pick_ids(pick_ids: list[str]) -> list[str]:
+    """Return invalid pick IDs from a proposed trade."""
+    invalid: list[str] = []
+    for pick_id in pick_ids:
+        try:
+            _parse_pick_id(pick_id)
+        except ValueError:
+            invalid.append(pick_id)
+    return invalid
 
 
 def value_trade_pick(pick_id: str) -> float:
-    """Value a pick using trade-specific round values with future-year decay.
-
-    Rounds: 1->80, 2->50, 3->25, 4->10. Each year in the future: x0.85.
+    """Value a pick using the shared dynasty pick currency.
 
     Args:
-        pick_id: "YEAR_ROUND_SLOT" format, e.g. "2026_2_6".
+        pick_id: Pick ID, e.g. ``"2026_R2"`` or ``"2026_2_6"``.
 
     Returns:
-        Dynasty value float; 0.0 on parse failure.
+        Dynasty value float.
+
+    Raises:
+        ValueError: If the pick ID cannot be parsed.
     """
-    try:
-        p = _parse_pick_id(pick_id)
-    except (ValueError, IndexError):
-        log.warning("could not parse pick_id %r, defaulting to 0", pick_id)
-        return 0.0
-    base = _ROUND_BASE_VALUE.get(p.round, 5.0)
-    years_ahead = max(0, p.season - _CURRENT_YEAR)
-    return round(base * (_FUTURE_YEAR_DECAY**years_ahead), 2)
+    p = _parse_pick_id(pick_id)
+    return value_pick(
+        PickAsset(
+            season=str(p.season),
+            round=p.round,
+            original_owner_id=0,
+            current_owner_id=0,
+        )
+    )
 
 
 def _pick_label(pick_id: str) -> str:
-    """Format "2026_2_6" → "2026 Round 2 (slot 6)"."""
+    """Format a pick ID into a human-readable label."""
     try:
         p = _parse_pick_id(pick_id)
-        return f"{p.season} Round {p.round} (slot {p.slot})"
-    except (ValueError, IndexError):
+        slot = f" (slot {p.slot})" if p.slot else ""
+        return f"{p.season} Round {p.round}{slot}"
+    except ValueError:
         return pick_id
 
 

@@ -88,11 +88,10 @@ def build_owner_profiles(league_id: str = LEAGUE_ID) -> list[OwnerProfile]:
             for p in picks
             if p.roster_id == roster.roster_id and p.owner_id != roster.roster_id
         }
-        own_held = sum(
-            1 for s in live_seasons for r in live_rounds if (s, r) not in traded_away
-        )
+        own_held = sum(1 for s in live_seasons for r in live_rounds if (s, r) not in traded_away)
         foreign_held = sum(
-            1 for p in picks
+            1
+            for p in picks
             if p.owner_id == roster.roster_id
             and p.roster_id != roster.roster_id
             and p.season in live_seasons

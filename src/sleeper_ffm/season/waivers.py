@@ -93,18 +93,20 @@ def analyze_waivers(
         faab = _faab_estimate(priority, faab_budget)
         rationale = _build_rationale(adds, drops, age, pos)
 
-        candidates.append(WaiverCandidate(
-            player_id=pid,
-            name=name,
-            position=pos,
-            age=age,
-            team=team,
-            trending_adds=adds,
-            trending_drops=drops,
-            add_priority=priority,
-            faab_estimate=faab,
-            rationale=rationale,
-        ))
+        candidates.append(
+            WaiverCandidate(
+                player_id=pid,
+                name=name,
+                position=pos,
+                age=age,
+                team=team,
+                trending_adds=adds,
+                trending_drops=drops,
+                add_priority=priority,
+                faab_estimate=faab,
+                rationale=rationale,
+            )
+        )
 
     return sorted(candidates, key=lambda c: c.add_priority, reverse=True)
 

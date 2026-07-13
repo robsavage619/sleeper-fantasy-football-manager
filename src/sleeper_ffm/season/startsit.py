@@ -52,6 +52,8 @@ class StartSitRecommendation:
     total_projected_pts: float
     current_projected_pts: float
     prompt: str
+    data_quality: str
+    warnings: list[str]
 
 
 # ---------------------------------------------------------------------------
@@ -451,6 +453,11 @@ def build_startsit(week: int, season: int) -> StartSitRecommendation:
     # nflverse weekly FP lookup
     weekly_fp_map = _load_weekly_fp_map(season, week)
     log.info("startsit: nflverse data for %d players", len(weekly_fp_map))
+    warnings: list[str] = []
+    if not weekly_fp_map:
+        warnings.append(
+            f"No weekly nflverse projection data available for {season} before week {week}."
+        )
 
     # Dynasty assets for proxy fallback
     try:
@@ -458,12 +465,22 @@ def build_startsit(week: int, season: int) -> StartSitRecommendation:
         dynasty_by_id = {p.player_id: p for p in dynasty_list}
     except Exception as exc:
         log.warning("Dynasty assets unavailable: %s", exc)
+        warnings.append(
+            "Dynasty value fallback unavailable; some players may use default projections."
+        )
         dynasty_by_id = {}
 
     # Build projections for all roster players
     projections = [
         _project_player(pid, sleeper_players, weekly_fp_map, dynasty_by_id) for pid in skill_ids
     ]
+    default_count = sum(1 for p in projections if p.source == "default")
+    proxy_count = sum(1 for p in projections if p.source == "dynasty_value_proxy")
+    if default_count:
+        warnings.append(f"{default_count} player projection(s) used the 5.0 point default.")
+    if proxy_count:
+        warnings.append(f"{proxy_count} player projection(s) used dynasty-value proxy fallback.")
+    data_quality = "FULL" if not warnings else "DEGRADED"
 
     # Optimal lineup
     optimal = _solve_lineup(projections)
@@ -490,4 +507,6 @@ def build_startsit(week: int, season: int) -> StartSitRecommendation:
         total_projected_pts=total_proj,
         current_projected_pts=current_proj,
         prompt=prompt,
+        data_quality=data_quality,
+        warnings=warnings,
     )

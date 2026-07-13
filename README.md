@@ -6,8 +6,8 @@ AI dynasty fantasy football GM for Sleeper. Scoring-aware valuation, a dynasty a
 reasons → findings post back → dashboard renders). No runtime LLM key in the backend.
 
 League: *The League* — 2026 dynasty, full PPR with bonuses, 10 teams, 1QB / no K / no DST.
-Writes to Sleeper drive the real web UI (no stored credentials) and are always confirm-gated;
-waiver moves require explicit approval.
+The app is currently read-only: it recommends, explains, and logs decisions, but does not
+submit Sleeper transactions.
 
 ## Layout
 
@@ -16,7 +16,7 @@ waiver moves require explicit approval.
 - `src/sleeper_ffm/nflverse/` — historical stats ingestion (`nfl-data-py` → parquet).
 - `src/sleeper_ffm/model/` — valuation, trends, projections, dynasty assets, pick market, owner profiles.
 - `src/sleeper_ffm/prompts/`, `reasoning/` — prompt-builders + the findings store Claude Code writes to.
-- `src/sleeper_ffm/act/`, `schedule/` — Playwright write layer (confirm-gated) + local scheduler.
+- `src/sleeper_ffm/act/`, `schedule/` — reserved for future confirm-gated actions.
 - `frontend/` — React/Vite/Tailwind dashboard.
 
 ## Dev

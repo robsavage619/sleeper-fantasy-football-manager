@@ -1,8 +1,21 @@
 const BASE = '/api'
 
+async function errorMessage(res: Response, path: string): Promise<string> {
+  try {
+    const payload = await res.json()
+    const detail = payload?.detail
+    if (typeof detail === 'string') return `${res.status} ${res.statusText}: ${detail}`
+    if (detail?.message) return `${res.status} ${res.statusText}: ${detail.message}`
+    if (detail) return `${res.status} ${res.statusText}: ${JSON.stringify(detail)}`
+  } catch {
+    // Fall through to generic message.
+  }
+  return `${res.status} ${res.statusText}: ${path}`
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`)
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${path}`)
+  if (!res.ok) throw new Error(await errorMessage(res, path))
   return res.json() as Promise<T>
 }
 
@@ -12,7 +25,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${path}`)
+  if (!res.ok) throw new Error(await errorMessage(res, path))
   return res.json() as Promise<T>
 }
 
@@ -301,6 +314,8 @@ export type TradeAnalysis = {
   get_value: number
   delta: number
   verdict: 'ACCEPT' | 'DECLINE' | 'CLOSE'
+  data_quality: 'FULL' | 'DEGRADED'
+  warnings: string[]
   prompt: string
 }
 
@@ -340,6 +355,8 @@ export type StartSitRec = {
   total_projected_pts: number
   current_projected_pts: number
   prompt: string
+  data_quality: 'FULL' | 'DEGRADED'
+  warnings: string[]
 }
 
 export type WarRoomAction = {

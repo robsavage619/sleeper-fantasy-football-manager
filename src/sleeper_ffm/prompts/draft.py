@@ -101,10 +101,7 @@ def _format_roster(roster: RosterAssets) -> str:
     lines = []
     for p in sorted(roster.players, key=lambda x: x.position):
         taxi = " [taxi]" if p.is_taxi else ""
-        lines.append(
-            f"  {p.name} ({p.position}, {p.age:.0f}y) — "
-            f"FPAR {p.current_fpar:.0f}{taxi}"
-        )
+        lines.append(f"  {p.name} ({p.position}, {p.age:.0f}y) — FPAR {p.current_fpar:.0f}{taxi}")
     return "\n".join(lines)
 
 
@@ -114,8 +111,7 @@ def _format_board(players: list[PlayerAsset]) -> str:
     lines = []
     for i, p in enumerate(players, 1):
         lines.append(
-            f"  {i:2}. {p.name:24s} {p.position:3s}  age {p.age:.0f}"
-            f"  FPAR {p.current_fpar:5.1f}"
+            f"  {i:2}. {p.name:24s} {p.position:3s}  age {p.age:.0f}  FPAR {p.current_fpar:5.1f}"
         )
     return "\n".join(lines)
 

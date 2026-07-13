@@ -137,10 +137,10 @@ def value_player(player: PlayerAsset) -> float:
     pos = player.position
     peak_age = _PEAK_AGE.get(pos, 26)
     decay = _DECAY_RATE.get(pos, 0.88)
-    replacement = _REPLACEMENT_FPAR.get(pos, 8.0)
 
-    # Current FPAR above replacement (clamp at 0 — no negative dynasty value)
-    base_fpar = max(0.0, player.current_fpar - replacement)
+    # ``current_fpar`` is already fantasy points above replacement. Do not
+    # subtract replacement again here; valuation.py owns that normalization.
+    base_fpar = max(0.0, player.current_fpar)
 
     # How far past peak is the player?
     seasons_past_peak = max(0.0, player.age - peak_age)
@@ -178,10 +178,10 @@ def value_pick(pick: PickAsset) -> float:
     # Base value by round — calibrated to approximate player values at each slot.
     # Round 1 mid-pick ≈ solid WR2/RB2 dynasty value; round 4 ≈ flier.
     round_base: dict[int, float] = {
-        1: 55.0,
-        2: 28.0,
-        3: 14.0,
-        4: 6.0,
+        1: 80.0,
+        2: 50.0,
+        3: 25.0,
+        4: 10.0,
     }
     base = round_base.get(pick.round, 4.0)
 

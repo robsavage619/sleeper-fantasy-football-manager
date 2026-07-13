@@ -12,8 +12,8 @@ Usage pattern (called by the CLI ``sffm draft``):
     print(prompt)
     # Paste into Claude Code → Claude posts finding → dashboard renders
 
-The assistant never submits a pick. Pick submission is in ``act/playwright_driver.py``
-(confirm-gated separately).
+The assistant never submits a pick. The app is read-only until a confirm-gated action
+layer is implemented.
 """
 
 from __future__ import annotations

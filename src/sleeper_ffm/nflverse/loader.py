@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import cast
 
 import nfl_data_py as nfl
 import polars as pl
@@ -52,7 +53,7 @@ def load_id_map(force: bool = False) -> pl.DataFrame:
 
     log.info("id_map: downloading from nflverse...")
     df_raw = nfl.import_ids()
-    df = pl.from_pandas(df_raw)
+    df = cast(pl.DataFrame, pl.from_pandas(df_raw))
     dest.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(dest)
     log.info("id_map: %d rows written to %s", len(df), dest)
@@ -93,7 +94,7 @@ def load_weekly(
     if to_fetch:
         log.info("weekly: fetching seasons %s...", to_fetch)
         df_raw = nfl.import_weekly_data(to_fetch)
-        df_new = pl.from_pandas(df_raw)
+        df_new = cast(pl.DataFrame, pl.from_pandas(df_raw))
         for yr in to_fetch:
             yr_df = df_new.filter(pl.col("season") == yr)
             dest = _weekly_path(yr)
@@ -137,7 +138,7 @@ def load_snaps(
 
     log.info("snaps: fetching seasons %s...", seasons)
     df_raw = nfl.import_snap_counts(seasons)
-    df = pl.from_pandas(df_raw)
+    df = cast(pl.DataFrame, pl.from_pandas(df_raw))
     dest.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(dest)
     log.info("snaps: %d rows written", len(df))
@@ -170,7 +171,7 @@ def load_seasonal(
 
     log.info("seasonal: fetching seasons %s...", seasons)
     df_raw = nfl.import_seasonal_data(seasons)
-    df = pl.from_pandas(df_raw)
+    df = cast(pl.DataFrame, pl.from_pandas(df_raw))
     dest.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(dest)
     log.info("seasonal: %d rows written", len(df))
@@ -191,7 +192,7 @@ def load_schedules(
     dest = NFLVERSE_DIR / "schedules.parquet"
     if dest.exists() and not force:
         return pl.read_parquet(dest)
-    df = pl.from_pandas(nfl.import_schedules(seasons))
+    df = cast(pl.DataFrame, pl.from_pandas(nfl.import_schedules(seasons)))
     dest.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(dest)
     return df
@@ -206,7 +207,7 @@ def load_rosters(
     dest = NFLVERSE_DIR / "rosters.parquet"
     if dest.exists() and not force:
         return pl.read_parquet(dest)
-    df = pl.from_pandas(nfl.import_weekly_rosters(seasons))
+    df = cast(pl.DataFrame, pl.from_pandas(nfl.import_weekly_rosters(seasons)))
     dest.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(dest)
     return df

@@ -21,14 +21,19 @@ def test_young_wr_higher_than_old_wr() -> None:
 
 
 def test_zero_fpar_returns_zero() -> None:
-    # A player at replacement level has no dynasty value
-    p = _player("RB", age=25, fpar=8.0)  # exactly replacement
+    # current_fpar is already points above replacement.
+    p = _player("RB", age=25, fpar=0.0)
     assert value_player(p) == 0.0
 
 
 def test_below_replacement_clamps_zero() -> None:
-    p = _player("RB", age=29, fpar=3.0)  # below replacement
+    p = _player("RB", age=29, fpar=-3.0)
     assert value_player(p) == 0.0
+
+
+def test_current_fpar_is_not_replacement_subtracted_twice() -> None:
+    p = _player("RB", age=24, fpar=8.0)
+    assert value_player(p) > 0.0
 
 
 def test_taxi_penalty_applied() -> None:
@@ -48,6 +53,8 @@ def test_rb_decays_faster_than_qb() -> None:
 def test_pick_round1_more_than_round4() -> None:
     r1 = PickAsset(season="2026", round=1, original_owner_id=1, current_owner_id=1)
     r4 = PickAsset(season="2026", round=4, original_owner_id=1, current_owner_id=1)
+    assert value_pick(r1) == 80.0
+    assert value_pick(r4) == 10.0
     assert value_pick(r1) > value_pick(r4)
 
 

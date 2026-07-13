@@ -58,10 +58,7 @@ def id_map() -> pl.DataFrame:
     df = pl.read_parquet(path)
     # sleeper_id comes from pandas as Float64 (NaN for missing); cast to int string
     return df.with_columns(
-        pl.col("sleeper_id")
-        .cast(pl.Int64, strict=False)
-        .cast(pl.Utf8)
-        .alias("sleeper_id_str")
+        pl.col("sleeper_id").cast(pl.Int64, strict=False).cast(pl.Utf8).alias("sleeper_id_str")
     )
 
 
@@ -69,9 +66,7 @@ def id_map() -> pl.DataFrame:
 def recon_week(weekly_2024: pl.DataFrame, id_map: pl.DataFrame) -> dict[str, float]:
     """Score every player in week 10 via the engine; return {sleeper_id: engine_pts}."""
     scoring = load_scoring()
-    week_df = weekly_2024.filter(
-        (pl.col("season") == 2024) & (pl.col("week") == _RECON_WEEK)
-    )
+    week_df = weekly_2024.filter((pl.col("season") == 2024) & (pl.col("week") == _RECON_WEEK))
     # Join nflverse gsis_id → sleeper_id
     joined = week_df.join(
         id_map.select(["gsis_id", "sleeper_id_str"]),
@@ -115,9 +110,7 @@ def test_scoring_reconciliation(recon_week: dict[str, float]) -> None:
         official.update({str(pid): float(pts) for pid, pts in pp.items()})
 
     candidates = {
-        pid: pts
-        for pid, pts in official.items()
-        if pts >= _MIN_PTS and pid in recon_week
+        pid: pts for pid, pts in official.items() if pts >= _MIN_PTS and pid in recon_week
     }
 
     if not candidates:
@@ -137,13 +130,19 @@ def test_scoring_reconciliation(recon_week: dict[str, float]) -> None:
     coverage = matched / total if total else 0.0
     log.info(
         "Reconciliation: %d/%d players within ±%.1f pts (%.0f%%)",
-        matched, total, _TOLERANCE, coverage * 100,
+        matched,
+        total,
+        _TOLERANCE,
+        coverage * 100,
     )
 
     for pid, off, eng, diff in gaps:
         log.warning(
             "  player %s: sleeper=%.2f engine=%.2f diff=%.2f",
-            pid, off, eng, diff,
+            pid,
+            off,
+            eng,
+            diff,
         )
 
     # Require ≥80% of players to match within tolerance

@@ -30,13 +30,19 @@ for _d in (DATA_DIR, CACHE_DIR, NFLVERSE_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 
-def _latest_cached_weekly_season() -> int | None:
-    cached_seasons = [
+def cached_weekly_seasons() -> list[int]:
+    """Return cached nflverse weekly seasons available on disk."""
+    return sorted(
         int(path.stem)
         for path in (NFLVERSE_DIR / "weekly").glob("*.parquet")
         if path.stem.isdigit()
-    ]
+    )
+
+
+def _latest_cached_weekly_season() -> int | None:
+    cached_seasons = cached_weekly_seasons()
     return max(cached_seasons) if cached_seasons else None
 
 
-DEFAULT_VALUE_SEASON = _latest_cached_weekly_season() or LATEST_COMPLETED_NFL_SEASON
+PREFERRED_VALUE_SEASON = LATEST_COMPLETED_NFL_SEASON
+DEFAULT_VALUE_SEASON = _latest_cached_weekly_season() or PREFERRED_VALUE_SEASON

@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
+from numbers import Real
 
 from sleeper_ffm.config import DATA_DIR
 
@@ -70,13 +71,15 @@ def stats_from_nflverse(row: Mapping[str, object]) -> dict[str, float]:
     """
     stats: dict[str, float] = {}
     for col, key in _NFLVERSE_TO_SLEEPER.items():
-        val = row.get(col)
+        val = _as_float(row.get(col))
         if val is not None and not _is_nan(val):
-            stats[key] = stats.get(key, 0.0) + float(val)
+            stats[key] = stats.get(key, 0.0) + val
 
-    fum_lost = sum(
-        float(row[c]) for c in _FUMBLE_LOST_COLS if row.get(c) is not None and not _is_nan(row[c])
-    )
+    fum_lost = 0.0
+    for col in _FUMBLE_LOST_COLS:
+        val = _as_float(row.get(col))
+        if val is not None and not _is_nan(val):
+            fum_lost += val
     if fum_lost:
         stats["fum_lost"] = fum_lost
 
@@ -123,6 +126,20 @@ def _step(stats: dict[str, float], key: str, fires: bool) -> None:
     """Set a step-bonus flag to 1.0 when it fires, unless already supplied by the source."""
     if key not in stats:
         stats[key] = 1.0 if fires else 0.0
+
+
+def _as_float(value: object) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, Real):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            pass
+    log.warning("Ignoring non-numeric stat value: %r", value)
+    return None
 
 
 def _is_nan(val: object) -> bool:

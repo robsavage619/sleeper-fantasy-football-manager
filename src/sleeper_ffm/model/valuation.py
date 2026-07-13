@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import re
+from numbers import Real
 from typing import TYPE_CHECKING
 
 import polars as pl
@@ -145,10 +146,21 @@ def replacement_thresholds(totals: pl.DataFrame) -> dict[str, float]:
         if len(pos_df) >= rank:
             thresholds[pos] = float(pos_df["season_fp"][rank - 1])
         else:
-            # Shallow position (off-season / limited data) — use minimum
-            thresholds[pos] = float(pos_df["season_fp"].min() or 0.0)
+            # Shallow position or limited data: use minimum.
+            thresholds[pos] = _float_or_zero(pos_df["season_fp"].min())
         log.debug("replacement[%s] = %.1f", pos, thresholds[pos])
     return thresholds
+
+
+def _float_or_zero(value: object) -> float:
+    if isinstance(value, Real):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return 0.0
+    return 0.0
 
 
 def _rookie_fpar(search_rank: int) -> float:
