@@ -22,6 +22,7 @@ from sleeper_ffm.api.routers import prospects as prospects_router
 from sleeper_ffm.api.routers import roster as roster_router
 from sleeper_ffm.api.routers import season as season_router
 from sleeper_ffm.api.routers import skill as skill_router
+from sleeper_ffm.api.routers import offers as offers_router
 from sleeper_ffm.api.routers import trades as trades_router
 from sleeper_ffm.reasoning.findings import load_findings_from_disk
 
@@ -61,6 +62,7 @@ def create_app() -> FastAPI:
     app.include_router(picks_router.router)
     app.include_router(skill_router.router)
     app.include_router(actions_router.router)
+    app.include_router(offers_router.router)
     return app
 
 

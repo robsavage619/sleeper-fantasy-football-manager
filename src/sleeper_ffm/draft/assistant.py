@@ -271,12 +271,45 @@ def _scoring_summary(league_id: str = LEAGUE_ID) -> str:
     return "; ".join(parts)
 
 
+def build_all_picks_map(league_id: str = LEAGUE_ID) -> dict[int, list[PickAsset]]:
+    """Fetch all traded future picks and return {current_owner_id: [PickAsset, ...]}.
+
+    Used for positional run detection and pick-inventory context in draft prompts.
+    Teams holding many future picks may reach; teams pick-poor need to draft for value.
+
+    Args:
+        league_id: Sleeper league ID.
+
+    Returns:
+        Dict mapping roster_id to the list of future picks that team currently holds.
+        Falls back to empty dict on any network error.
+    """
+    try:
+        with SleeperClient(league_id=league_id) as c:
+            traded = c.traded_picks()
+    except Exception as exc:
+        log.warning("build_all_picks_map: fetch failed (%s); skipping pick inventory", exc)
+        return {}
+
+    picks_map: dict[int, list[PickAsset]] = {}
+    for tp in traded:
+        pick = PickAsset(
+            season=tp.season,
+            round=tp.round,
+            original_owner_id=tp.roster_id,
+            current_owner_id=tp.owner_id,
+        )
+        picks_map.setdefault(tp.owner_id, []).append(pick)
+    return picks_map
+
+
 def build_pick_prompt(
     board: BoardState,
     pool: list[PlayerAsset],
     traded_picks: list[PickAsset] | None = None,
     top_n: int = 25,
     vault_notes: str = "",
+    market_values: dict[str, float] | None = None,
 ) -> str:
     """Build a structured prompt for Claude Code to reason over the next pick.
 
@@ -286,27 +319,26 @@ def build_pick_prompt(
         traded_picks: Future picks held by my team.
         top_n: How many available players to show in the prompt.
         vault_notes: Optional vault research to inject.
+        market_values: {sleeper_id: fc_value} for steal/reach signals (optional).
 
     Returns:
         Prompt string ready to paste into Claude Code.
     """
     avail = pool[:top_n]
     my_roster = build_my_roster(board, pool, traded_picks)
-
-    # Build all_picks map for positional run detection
-    all_picks: dict[int, list[PickAsset]] = {}  # sparse — draft picks not yet valued
-    # (traded_picks shows future ownership; in-draft picks are dynamic)
-
+    all_picks = build_all_picks_map()
     picks_remaining = board.total_teams - board.pick_in_round
 
     return build_draft_prompt(
         pick_number=board.next_my_pick or board.current_pick_no,
         round_number=board.current_round,
         picks_remaining_in_round=picks_remaining,
+        picks_until_my_turn=board.picks_until_my_turn,
         my_roster=my_roster,
         available_players=avail,
         all_picks=all_picks,
         scoring_summary=_scoring_summary(),
         top_n=top_n,
         vault_notes=vault_notes,
+        market_values=market_values or {},
     )

@@ -366,4 +366,17 @@ def recommend_trade_offers(
             offers.append(offer)
 
     offers.sort(key=lambda offer: (-offer.priority, -offer.acceptance_score, offer.partner_name))
-    return offers[:top]
+    top_offers = offers[:top]
+
+    # Persist to append-only log (timestamp injected by caller to avoid Date.now() issues).
+    try:
+        import dataclasses
+        from datetime import datetime, timezone
+        from sleeper_ffm.model.offer_log import append_offers
+
+        now = datetime.now(timezone.utc).isoformat()
+        append_offers([dataclasses.asdict(o) for o in top_offers], logged_at=now)
+    except Exception as exc:
+        log.warning("recommend_trade_offers: offer log write failed: %s", exc)
+
+    return top_offers
