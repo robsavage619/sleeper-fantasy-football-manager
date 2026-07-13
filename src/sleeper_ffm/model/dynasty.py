@@ -29,8 +29,7 @@ from sleeper_ffm.config import CURRENT_LEAGUE_YEAR
 # factors on a player's current FPAR estimate.
 # ---------------------------------------------------------------------------
 
-# Expected seasons of useful production remaining from peak, by position.
-# (Dynasty value decays fastest for RBs, slowest for QBs.)
+# Age at which each position typically reaches peak production.
 _PEAK_AGE: dict[str, int] = {
     "QB": 27,
     "RB": 24,
@@ -50,16 +49,17 @@ _DECAY_RATE: dict[str, float] = {
     "DEF": 0.90,
 }
 
+# Conservative pre-peak growth rate — how much FPAR grows per season toward peak.
+# Market blend (Phase 1) carries most of the youth premium; this handles the rest.
+_ASCENT_RATE: dict[str, float] = {
+    "QB": 1.05,
+    "RB": 1.04,
+    "WR": 1.06,
+    "TE": 1.06,
+}
+
 # Discount rate applied to future seasons (prefer near-term production).
 _DISCOUNT_RATE: float = 0.12
-
-# Replacement level FPAR for each position (the floor; zero-value baseline).
-_REPLACEMENT_FPAR: dict[str, float] = {
-    "QB": 15.0,
-    "RB": 8.0,
-    "WR": 8.0,
-    "TE": 6.0,
-}
 
 # Seasons to project forward when computing dynasty value.
 _PROJECTION_HORIZON: int = 8
@@ -125,36 +125,55 @@ def value_player(player: PlayerAsset) -> float:
     """Compute a player's dynasty value in FPAR units.
 
     Projects FPAR forward ``_PROJECTION_HORIZON`` seasons using the position's
-    age curve and discounts back to present value.
+    age curve (pre-peak ascent + post-peak decay) and discounts back to present
+    value.
+
+    The model back-solves an implied peak FPAR from current production and career
+    stage, then projects each future season relative to that implied peak. Pre-peak
+    players benefit from growth toward peak; post-peak players see continuous decay.
 
     Args:
         player: A ``PlayerAsset`` with current age and FPAR.
 
     Returns:
-        Dynasty value in FPAR units (higher = more valuable). Zero if the
-        player is at or past their expected useful life.
+        Dynasty value in FPAR units (higher = more valuable). Zero for
+        replacement-level or below-replacement players.
     """
     pos = player.position
     peak_age = _PEAK_AGE.get(pos, 26)
     decay = _DECAY_RATE.get(pos, 0.88)
+    ascent = _ASCENT_RATE.get(pos, 1.05)
 
-    # ``current_fpar`` is already fantasy points above replacement. Do not
-    # subtract replacement again here; valuation.py owns that normalization.
     base_fpar = max(0.0, player.current_fpar)
+    if base_fpar == 0.0:
+        return 0.0
 
-    # How far past peak is the player?
+    # Back-solve implied peak FPAR from current production and career stage.
+    # For post-peak: current = peak * decay^seasons_past → peak = current / decay^n
+    # For pre-peak: peak will be current * ascent^seasons_remaining
     seasons_past_peak = max(0.0, player.age - peak_age)
-    # Adjust base for players already on the decline
-    adjusted_base = base_fpar * (decay**seasons_past_peak)
+    seasons_to_peak = max(0.0, peak_age - player.age)
 
-    # Project forward, discounting each future season
+    if seasons_past_peak > 0:
+        implied_peak = base_fpar / (decay**seasons_past_peak)
+    else:
+        implied_peak = base_fpar * (ascent**seasons_to_peak)
+
+    # Project each future season from implied peak.
+    # seasons_past at projected age = (player.age + 1 + t) - peak_age
     total = 0.0
     for t in range(_PROJECTION_HORIZON):
-        season_fpar = adjusted_base * (decay**t)
+        projected_age = player.age + 1 + t
+        seasons_past = projected_age - peak_age
+        if seasons_past >= 0:
+            season_fpar = implied_peak * (decay**seasons_past)
+        else:
+            # Still pre-peak in projected year: fpar < implied_peak
+            seasons_before = -seasons_past
+            season_fpar = implied_peak / (ascent**seasons_before)
         discount = (1.0 - _DISCOUNT_RATE) ** t
         total += season_fpar * discount
 
-    # Taxi/reserve penalty: young, unproven — apply 20% haircut
     if player.is_taxi:
         total *= 0.80
 

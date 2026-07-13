@@ -14,6 +14,10 @@ _DECAY = 0.85
 _FUTURE_SEASONS = ["2027", "2028"]
 _ALL_ROUNDS = [1, 2, 3, 4]
 
+# FantasyCalc pick values normalized to the same FPAR scale as the model.
+# FC uses a 0-10000 scale; dividing by this factor aligns with model's 0-100 scale.
+_FC_TO_FPAR_SCALE: float = 78.0
+
 
 @dataclass
 class PickMarketSignal:
@@ -27,6 +31,7 @@ class PickMarketSignal:
     signal: str
     rationale: str
     trade_count: int
+    market_source: str  # "fantasycalc" or "trade-frequency"
 
 
 def _model_value(season: str, round_: int) -> float:
@@ -34,12 +39,12 @@ def _model_value(season: str, round_: int) -> float:
     return _BASE[round_] * (_DECAY**years_ahead)
 
 
-def _market_value(season: str, model_val: float, trade_count: int) -> float:
-    years_ahead = max(0, int(season) - _CURRENT_YEAR)
-    if years_ahead == 0:
-        return model_val * 0.95
-    raw = model_val * (0.80 + 0.05 * trade_count)
-    return min(raw, model_val * 1.1)
+def _market_value_from_trades(model_val: float, trade_count: int) -> tuple[float, str]:
+    """Fallback: estimate market value from trade frequency (circular but graceful)."""
+    if trade_count == 0:
+        return model_val * 0.90, "trade-frequency"
+    raw = model_val * (0.80 + 0.05 * min(trade_count, 6))
+    return min(raw, model_val * 1.1), "trade-frequency"
 
 
 def _signal(discount_pct: float) -> str:
@@ -66,9 +71,20 @@ def _rationale(season: str, round_: int, discount_pct: float, trade_count: int, 
 def analyze_pick_market(league_id: str = LEAGUE_ID) -> list[PickMarketSignal]:
     """Return pick market arbitrage signals for all known draft classes.
 
-    Compares model-implied dynasty pick values against market prices inferred
-    from trade frequency. Sorted by abs(discount_pct) descending.
+    Compares model-implied dynasty pick values against FantasyCalc market prices.
+    Falls back to trade-frequency estimation when FantasyCalc is unavailable.
+    Sorted by abs(discount_pct) descending.
     """
+    # Fetch FC pick values first (external ground truth).
+    try:
+        from sleeper_ffm.market.blend import pick_market_values
+
+        fc_picks = pick_market_values()
+        log.info("analyze_pick_market: %d FC pick prices loaded", len(fc_picks))
+    except Exception as exc:
+        log.warning("analyze_pick_market: FC pick fetch failed (%s); using trade-frequency fallback", exc)
+        fc_picks = {}
+
     trade_counts: dict[tuple[str, int], int] = {}
 
     with SleeperClient(league_id=league_id) as client:
@@ -107,8 +123,16 @@ def analyze_pick_market(league_id: str = LEAGUE_ID) -> list[PickMarketSignal]:
 
         count = trade_counts.get((season, round_), 0)
         mv = _model_value(season, round_)
-        mkt = _market_value(season, mv, count)
-        disc = (mkt - mv) / mv
+
+        fc_raw = fc_picks.get((season, round_))
+        if fc_raw is not None:
+            mkt = round(fc_raw / _FC_TO_FPAR_SCALE, 2)
+            source = "fantasycalc"
+        else:
+            mkt, source = _market_value_from_trades(mv, count)
+            mkt = round(mkt, 2)
+
+        disc = (mkt - mv) / mv if mv else 0.0
         sig = _signal(disc)
         rat = _rationale(season, round_, disc, count, sig)
 
@@ -117,11 +141,12 @@ def analyze_pick_market(league_id: str = LEAGUE_ID) -> list[PickMarketSignal]:
                 season=season,
                 round=round_,
                 model_value=round(mv, 2),
-                market_value=round(mkt, 2),
+                market_value=mkt,
                 discount_pct=round(disc, 4),
                 signal=sig,
                 rationale=rat,
                 trade_count=count,
+                market_source=source,
             )
         )
 

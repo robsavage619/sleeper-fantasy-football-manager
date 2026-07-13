@@ -68,9 +68,11 @@ def _score_position_fit(
     partner_ranks = _rank_map(partner)
     league_size = max(partner.league_size, my_dossier.league_size, 1)
 
-    partner_need = max(0, league_size + 1 - partner_ranks.get(give_pos, league_size))
+    # Higher rank = weaker position = more need. Lower rank = stronger = more surplus.
+    # Default: partner unknown rank → assume worst (league_size); my rank → same.
+    partner_need = partner_ranks.get(give_pos, league_size)
     my_surplus = max(0, league_size + 1 - my_ranks.get(give_pos, league_size))
-    my_need = max(0, league_size + 1 - my_ranks.get(receive_pos, league_size))
+    my_need = my_ranks.get(receive_pos, league_size)
     partner_surplus = max(0, league_size + 1 - partner_ranks.get(receive_pos, league_size))
 
     raw = partner_need + my_surplus + my_need + partner_surplus

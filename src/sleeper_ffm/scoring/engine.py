@@ -43,6 +43,10 @@ _NFLVERSE_TO_SLEEPER: dict[str, str] = {
     "receiving_tds": "rec_td",
     "receiving_2pt_conversions": "rec_2pt",
 }
+# Fumbles (recovered by own team still cost -1.0 in Sleeper's "fum" setting).
+# Old nfl_data_py format uses "fumbles"; new stats_player format uses "fumbles_total".
+# They don't coexist in the same row, so mapping both is safe (only one fires per row).
+_FUMBLE_TOTAL_COLS = ("fumbles", "fumbles_total")
 _FUMBLE_LOST_COLS = ("sack_fumbles_lost", "rushing_fumbles_lost", "receiving_fumbles_lost")
 
 
@@ -74,6 +78,15 @@ def stats_from_nflverse(row: Mapping[str, object]) -> dict[str, float]:
         val = _as_float(row.get(col))
         if val is not None and not _is_nan(val):
             stats[key] = stats.get(key, 0.0) + val
+
+    fum_total = 0.0
+    for col in _FUMBLE_TOTAL_COLS:
+        val = _as_float(row.get(col))
+        if val is not None and not _is_nan(val):
+            fum_total += val
+            break  # first matching column wins; they don't coexist in the same row
+    if fum_total:
+        stats["fum"] = fum_total
 
     fum_lost = 0.0
     for col in _FUMBLE_LOST_COLS:

@@ -1,0 +1,17 @@
+# Project-level egress allowlist.
+# Web fetches must target one of these domains (R-S3).
+# Add new entries with a comment explaining the data source.
+
+# nflverse stats (player stats parquets, ID crosswalk, rosters, schedules)
+github.com
+raw.githubusercontent.com
+objects.githubusercontent.com
+
+# Sleeper API (league, rosters, players, transactions)
+api.sleeper.app
+
+# FantasyCalc dynasty player valuations (Phase 1)
+api.fantasycalc.com
+
+# DynastyProcess fallback CSVs (Phase 1)
+dynastyprocess.com

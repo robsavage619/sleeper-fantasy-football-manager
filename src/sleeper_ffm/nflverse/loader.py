@@ -1,6 +1,6 @@
 """nflverse data ingestion pipeline.
 
-Pulls historical NFL stats from ``nfl-data-py`` (nflverse), writes parquet to
+Pulls historical NFL stats from nflverse GitHub releases, writes parquet to
 ``data/nflverse/``, and exposes a single ``ingest(seasons)`` entry point.
 
 Load order matters:
@@ -11,6 +11,11 @@ Load order matters:
 
 All pulls are **idempotent**: existing parquet files are skipped unless ``force=True``.
 Current-season data (latest year) is always refreshed.
+
+URL note: nfl-data-py was archived 2025-09-25 and the old ``player_stats`` release
+tag has no 2025 entry. For 2024+ we fetch directly from the ``stats_player`` release
+tag, which uses a slightly different column schema (normalized on load). Older seasons
+still come from ``nfl_data_py.import_weekly_data`` which targets the working legacy URLs.
 """
 
 from __future__ import annotations
@@ -31,10 +36,36 @@ log = logging.getLogger(__name__)
 # Seasons available in nflverse. 2025 is the latest completed NFL season as of 2026-07.
 _FIRST_SEASON = 2014
 _CURRENT_SEASON = 2025
-_WEEKLY_URL = (
+
+# nfl-data-py legacy URL (works for 2014-2024, dead for 2025+).
+_WEEKLY_URL_LEGACY = (
     "https://github.com/nflverse/nflverse-data/releases/download/player_stats/"
     "player_stats_{season}.parquet"
 )
+
+# New stats_player release tag — per-year weekly parquet, 2024-present.
+# Column schema differs from legacy; _normalize_stats_player() reconciles them.
+_WEEKLY_URL_NEW = (
+    "https://github.com/nflverse/nflverse-data/releases/download/stats_player/"
+    "stats_player_week_{season}.parquet"
+)
+
+# First season where the new stats_player release tag is available.
+_NEW_FORMAT_FIRST_SEASON = 2024
+
+# Column renames needed to bring the new format into alignment with the legacy schema.
+_NEW_FORMAT_RENAMES: dict[str, str] = {
+    "passing_interceptions": "interceptions",
+    "team": "recent_team",
+}
+
+
+def _normalize_stats_player(df: pl.DataFrame) -> pl.DataFrame:
+    """Rename new-format columns to match the legacy nfl_data_py schema."""
+    renames = {k: v for k, v in _NEW_FORMAT_RENAMES.items() if k in df.columns and v not in df.columns}
+    if renames:
+        df = df.rename(renames)
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -98,17 +129,14 @@ def load_weekly(
             to_fetch.append(yr)
 
     for yr in to_fetch:
-        try:
-            log.info("weekly/%d: fetching...", yr)
-            df_raw = nfl.import_weekly_data([yr])
-            yr_df = cast(pl.DataFrame, pl.from_pandas(df_raw))
-            dest = _weekly_path(yr)
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            yr_df.write_parquet(dest)
-            log.info("weekly/%d: %d rows written", yr, len(yr_df))
-            frames.append(yr_df)
-        except (HTTPError, URLError, OSError) as exc:
-            log.warning("weekly/%d: unavailable from nflverse: %s", yr, exc)
+        yr_df = _fetch_weekly_season(yr)
+        if yr_df is None:
+            continue
+        dest = _weekly_path(yr)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        yr_df.write_parquet(dest)
+        log.info("weekly/%d: %d rows written", yr, len(yr_df))
+        frames.append(yr_df)
 
     if not frames:
         return _empty_weekly_frame()
@@ -119,9 +147,35 @@ def _weekly_path(season: int) -> Path:
     return NFLVERSE_DIR / "weekly" / f"{season}.parquet"
 
 
+def _fetch_weekly_season(year: int) -> pl.DataFrame | None:
+    """Fetch one season's weekly data, trying the new stats_player format first for 2024+."""
+    if year >= _NEW_FORMAT_FIRST_SEASON:
+        url = _WEEKLY_URL_NEW.format(season=year)
+        try:
+            log.info("weekly/%d: fetching from stats_player release...", year)
+            df = pl.read_parquet(url)
+            df = _normalize_stats_player(df)
+            log.info("weekly/%d: %d rows (new format)", year, len(df))
+            return df
+        except Exception as exc:
+            log.warning("weekly/%d: stats_player URL failed (%s); falling back to legacy", year, exc)
+
+    try:
+        log.info("weekly/%d: fetching via nfl_data_py...", year)
+        df_raw = nfl.import_weekly_data([year])
+        df = cast(pl.DataFrame, pl.from_pandas(df_raw))
+        log.info("weekly/%d: %d rows (legacy format)", year, len(df))
+        return df
+    except Exception as exc:
+        log.warning("weekly/%d: unavailable from nflverse: %s", year, exc)
+        return None
+
+
 def weekly_source_url(season: int) -> str:
-    """Return the nflverse weekly parquet URL for a season."""
-    return _WEEKLY_URL.format(season=season)
+    """Return the preferred nflverse weekly parquet URL for a season."""
+    if season >= _NEW_FORMAT_FIRST_SEASON:
+        return _WEEKLY_URL_NEW.format(season=season)
+    return _WEEKLY_URL_LEGACY.format(season=season)
 
 
 def weekly_source_available(season: int, timeout: float = 3.0) -> bool:
