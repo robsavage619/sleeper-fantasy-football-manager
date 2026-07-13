@@ -96,6 +96,18 @@ def test_roster_total_value() -> None:
     assert roster.total_value > 0
 
 
+def test_pre_peak_younger_wr_higher_than_older_same_fpar() -> None:
+    young = _player("WR", age=22, fpar=50)
+    older = _player("WR", age=24, fpar=50)
+    assert value_player(young) > value_player(older)
+
+
+def test_age_ascent_not_inverted_for_rb() -> None:
+    young_rb = _player("RB", age=23, fpar=40)
+    old_rb = _player("RB", age=25, fpar=40)
+    assert value_player(young_rb) > value_player(old_rb)
+
+
 def test_asset_table_sorted_descending() -> None:
     roster = RosterAssets(
         roster_id=1,

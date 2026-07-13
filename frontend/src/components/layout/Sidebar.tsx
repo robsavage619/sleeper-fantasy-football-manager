@@ -1,5 +1,15 @@
 import { NavLink } from 'react-router-dom'
-import { BarChart2, Users, Zap, ArrowLeftRight, TrendingUp, Brain, Telescope, FileText } from 'lucide-react'
+import {
+  BarChart2,
+  Users,
+  Zap,
+  ArrowLeftRight,
+  TrendingUp,
+  Brain,
+  Telescope,
+  FileText,
+  Award,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 const NAV: Array<{ to: string; label: string; icon: LucideIcon }> = [
@@ -9,6 +19,7 @@ const NAV: Array<{ to: string; label: string; icon: LucideIcon }> = [
   { to: '/trades', label: 'Trades', icon: ArrowLeftRight },
   { to: '/waivers', label: 'Waivers', icon: TrendingUp },
   { to: '/owners', label: 'GM Profiles', icon: Brain },
+  { to: '/report-card', label: 'Report Card', icon: Award },
   { to: '/prospects', label: 'Prospects', icon: Telescope },
   { to: '/narrative', label: 'War Room Brief', icon: FileText },
 ]

@@ -8,6 +8,7 @@ import { Roster } from '@/routes/Roster'
 import { Trades } from '@/routes/Trades'
 import { Waivers } from '@/routes/Waivers'
 import { Owners } from '@/routes/Owners'
+import { ReportCard } from '@/routes/ReportCard'
 import { Prospects } from '@/routes/Prospects'
 import { Narrative } from '@/routes/Narrative'
 import { api } from '@/lib/api'
@@ -71,6 +72,7 @@ export function App() {
                 <Route path="/trades" element={<Trades />} />
                 <Route path="/waivers" element={<Waivers />} />
                 <Route path="/owners" element={<Owners />} />
+                <Route path="/report-card" element={<ReportCard />} />
                 <Route path="/prospects" element={<Prospects />} />
                 <Route path="/narrative" element={<Narrative />} />
               </Routes>

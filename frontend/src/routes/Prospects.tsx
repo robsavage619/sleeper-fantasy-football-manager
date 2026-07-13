@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { api } from '@/lib/api'
 import type { ProspectProfile } from '@/lib/api'
+import { ProspectScoutingDrawer } from '@/components/ProspectScoutingDrawer'
 
 const POS_COLOR: Record<string, string> = {
   QB: '#e05030',
@@ -14,7 +15,7 @@ const POS_COLOR: Record<string, string> = {
 const POS_FILTER = ['ALL', 'QB', 'RB', 'WR', 'TE'] as const
 type Filter = (typeof POS_FILTER)[number]
 
-const TABLE_COLS = ['#', 'PLAYER', 'POS', 'COLLEGE', 'AGE', 'TGT%', 'YPR', 'RECRUIT', 'SCORE']
+const TABLE_COLS = ['#', 'PLAYER', 'POS', 'COLLEGE', 'AGE', 'USG%', 'YPR', 'RECRUIT', 'SCORE']
 
 function ScoreBar({ value }: { value: number }) {
   const color = value > 80 ? '#c93328' : value >= 60 ? '#d4860c' : '#00b8cc'
@@ -39,9 +40,17 @@ function Stars({ count }: { count: number }) {
   )
 }
 
-function ProspectRow({ prospect, index }: { prospect: ProspectProfile; index: number }) {
+function ProspectRow({
+  prospect,
+  index,
+  onOpen,
+}: {
+  prospect: ProspectProfile
+  index: number
+  onOpen: (prospect: ProspectProfile) => void
+}) {
   const posColor = POS_COLOR[prospect.position] ?? '#6a8098'
-  const showTgt = prospect.position === 'WR' || prospect.position === 'TE'
+  const showUsage = prospect.position === 'WR' || prospect.position === 'TE'
 
   return (
     <motion.tr
@@ -49,6 +58,8 @@ function ProspectRow({ prospect, index }: { prospect: ProspectProfile; index: nu
       initial={{ opacity: 0, x: -6 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: index * 0.014 }}
+      onClick={() => onOpen(prospect)}
+      style={{ cursor: 'pointer' }}
     >
       <td
         className="py-2.5 pl-3 pr-2"
@@ -104,10 +115,10 @@ function ProspectRow({ prospect, index }: { prospect: ProspectProfile; index: nu
           fontSize: 13,
           fontFamily: "'DM Mono', monospace",
           width: 60,
-          color: showTgt ? '#1a9b5e' : '#2d4060',
+          color: showUsage ? '#1a9b5e' : '#2d4060',
         }}
       >
-        {showTgt ? `${(prospect.target_share * 100).toFixed(1)}%` : '—'}
+        {showUsage ? `${(prospect.usage_rate * 100).toFixed(1)}%` : '—'}
       </td>
       <td
         className="py-2.5 px-3 tabular-nums"
@@ -118,7 +129,7 @@ function ProspectRow({ prospect, index }: { prospect: ProspectProfile; index: nu
           width: 60,
         }}
       >
-        {showTgt && prospect.yards_per_reception > 0 ? prospect.yards_per_reception.toFixed(1) : '—'}
+        {showUsage && prospect.yards_per_reception > 0 ? prospect.yards_per_reception.toFixed(1) : '—'}
       </td>
       <td className="py-2.5 px-3" style={{ width: 100, whiteSpace: 'nowrap' }}>
         {prospect.recruiting_rank != null ? (
@@ -144,9 +155,13 @@ function ProspectRow({ prospect, index }: { prospect: ProspectProfile; index: nu
   )
 }
 
+// The rookie draft class currently on the clock = current calendar year.
+const CURRENT_DRAFT_CLASS = new Date().getFullYear()
+
 export function Prospects() {
   const [filter, setFilter] = useState<Filter>('ALL')
-  const [year, setYear] = useState(2025)
+  const [year, setYear] = useState(CURRENT_DRAFT_CLASS)
+  const [selected, setSelected] = useState<ProspectProfile | null>(null)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['prospects', year],
@@ -205,7 +220,7 @@ export function Prospects() {
 
         {/* Year toggle */}
         <div className="flex gap-1 ml-4">
-          {[2025, 2026].map((y) => (
+          {[CURRENT_DRAFT_CLASS - 1, CURRENT_DRAFT_CLASS].map((y) => (
             <button
               key={y}
               onClick={() => setYear(y)}
@@ -311,7 +326,7 @@ export function Prospects() {
           </thead>
           <tbody>
             {prospects.map((p, i) => (
-              <ProspectRow key={`${p.name}-${p.college}`} prospect={p} index={i} />
+              <ProspectRow key={`${p.name}-${p.college}`} prospect={p} index={i} onOpen={setSelected} />
             ))}
           </tbody>
         </table>
@@ -324,6 +339,7 @@ export function Prospects() {
           </div>
         )}
       </div>
+      <ProspectScoutingDrawer prospect={selected} onClose={() => setSelected(null)} />
     </div>
   )
 }

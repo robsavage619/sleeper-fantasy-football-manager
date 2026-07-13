@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import type { DossierPick, OwnerProfile, TradeAnalysis } from '@/lib/api'
+import type { DossierPick, OfferLogEntry, OwnerProfile, TradeAnalysis } from '@/lib/api'
 
 const MY_ROSTER_ID = 2
 const CURRENT_YEAR = new Date().getFullYear()
@@ -131,6 +131,153 @@ function OwnerAvatar({ avatar, name, size = 28 }: { avatar: string | null; name:
       fontFamily: "'DM Mono', monospace", fontSize: size * 0.34, color: C.muted, flexShrink: 0,
     }}>
       {name.slice(0, 2).toUpperCase()}
+    </div>
+  )
+}
+
+// ── OutgoingOffers ────────────────────────────────────────────────────────────
+
+function OutgoingOffers() {
+  const qc = useQueryClient()
+  const [markingId, setMarkingId] = useState<string | null>(null)
+
+  const { data: offers, isLoading } = useQuery({
+    queryKey: ['offer-log', false],
+    queryFn: () => api.offerLog(false),
+    staleTime: 60_000,
+  })
+
+  async function markSent(offerId: string) {
+    setMarkingId(offerId)
+    try {
+      await api.markOfferSent(offerId)
+      await qc.invalidateQueries({ queryKey: ['offer-log'] })
+    } finally {
+      setMarkingId(null)
+    }
+  }
+
+  if (isLoading) return null
+  if (!offers || offers.length === 0) return null
+
+  return (
+    <div style={{
+      background: C.card, border: `1px solid ${C.border}`,
+      boxShadow: `inset 3px 0 0 ${C.green}`,
+      borderRadius: 2, padding: '14px 16px', marginBottom: 16,
+    }}>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{
+          fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800,
+          fontSize: 22, color: C.green, letterSpacing: '0.04em',
+        }}>
+          OUTGOING OFFERS
+        </div>
+        <div style={{ color: C.muted, fontSize: 10, letterSpacing: '0.08em', marginTop: 2, fontFamily: "'DM Mono', monospace" }}>
+          {offers.length} PENDING — MARK SENT AFTER SUBMITTING IN SLEEPER
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {offers.map((offer: OfferLogEntry, index: number) => {
+          const isSending = markingId === offer.offer_id
+          const confColor = offer.confidence === 'HIGH' ? C.green : offer.confidence === 'MED' ? C.amber : C.muted
+
+          return (
+            <motion.div
+              key={offer.offer_id}
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.15, delay: index * 0.05 }}
+              style={{
+                background: C.bg, border: `1px solid ${C.border}`,
+                borderRadius: 2, padding: '10px 14px',
+                display: 'flex', alignItems: 'flex-start', gap: 12,
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                  <span style={{
+                    fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700,
+                    fontSize: 14, color: C.text, letterSpacing: '0.04em',
+                  }}>
+                    {(offer.partner_name ?? `Roster ${offer.partner_roster_id}`).toUpperCase()}
+                  </span>
+                  <span style={{
+                    fontSize: 9, padding: '1px 5px', borderRadius: 1,
+                    background: confColor + '22', color: confColor,
+                    fontFamily: "'DM Mono', monospace", letterSpacing: '0.06em',
+                  }}>
+                    {offer.confidence}
+                  </span>
+                  <span style={{
+                    fontFamily: "'DM Mono', monospace", fontSize: 11, color: C.amber,
+                  }}>
+                    {offer.acceptance_score}% fit
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', gap: 16, marginBottom: 6, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ color: C.muted, fontSize: 9, letterSpacing: '0.08em', marginBottom: 3, fontFamily: "'DM Mono', monospace" }}>
+                      GIVE ({offer.give_value.toFixed(1)})
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {offer.give.map(a => (
+                        <span key={a.asset_id} style={{
+                          fontSize: 11, padding: '1px 6px', borderRadius: 1,
+                          background: C.cyan + '22', color: C.cyan,
+                          fontFamily: "'DM Mono', monospace",
+                        }}>
+                          {a.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ color: C.muted, fontSize: 9, letterSpacing: '0.08em', marginBottom: 3, fontFamily: "'DM Mono', monospace" }}>
+                      RECEIVE ({offer.receive_value.toFixed(1)})
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {offer.receive.map(a => (
+                        <span key={a.asset_id} style={{
+                          fontSize: 11, padding: '1px 6px', borderRadius: 1,
+                          background: C.amber + '22', color: C.amber,
+                          fontFamily: "'DM Mono', monospace",
+                        }}>
+                          {a.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {offer.rationale && (
+                  <div style={{ color: C.muted, fontSize: 11, fontStyle: 'italic', marginTop: 4, lineHeight: 1.4 }}>
+                    {offer.rationale}
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={() => markSent(offer.offer_id)}
+                disabled={isSending}
+                style={{
+                  flexShrink: 0, padding: '6px 12px',
+                  background: isSending ? C.border : C.green + '22',
+                  border: `1px solid ${isSending ? C.border : C.green + '66'}`,
+                  borderRadius: 2, cursor: isSending ? 'default' : 'pointer',
+                  color: isSending ? C.muted : C.green,
+                  fontSize: 9, letterSpacing: '0.06em', fontFamily: "'DM Mono', monospace",
+                  transition: 'all 0.12s',
+                }}
+              >
+                {isSending ? 'MARKING…' : 'MARK SENT'}
+              </button>
+            </motion.div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -663,6 +810,8 @@ export function Trades() {
       <p style={{ color: C.muted, fontSize: 11, margin: '4px 0 20px', letterSpacing: '0.1em' }}>
         DYNASTY-AWARE · PLAYERS + PICKS · PICK-ACCUMULATION ARBITRAGE
       </p>
+
+      <OutgoingOffers />
 
       {/* Trade partner selector */}
       <div style={{

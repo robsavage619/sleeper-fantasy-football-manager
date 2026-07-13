@@ -45,4 +45,22 @@ def _latest_cached_weekly_season() -> int | None:
 
 
 PREFERRED_VALUE_SEASON = LATEST_COMPLETED_NFL_SEASON
-DEFAULT_VALUE_SEASON = _latest_cached_weekly_season() or PREFERRED_VALUE_SEASON
+# Always target the preferred season. If the parquet is missing, the loader will
+# error loudly rather than silently falling back to stale data.
+DEFAULT_VALUE_SEASON = PREFERRED_VALUE_SEASON
+
+
+def _warn_if_stale() -> None:
+    import warnings
+
+    cached = cached_weekly_seasons()
+    if PREFERRED_VALUE_SEASON not in cached:
+        warnings.warn(
+            f"Preferred value season {PREFERRED_VALUE_SEASON} not cached "
+            f"(cached: {cached}). Run 'sffm ingest' to fetch data. "
+            "Valuation will fail or fall back to stale data until resolved.",
+            stacklevel=2,
+        )
+
+
+_warn_if_stale()

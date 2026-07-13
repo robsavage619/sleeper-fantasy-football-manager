@@ -73,19 +73,44 @@ def draft_board(top: int = 50, season: int = DEFAULT_VALUE_SEASON) -> dict:
 
     pool = build_full_pool(board, seasons=[season])
 
-    players = [
-        {
+    # Fetch FC market values for steal/reach signals (non-fatal if unavailable).
+    try:
+        from sleeper_ffm.market.fantasycalc import fetch as _fc_fetch
+        from sleeper_ffm.market.blend import _FC_TO_FPAR_SCALE  # type: ignore[attr-defined]
+
+        _FC_TO_FPAR_SCALE = 78.0  # local shadow in case import path changes
+        market_values = _fc_fetch()
+    except Exception:
+        market_values = {}
+
+    players = []
+    for p in pool[:top]:
+        dv = value_player(p)
+        fc_raw = market_values.get(p.player_id)
+        market_fpar = round(fc_raw / 78.0, 1) if fc_raw is not None else None
+        diff_pct = None
+        signal = "HOLD"
+        if market_fpar is not None and market_fpar > 0:
+            # Compare annual FPAR vs market annual FPAR (not discounted DV vs annual).
+            diff_pct = round((p.current_fpar - market_fpar) / market_fpar * 100, 1)
+            if diff_pct > 20:
+                signal = "STEAL"
+            elif diff_pct < -25:
+                signal = "REACH"
+        players.append({
             "player_id": p.player_id,
             "name": p.name,
             "position": p.position,
             "age": p.age,
             "team": p.team,
             "fpar": p.current_fpar,
-            "dynasty_value": value_player(p),
+            "dynasty_value": dv,
             "is_rookie": p.is_taxi,
-        }
-        for p in pool[:top]
-    ]
+            "market_fpar": market_fpar,
+            "divergence_pct": diff_pct,
+            "signal": signal,
+        })
+
     warnings = []
     if season != PREFERRED_VALUE_SEASON:
         warnings.append(
@@ -122,5 +147,12 @@ def draft_prompt(top: int = 25, season: int = DEFAULT_VALUE_SEASON) -> dict:
         raise HTTPException(status_code=409, detail="Draft is complete")
 
     pool = build_full_pool(board, seasons=[season])
-    prompt = build_pick_prompt(board, pool, top_n=top)
+
+    try:
+        from sleeper_ffm.market.fantasycalc import fetch as _fc_fetch
+        market_values = _fc_fetch()
+    except Exception:
+        market_values = {}
+
+    prompt = build_pick_prompt(board, pool, top_n=top, market_values=market_values)
     return {"prompt": prompt, "pick_number": board.current_pick_no}

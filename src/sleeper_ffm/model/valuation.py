@@ -15,6 +15,7 @@ the starter slots in a 10-team 1QB dynasty (QB12, RB36, WR42, TE12).
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from numbers import Real
@@ -22,7 +23,7 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
-from sleeper_ffm.config import DEFAULT_VALUE_SEASON
+from sleeper_ffm.config import DATA_DIR, DEFAULT_VALUE_SEASON
 from sleeper_ffm.model.dynasty import PlayerAsset
 from sleeper_ffm.nflverse.loader import load_id_map, load_weekly
 from sleeper_ffm.scoring.engine import load_scoring, score, stats_from_nflverse
@@ -44,16 +45,56 @@ def _normalize_name(name: str) -> str:
     return " ".join(name.split())
 
 
-# Replacement rank per position for a 10-team 1QB dynasty.
-# Player at this rank is the baseline "available on waivers" level.
-_REPLACEMENT_RANK: dict[str, int] = {
-    "QB": 12,  # 1 QB x 10 + 2 cushion
-    "RB": 36,  # 3 RB x 10 + 6 FLEX slots
-    "WR": 42,  # 3 WR x 10 + 12 FLEX slots
-    "TE": 12,  # 1 TE x 10 + 2 cushion
+# Fallback replacement ranks (used if league_settings.json is missing or malformed).
+_REPLACEMENT_RANK_FALLBACK: dict[str, int] = {
+    "QB": 12,
+    "RB": 36,
+    "WR": 42,
+    "TE": 12,
 }
 
+# FLEX allocation fractions — how to split FLEX slots among positions.
+_FLEX_ALLOC: dict[str, float] = {"WR": 0.55, "RB": 0.40, "TE": 0.05}
+
+
+def _derive_replacement_ranks() -> dict[str, int]:
+    """Derive replacement ranks from data/league_settings.json.
+
+    Computes (base_slots + flex_alloc) × num_teams for each skill position.
+    Falls back to hardcoded dict if the settings file is absent or unparseable.
+    """
+    settings_path = DATA_DIR / "league_settings.json"
+    if not settings_path.exists():
+        log.warning("league_settings.json not found; using hardcoded replacement ranks")
+        return dict(_REPLACEMENT_RANK_FALLBACK)
+    try:
+        with settings_path.open() as f:
+            settings = json.load(f)
+    except Exception as exc:
+        log.warning("could not parse league_settings.json (%s); using hardcoded ranks", exc)
+        return dict(_REPLACEMENT_RANK_FALLBACK)
+
+    roster_positions: list[str] = settings.get("roster_positions", [])
+    num_teams: int = int(settings.get("total_rosters", 10))
+    flex_count: int = roster_positions.count("FLEX")
+
+    ranks: dict[str, int] = {}
+    for pos in ("QB", "RB", "WR", "TE"):
+        base = roster_positions.count(pos)
+        flex = flex_count * _FLEX_ALLOC.get(pos, 0.0)
+        ranks[pos] = max(1, round((base + flex) * num_teams))
+
+    log.debug("derived replacement ranks from league settings: %s", ranks)
+    return ranks
+
+
+_REPLACEMENT_RANK: dict[str, int] = _derive_replacement_ranks()
+
 SKILL_POSITIONS: frozenset[str] = frozenset({"QB", "RB", "WR", "TE"})
+
+
+_MIN_GAMES_FOR_PER_GAME_NORM: int = 6  # below this, keep raw season_fp to avoid sample noise
+_FULL_SEASON_GAMES: int = 17  # normalize to this game count
 
 
 def score_weekly(
@@ -114,6 +155,13 @@ def compute_season_totals(
             ]
         )
         .filter(pl.col("season_fp") > 0)
+        # Normalize to 17-game equivalent; small-sample players kept raw to avoid inflation.
+        .with_columns(
+            pl.when(pl.col("games_played") >= _MIN_GAMES_FOR_PER_GAME_NORM)
+            .then(pl.col("season_fp") / pl.col("games_played") * _FULL_SEASON_GAMES)
+            .otherwise(pl.col("season_fp"))
+            .alias("season_fp")
+        )
         .rename({"player_id": "gsis_id"})
     )
 
@@ -202,32 +250,42 @@ def _float_or_zero(value: object) -> float:
 def _rookie_fpar(search_rank: int) -> float:
     """Map Sleeper dynasty search_rank to an estimated FPAR for unproven players.
 
+    Fallback when FantasyCalc has no value for the player.
     A convex decay: rank 1 ≈ 95 FPAR, rank 20 ≈ 50, rank 50 ≈ 29, rank 100 ≈ 17.
-    Calibrated so that top rookies are valued roughly as WR3/RB3 veterans
-    (significant upside; not yet proven NFL producers).
     """
     return round(100.0 / (1.0 + search_rank / 20.0), 2)
+
+
+# Approximate conversion factor from FantasyCalc 0-10000 scale to FPAR scale.
+# Derived empirically: FC top-WR value (~8500) ≈ FPAR ~110 → scale ≈ 77.
+# Calibrated so that FC rank-1 rookie (≈8000 FC) ≈ 100 FPAR (solid WR2 upside).
+_FC_TO_FPAR_SCALE: float = 78.0
 
 
 def build_rookie_assets(
     sleeper_players: dict[str, dict],
     rostered_ids: set[str],
     max_rank: int = 300,
+    market_values: dict[str, float] | None = None,
 ) -> list[PlayerAsset]:
     """Build PlayerAsset objects for rookies / year-1 players not yet rostered.
 
-    Uses Sleeper's ``search_rank`` (dynasty ranking) as a proxy for FPAR since
-    these players have no nflverse history. Only players with NFL teams are
-    included (cuts undrafted practice-squad players without clear value).
+    Uses FantasyCalc dynasty value (if available via ``market_values``) to
+    estimate FPAR, falling back to Sleeper's ``search_rank`` heuristic when
+    no market price is available for the player.
 
     Args:
         sleeper_players: Sleeper player dump from ``SleeperClient.players()``.
         rostered_ids: Player IDs currently on a fantasy roster (excluded).
         max_rank: Ignore players ranked worse than this threshold.
+        market_values: {sleeper_id: fc_value} from FantasyCalc (optional).
 
     Returns:
         List of PlayerAsset sorted by current_fpar descending.
     """
+    market_values = market_values or {}
+    fc_hits = 0
+
     assets: list[PlayerAsset] = []
     for pid, p in sleeper_players.items():
         years_exp = p.get("years_exp")
@@ -243,18 +301,97 @@ def build_rookie_assets(
         search_rank: int | None = p.get("search_rank")
         if search_rank is None or search_rank >= max_rank:
             continue
+
+        fc_val = market_values.get(pid)
+        if fc_val is not None:
+            fpar = round(fc_val / _FC_TO_FPAR_SCALE, 2)
+            fc_hits += 1
+        else:
+            fpar = _rookie_fpar(search_rank)
+
         assets.append(
             PlayerAsset(
                 player_id=pid,
                 name=p.get("full_name") or f"Player {pid}",
                 position=pos,
                 age=float(p.get("age") or 22),
-                current_fpar=_rookie_fpar(search_rank),
+                current_fpar=fpar,
                 team=p.get("team") or "",
                 is_taxi=True,  # rookies default to taxi-squad consideration
             )
         )
+
+    if market_values:
+        log.info("build_rookie_assets: %d/%d rookies valued via FC market", fc_hits, len(assets))
+
     return sorted(assets, key=lambda p: p.current_fpar, reverse=True)
+
+
+_SEASON_WEIGHTS: dict[int, float] = {
+    # Recency-weighted blend for two-season default: older/newer
+    # Weights are renormalized to available seasons at runtime.
+    2024: 0.35,
+    2025: 0.65,
+}
+
+
+def _blend_seasons(totals: pl.DataFrame, seasons: list[int]) -> pl.DataFrame:
+    """Recency-weighted blend of per-season (17g-normalized) FPAR.
+
+    Players present in only one season get that season's weight renormalized to 1.
+    Players in both seasons get the configured weight split.
+
+    Args:
+        totals: Output of compute_season_totals for all requested seasons.
+        seasons: Seasons that were requested (used to assign weights).
+
+    Returns:
+        Blended DataFrame with one row per (gsis_id, position).
+    """
+    available = sorted(s for s in seasons if not totals.filter(pl.col("season") == s).is_empty())
+    if not available:
+        return _empty_season_totals()
+
+    if len(available) == 1:
+        return (
+            totals.filter(pl.col("season") == available[0])
+            .group_by(["gsis_id", "position"])
+            .agg(
+                [
+                    pl.col("season_fp").mean().alias("season_fp"),
+                    pl.col("games_played").mean().alias("games_played"),
+                    pl.col("name").last().alias("name"),
+                    pl.col("team").last().alias("team"),
+                    pl.col("sleeper_id_str").last().alias("sleeper_id_str"),
+                ]
+            )
+        )
+
+    raw_weights = {s: _SEASON_WEIGHTS.get(s, 1.0 / len(available)) for s in available}
+    total_w = sum(raw_weights.values())
+    weights = {s: w / total_w for s, w in raw_weights.items()}
+    log.info("season blend weights: %s", {s: round(w, 3) for s, w in weights.items()})
+
+    weighted_frames = []
+    for s in available:
+        w = weights[s]
+        frame = (
+            totals.filter(pl.col("season") == s)
+            .with_columns((pl.col("season_fp") * w).alias("weighted_fp"))
+            .select(["gsis_id", "position", "weighted_fp", "games_played", "name", "team", "sleeper_id_str"])
+        )
+        weighted_frames.append(frame)
+
+    combined = pl.concat(weighted_frames)
+    return combined.group_by(["gsis_id", "position"]).agg(
+        [
+            pl.col("weighted_fp").sum().alias("season_fp"),
+            pl.col("games_played").mean().alias("games_played"),
+            pl.col("name").last().alias("name"),
+            pl.col("team").last().alias("team"),
+            pl.col("sleeper_id_str").last().alias("sleeper_id_str"),
+        ]
+    )
 
 
 def build_player_assets(
@@ -264,38 +401,40 @@ def build_player_assets(
 ) -> list[PlayerAsset]:
     """Build a full ranked list of PlayerAssets from nflverse + Sleeper data.
 
-    Uses the most recent season in ``seasons`` as the current FPAR estimate.
-    Multiple seasons are averaged for a more stable estimate (recent-weighted
-    when ordered — caller should pass most recent last to get correct average).
+    Default blend: seasons [2024, 2025] with recency weights 0.35/0.65.
+    When 2025 data is unavailable (nflverse 404), falls back to 2024 only
+    with a warning — never silently uses stale data as if it were current.
 
     Args:
-        seasons: Seasons to use (default: latest completed NFL season).
+        seasons: Seasons to use (default: [2024, PREFERRED_VALUE_SEASON]).
         scoring: Override scoring settings.
         sleeper_players: Pre-fetched Sleeper player dump. Fetched live if None.
 
     Returns:
         PlayerAsset list sorted by ``current_fpar`` descending.
     """
+    from sleeper_ffm.config import PREFERRED_VALUE_SEASON
     from sleeper_ffm.sleeper.client import SleeperClient
 
-    seasons = seasons or [DEFAULT_VALUE_SEASON]
+    if seasons is None:
+        seasons = [DEFAULT_VALUE_SEASON - 1, DEFAULT_VALUE_SEASON]
+        seasons = [s for s in seasons if s >= 2014]
+
     log.info("building player assets from seasons %s", seasons)
 
     totals = compute_season_totals(seasons=seasons, scoring=scoring)
 
-    # For multi-season: average season_fp across seasons per player.
-    if len(seasons) > 1:
-        avg_totals = totals.group_by(["gsis_id", "position"]).agg(
-            [
-                pl.col("season_fp").mean().alias("season_fp"),
-                pl.col("games_played").mean().alias("games_played"),
-                pl.col("name").last().alias("name"),
-                pl.col("team").last().alias("team"),
-                pl.col("sleeper_id_str").last().alias("sleeper_id_str"),
-            ]
+    available_seasons = sorted(totals["season"].unique().to_list()) if not totals.is_empty() else []
+    missing = [s for s in seasons if s not in available_seasons]
+    if missing:
+        log.warning(
+            "seasons %s requested but not available (nflverse data missing); "
+            "blend uses %s only",
+            missing,
+            available_seasons,
         )
-    else:
-        avg_totals = totals
+
+    avg_totals = _blend_seasons(totals, seasons)
 
     thresholds = replacement_thresholds(avg_totals)
 
@@ -427,11 +566,21 @@ def build_draft_pool(
         if asset.player_id not in rostered_ids and _is_draftable_veteran(asset, sleeper_players)
     ]
 
+    # Fetch FantasyCalc market values once; pass to rookie builder for pricing.
+    try:
+        from sleeper_ffm.market.fantasycalc import fetch as _fc_fetch
+
+        market_values = _fc_fetch()
+    except Exception as exc:
+        log.warning("build_draft_pool: FC fetch failed (%s); using search_rank heuristic", exc)
+        market_values = {}
+
     # Rookies / unproven year-1 players
     rookie_assets = build_rookie_assets(
         sleeper_players=sleeper_players,
         rostered_ids=rostered_ids,
         max_rank=rookie_max_rank,
+        market_values=market_values,
     )
 
     # Deduplicate by player_id (veteran list wins if the same player appears in both)

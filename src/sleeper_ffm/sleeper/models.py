@@ -79,6 +79,7 @@ class DraftPick(_Base):
     player_id: str | None = None
     roster_id: int | None = None
     picked_by: str | None = None
+    metadata: dict | None = None
 
 
 class NFLState(_Base):

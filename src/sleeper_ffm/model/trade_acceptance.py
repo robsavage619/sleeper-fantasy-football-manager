@@ -68,9 +68,11 @@ def _score_position_fit(
     partner_ranks = _rank_map(partner)
     league_size = max(partner.league_size, my_dossier.league_size, 1)
 
-    partner_need = max(0, league_size + 1 - partner_ranks.get(give_pos, league_size))
+    # Higher rank = weaker position = more need. Lower rank = stronger = more surplus.
+    # Default: partner unknown rank → assume worst (league_size); my rank → same.
+    partner_need = partner_ranks.get(give_pos, league_size)
     my_surplus = max(0, league_size + 1 - my_ranks.get(give_pos, league_size))
-    my_need = max(0, league_size + 1 - my_ranks.get(receive_pos, league_size))
+    my_need = my_ranks.get(receive_pos, league_size)
     partner_surplus = max(0, league_size + 1 - partner_ranks.get(receive_pos, league_size))
 
     raw = partner_need + my_surplus + my_need + partner_surplus
@@ -364,4 +366,17 @@ def recommend_trade_offers(
             offers.append(offer)
 
     offers.sort(key=lambda offer: (-offer.priority, -offer.acceptance_score, offer.partner_name))
-    return offers[:top]
+    top_offers = offers[:top]
+
+    # Persist to append-only log (timestamp injected by caller to avoid Date.now() issues).
+    try:
+        import dataclasses
+        from datetime import datetime, timezone
+        from sleeper_ffm.model.offer_log import append_offers
+
+        now = datetime.now(timezone.utc).isoformat()
+        append_offers([dataclasses.asdict(o) for o in top_offers], logged_at=now)
+    except Exception as exc:
+        log.warning("recommend_trade_offers: offer log write failed: %s", exc)
+
+    return top_offers
