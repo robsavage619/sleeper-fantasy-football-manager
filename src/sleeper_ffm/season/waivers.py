@@ -32,6 +32,12 @@ class WaiverCandidate:
     trending_drops: int
     add_priority: float
     faab_estimate: int
+    bid_min: int
+    bid_max: int
+    drop_candidate: str | None
+    downside: str
+    urgency: str
+    decision: str
     rationale: str
 
 
@@ -40,6 +46,8 @@ def analyze_waivers(
     trending_adds: list[TrendingPlayer],
     trending_drops: list[TrendingPlayer],
     rostered_ids: set[str],
+    my_roster_ids: set[str] | None = None,
+    protected_ids: set[str] | None = None,
     faab_budget: int = 500,
 ) -> list[WaiverCandidate]:
     """Score unrostered trending players for waiver priority.
@@ -58,6 +66,8 @@ def analyze_waivers(
         trending_adds: Trending add players from SleeperClient.trending("add").
         trending_drops: Trending drop players from SleeperClient.trending("drop").
         rostered_ids: Player IDs currently on any fantasy roster (excluded).
+        my_roster_ids: Rob's rostered player IDs for drop-candidate selection.
+        protected_ids: Starters or locked players that should not be suggested as drops.
         faab_budget: Total FAAB budget in dollars (default $500).
 
     Returns:
@@ -66,6 +76,8 @@ def analyze_waivers(
     """
     add_map: dict[str, int] = {t.player_id: t.count for t in trending_adds}
     drop_map: dict[str, int] = {t.player_id: t.count for t in trending_drops}
+    my_roster_ids = my_roster_ids or set()
+    protected_ids = protected_ids or set()
 
     max_adds = max(add_map.values(), default=1)
 
@@ -91,7 +103,21 @@ def analyze_waivers(
 
         priority = round(min(100.0, trend_score + pos_bump + net_signal + youth_bonus), 1)
         faab = _faab_estimate(priority, faab_budget)
+        bid_min, bid_max = _bid_range(faab, priority, faab_budget)
+        drop_candidate = _drop_candidate(
+            add_position=pos,
+            sleeper_players=sleeper_players,
+            my_roster_ids=my_roster_ids,
+            protected_ids=protected_ids,
+        )
+        downside = _downside(adds=adds, drops=drops, age=age, pos=pos)
+        urgency = "HIGH" if priority >= 75 else "MED" if priority >= 50 else "LOW"
         rationale = _build_rationale(adds, drops, age, pos)
+        decision = (
+            f"Claim if dropping {drop_candidate}; bid ${bid_min}-${bid_max}."
+            if drop_candidate
+            else f"Watch unless a roster spot opens; max bid ${bid_max}."
+        )
 
         candidates.append(
             WaiverCandidate(
@@ -104,6 +130,12 @@ def analyze_waivers(
                 trending_drops=drops,
                 add_priority=priority,
                 faab_estimate=faab,
+                bid_min=bid_min,
+                bid_max=bid_max,
+                drop_candidate=drop_candidate,
+                downside=downside,
+                urgency=urgency,
+                decision=decision,
                 rationale=rationale,
             )
         )
@@ -128,6 +160,45 @@ def _faab_estimate(priority: float, budget: int) -> int:
     if priority >= 40:
         return round(budget * 0.04)
     return 2
+
+
+def _bid_range(faab: int, priority: float, budget: int) -> tuple[int, int]:
+    spread = 0.35 if priority >= 75 else 0.45 if priority >= 50 else 0.60
+    low = max(1, round(faab * (1.0 - spread)))
+    high = min(budget, max(faab, round(faab * (1.0 + spread))))
+    return low, high
+
+
+def _drop_candidate(
+    add_position: str,
+    sleeper_players: dict[str, dict],
+    my_roster_ids: set[str],
+    protected_ids: set[str],
+) -> str | None:
+    candidates: list[tuple[int, float, str]] = []
+    for pid in my_roster_ids - protected_ids:
+        player = sleeper_players.get(pid, {})
+        pos = player.get("position", "")
+        if pos not in SKILL_POSITIONS:
+            continue
+        rank = int(player.get("search_rank") or 9999)
+        same_pos_bonus = 600 if pos == add_position else 0
+        age = float(player.get("age") or 30)
+        name = player.get("full_name") or f"Player {pid}"
+        candidates.append((rank + same_pos_bonus, age, name))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: (item[0], item[1]))[2]
+
+
+def _downside(adds: int, drops: int, age: float, pos: str) -> str:
+    if drops > adds * 0.5:
+        return "Split market signal: drops are high relative to adds."
+    if age >= 28 and pos != "QB":
+        return "Short dynasty shelf life unless role spikes immediately."
+    if adds < 500:
+        return "Thin signal: trending volume is still modest."
+    return "Mostly opportunity risk; confirm role before spending aggressively."
 
 
 def _build_rationale(adds: int, drops: int, age: float, pos: str) -> str:

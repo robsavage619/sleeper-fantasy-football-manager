@@ -11,6 +11,7 @@ from sleeper_ffm.config import (
     PREFERRED_VALUE_SEASON,
     cached_weekly_seasons,
 )
+from sleeper_ffm.nflverse.loader import weekly_source_available, weekly_source_url
 from sleeper_ffm.sleeper.client import SleeperClient
 
 router = APIRouter(prefix="/league", tags=["league"])
@@ -99,11 +100,14 @@ def diagnostics() -> dict:
         )
 
     degraded = DEFAULT_VALUE_SEASON != PREFERRED_VALUE_SEASON
+    preferred_upstream_available = weekly_source_available(PREFERRED_VALUE_SEASON)
     warnings = []
     if PREFERRED_VALUE_SEASON not in cached:
         warnings.append(
             f"weekly parquet for preferred season {PREFERRED_VALUE_SEASON} is not cached"
         )
+    if not preferred_upstream_available:
+        warnings.append(f"nflverse has not published player_stats_{PREFERRED_VALUE_SEASON}.parquet")
     if degraded:
         warnings.append(
             f"using cached valuation season {DEFAULT_VALUE_SEASON} instead of preferred "
@@ -116,6 +120,11 @@ def diagnostics() -> dict:
         "latest_completed_nfl_season": LATEST_COMPLETED_NFL_SEASON,
         "cached_weekly_seasons": cached,
         "weekly_files": weekly_files,
+        "upstream_weekly": {
+            "preferred_season": PREFERRED_VALUE_SEASON,
+            "url": weekly_source_url(PREFERRED_VALUE_SEASON),
+            "available": preferred_upstream_available,
+        },
         "data_quality": "DEGRADED" if degraded else "FULL",
         "warnings": warnings,
     }

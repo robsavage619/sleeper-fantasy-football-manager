@@ -9,6 +9,10 @@ League: *The League* — 2026 dynasty, full PPR with bonuses, 10 teams, 1QB / no
 The app is currently read-only: it recommends, explains, and logs decisions, but does not
 submit Sleeper transactions.
 
+Current recommendation surfaces include trade-fit scoring with owner-history evidence labels,
+waiver claim cards with bid ranges/drop candidates/downside, draft decision cards, data-quality
+diagnostics, and a non-mutating recommendation eval endpoint.
+
 ## Layout
 
 - `src/sleeper_ffm/scoring/` — the scoring engine (linchpin): stat line → fantasy points.
@@ -16,7 +20,7 @@ submit Sleeper transactions.
 - `src/sleeper_ffm/nflverse/` — historical stats ingestion (`nfl-data-py` → parquet).
 - `src/sleeper_ffm/model/` — valuation, trends, projections, dynasty assets, pick market, owner profiles.
 - `src/sleeper_ffm/prompts/`, `reasoning/` — prompt-builders + the findings store Claude Code writes to.
-- `src/sleeper_ffm/act/`, `schedule/` — reserved for future confirm-gated actions.
+- `src/sleeper_ffm/act/`, `schedule/` — manual transaction plans + future confirm-gated actions.
 - `frontend/` — React/Vite/Tailwind dashboard.
 
 ## Dev

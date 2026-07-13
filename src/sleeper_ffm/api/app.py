@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sleeper_ffm.api.routers import actions as actions_router
 from sleeper_ffm.api.routers import dossier as dossier_router
 from sleeper_ffm.api.routers import draft as draft_router
+from sleeper_ffm.api.routers import evals as evals_router
 from sleeper_ffm.api.routers import findings as findings_router
 from sleeper_ffm.api.routers import history as history_router
 from sleeper_ffm.api.routers import league as league_router
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
     app.include_router(dossier_router.router)
     app.include_router(history_router.router)
     app.include_router(draft_router.router)
+    app.include_router(evals_router.router)
     app.include_router(prospects_router.router)
     app.include_router(trades_router.router)
     app.include_router(roster_router.router)

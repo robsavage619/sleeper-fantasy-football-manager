@@ -96,7 +96,27 @@ export type DraftBoard = {
   my_slot: number
   picks_until_my_turn: number
   next_my_pick: number | null
+  data_quality: 'FULL' | 'DEGRADED'
+  warnings: string[]
+  recommendation: DraftRecommendation | null
   players: DraftPlayer[]
+}
+
+export type DraftRecommendation = {
+  player_id: string
+  name: string
+  position: 'QB' | 'RB' | 'WR' | 'TE'
+  team: string
+  dynasty_value: number
+  urgency: 'ON_CLOCK' | 'MONITOR' | 'BOARD'
+  reason: string
+  action: string
+  alternatives: Array<{
+    player_id: string
+    name: string
+    position: 'QB' | 'RB' | 'WR' | 'TE'
+    dynasty_value: number
+  }>
 }
 
 export type MyRosterPlayer = {
@@ -129,6 +149,12 @@ export type WaiverCandidate = {
   trending_drops: number
   add_priority: number
   faab_estimate: number
+  bid_min: number
+  bid_max: number
+  drop_candidate: string | null
+  downside: string
+  urgency: 'LOW' | 'MED' | 'HIGH'
+  decision: string
   rationale: string
 }
 
@@ -396,6 +422,31 @@ export type TradeOfferRecommendation = {
   partner_need: string
   rationale: string
   command: string
+  evidence_count: number
+  calibration: 'OWNER-HISTORY' | 'LIMITED-HISTORY' | 'LOW-SAMPLE' | 'UNCALIBRATED'
+  calibration_notes: string
+}
+
+export type RecommendationEval = {
+  overall_status: 'PASS' | 'DEGRADED'
+  findings: Array<{
+    area: string
+    status: string
+    severity: string
+    detail: string
+    next_action: string
+  }>
+  metrics: Record<string, number | string>
+}
+
+export type TransactionPlan = {
+  action_id: string
+  kind: string
+  command: string
+  status: string
+  confirm_phrase: string
+  steps: string[]
+  warnings: string[]
 }
 
 export const api = {
@@ -434,6 +485,9 @@ export const api = {
     get_pick_ids: string[]
   }) => post<TradeAnalysis>('/trades/analyze', body),
   tradeOffers: (top = 8) => get<TradeOfferRecommendation[]>(`/trades/offers?top=${top}`),
+  recommendationEvals: (top = 8) => get<RecommendationEval>(`/evals/recommendations?top=${top}`),
+  transactionPlan: (body: { action_id: string; kind: string; command: string }) =>
+    post<TransactionPlan>('/war-room/transaction-plan', body),
   narrative: () => get<NarrativeContext>('/season/narrative'),
   warRoomActions: (top = 12) => get<WarRoomAction[]>(`/war-room/actions?top=${top}`),
 }

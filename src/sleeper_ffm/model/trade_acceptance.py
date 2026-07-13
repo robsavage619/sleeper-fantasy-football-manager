@@ -42,6 +42,9 @@ class TradeOfferRecommendation:
     partner_need: str
     rationale: str
     command: str
+    evidence_count: int
+    calibration: str
+    calibration_notes: str
 
 
 def _rank_map(dossier: OwnerDossier) -> dict[str, int]:
@@ -187,6 +190,24 @@ def _approachability_bonus(history: OwnerHistory | None) -> int:
     return bonus
 
 
+def _calibration_context(history: OwnerHistory | None) -> tuple[str, int, str]:
+    """Return evidence quality for interpreting an acceptance score."""
+    if history is None:
+        return "UNCALIBRATED", 0, "No owner transaction history available."
+    evidence_count = history.trade_count
+    if evidence_count >= 8:
+        label = "OWNER-HISTORY"
+    elif evidence_count >= 3:
+        label = "LIMITED-HISTORY"
+    else:
+        label = "LOW-SAMPLE"
+    notes = (
+        f"{evidence_count} historical trade(s), {history.trades_per_season:.1f}/season, "
+        f"{history.approachability.lower()} approachability"
+    )
+    return label, evidence_count, notes
+
+
 def _window_bonus(
     partner: OwnerDossier,
     give_asset: TradeAsset,
@@ -221,8 +242,9 @@ def _acceptance_score(
     margin_score = round(max(-22, min(24, margin_for_partner * 0.35)))
     history_score = _approachability_bonus(history)
     window_score = _window_bonus(partner, give_asset, sweetener)
+    sample_penalty = 0 if history and history.trade_count >= 3 else -4
 
-    raw = 42 + position_fit + margin_score + history_score + window_score
+    raw = 42 + position_fit + margin_score + history_score + window_score + sample_penalty
     score = max(5, min(98, round(raw)))
     confidence = "HIGH" if score >= 74 else "MED" if score >= 54 else "LOW"
     rationale = (
@@ -281,6 +303,7 @@ def _offer_for_partner(
                 sweetener,
             )
             priority = acceptance + round(max(-8, min(18, value_delta * 0.35)))
+            calibration, evidence_count, calibration_notes = _calibration_context(history)
             offer = TradeOfferRecommendation(
                 partner_roster_id=partner.roster_id,
                 partner_name=partner.display_name,
@@ -296,6 +319,9 @@ def _offer_for_partner(
                 partner_need=give_pos,
                 rationale=rationale,
                 command=_command(give_assets, receive_asset, partner),
+                evidence_count=evidence_count,
+                calibration=calibration,
+                calibration_notes=calibration_notes,
             )
             if best is None or offer.priority > best.priority:
                 best = offer

@@ -73,7 +73,11 @@ def score_weekly(
     scoring = scoring or load_scoring()
 
     weekly = load_weekly(seasons=seasons)
+    if weekly.is_empty() or "season_type" not in weekly.columns:
+        return _empty_scored_weekly()
     reg = weekly.filter(pl.col("season_type") == "REG")
+    if reg.is_empty():
+        return _empty_scored_weekly()
 
     fps = [score(stats_from_nflverse(row), scoring) for row in reg.iter_rows(named=True)]
     return reg.with_columns(pl.Series("fp_sffm", fps, dtype=pl.Float64))
@@ -95,6 +99,8 @@ def compute_season_totals(
     """
     seasons = seasons or [DEFAULT_VALUE_SEASON]
     scored = score_weekly(seasons=seasons, scoring=scoring)
+    if scored.is_empty():
+        return _empty_season_totals()
 
     season_totals = (
         scored.filter(pl.col("position").is_in(list(SKILL_POSITIONS)))
@@ -124,6 +130,36 @@ def compute_season_totals(
     )
 
     return season_totals.join(id_slim, on="gsis_id", how="left")
+
+
+def _empty_scored_weekly() -> pl.DataFrame:
+    return pl.DataFrame(
+        schema={
+            "season": pl.Int64,
+            "week": pl.Int64,
+            "season_type": pl.Utf8,
+            "player_id": pl.Utf8,
+            "position": pl.Utf8,
+            "player_display_name": pl.Utf8,
+            "recent_team": pl.Utf8,
+            "fp_sffm": pl.Float64,
+        }
+    )
+
+
+def _empty_season_totals() -> pl.DataFrame:
+    return pl.DataFrame(
+        schema={
+            "gsis_id": pl.Utf8,
+            "season": pl.Int64,
+            "position": pl.Utf8,
+            "season_fp": pl.Float64,
+            "games_played": pl.Float64,
+            "name": pl.Utf8,
+            "team": pl.Utf8,
+            "sleeper_id_str": pl.Utf8,
+        }
+    )
 
 
 def replacement_thresholds(totals: pl.DataFrame) -> dict[str, float]:
@@ -385,7 +421,11 @@ def build_draft_pool(
     vet_assets = build_player_assets(
         seasons=seasons, scoring=scoring, sleeper_players=sleeper_players
     )
-    vet_unrostered = [a for a in vet_assets if a.player_id not in rostered_ids]
+    vet_unrostered = [
+        asset
+        for asset in vet_assets
+        if asset.player_id not in rostered_ids and _is_draftable_veteran(asset, sleeper_players)
+    ]
 
     # Rookies / unproven year-1 players
     rookie_assets = build_rookie_assets(
@@ -403,3 +443,17 @@ def build_draft_pool(
             pool.append(p)
 
     return sorted(pool, key=lambda p: p.current_fpar, reverse=True)
+
+
+def _is_draftable_veteran(asset: PlayerAsset, sleeper_players: dict[str, dict]) -> bool:
+    player = sleeper_players.get(asset.player_id, {})
+    years_exp = player.get("years_exp")
+    search_rank = int(player.get("search_rank") or 9999)
+    has_team = bool(player.get("team") or asset.team)
+    if not has_team:
+        return False
+    if asset.age > 25.5:
+        return False
+    if years_exp is not None and years_exp > 2:
+        return False
+    return search_rank <= 450

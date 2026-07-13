@@ -8,6 +8,9 @@ import re
 from dataclasses import dataclass
 
 from fastapi import APIRouter, Query
+from pydantic import BaseModel
+
+from sleeper_ffm.config import MY_ROSTER_ID
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +32,14 @@ class WarRoomAction:
     command: str
     source: str
     acceptance_score: int | None = None
+
+
+class TransactionPlanRequest(BaseModel):
+    """Request body for building a manual transaction plan."""
+
+    action_id: str
+    kind: str
+    command: str
 
 
 _ACTION_RE = re.compile(r"Action:\s*(?P<action>.+)$")
@@ -104,7 +115,8 @@ def _trade_actions(limit: int) -> list[WarRoomAction]:
                 detail=(
                     f"heuristic score {offer.acceptance_score}/100; "
                     f"{offer.rationale}; give {offer.give_value:.1f}, "
-                    f"receive {offer.receive_value:.1f}, delta {offer.value_delta:+.1f}"
+                    f"receive {offer.receive_value:.1f}, delta {offer.value_delta:+.1f}; "
+                    f"{offer.calibration.lower()} evidence"
                 ),
                 target=offer.partner_name,
                 confidence=offer.confidence,
@@ -128,14 +140,21 @@ def _waiver_actions(limit: int) -> list[WarRoomAction]:
         rosters = client.rosters()
 
     rostered_ids: set[str] = set()
+    my_roster_ids: set[str] = set()
+    protected_ids: set[str] = set()
     for roster in rosters:
         rostered_ids.update(roster.players)
+        if roster.roster_id == MY_ROSTER_ID:
+            my_roster_ids.update(roster.players)
+            protected_ids.update(roster.starters)
 
     candidates = analyze_waivers(
         sleeper_players=sleeper_players,
         trending_adds=trending_adds,
         trending_drops=trending_drops,
         rostered_ids=rostered_ids,
+        my_roster_ids=my_roster_ids,
+        protected_ids=protected_ids,
     )
 
     actions: list[WarRoomAction] = []
@@ -147,10 +166,10 @@ def _waiver_actions(limit: int) -> list[WarRoomAction]:
                 priority=max(45, round(candidate.add_priority)),
                 urgency="HIGH" if candidate.add_priority >= 75 else "MED",
                 title=f"Watch {candidate.name}",
-                detail=candidate.rationale,
+                detail=f"{candidate.rationale}; downside: {candidate.downside}",
                 target=candidate.name,
                 confidence="MED",
-                command=f"Bid up to ${candidate.faab_estimate} FAAB if roster spot opens",
+                command=candidate.decision,
                 source="season/waivers",
             )
         )
@@ -252,3 +271,17 @@ def war_room_actions(top: int = Query(default=12, ge=1, le=30)) -> list[dict]:
 
     actions.sort(key=lambda action: (-action.priority, action.kind, action.title))
     return [dataclasses.asdict(action) for action in actions[:top]]
+
+
+@router.post("/transaction-plan")
+def transaction_plan(req: TransactionPlanRequest) -> dict:
+    """Return a confirm-gated manual execution plan; never submits to Sleeper."""
+    from sleeper_ffm.act.plans import build_transaction_plan
+
+    return dataclasses.asdict(
+        build_transaction_plan(
+            action_id=req.action_id,
+            kind=req.kind,
+            command=req.command,
+        )
+    )

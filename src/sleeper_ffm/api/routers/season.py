@@ -9,7 +9,7 @@ import time
 
 from fastapi import APIRouter, Query
 
-from sleeper_ffm.config import DEFAULT_VALUE_SEASON
+from sleeper_ffm.config import DEFAULT_VALUE_SEASON, MY_ROSTER_ID
 from sleeper_ffm.model.trends import compute_trends
 from sleeper_ffm.season.startsit import build_startsit
 from sleeper_ffm.season.waivers import analyze_waivers
@@ -42,14 +42,21 @@ def waivers(top: int = Query(default=25)) -> list[dict]:
         rosters = c.rosters()
 
     rostered_ids: set[str] = set()
+    my_roster_ids: set[str] = set()
+    protected_ids: set[str] = set()
     for roster in rosters:
         rostered_ids.update(roster.players)
+        if roster.roster_id == MY_ROSTER_ID:
+            my_roster_ids.update(roster.players)
+            protected_ids.update(roster.starters)
 
     candidates = analyze_waivers(
         sleeper_players=sleeper_players,
         trending_adds=trending_adds,
         trending_drops=trending_drops,
         rostered_ids=rostered_ids,
+        my_roster_ids=my_roster_ids,
+        protected_ids=protected_ids,
     )
 
     return [dataclasses.asdict(c) for c in candidates[:top]]

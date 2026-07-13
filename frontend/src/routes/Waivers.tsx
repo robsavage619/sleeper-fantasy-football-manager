@@ -13,7 +13,7 @@ const POS_COLOR: Record<string, string> = {
 const POS_FILTER = ['ALL', 'QB', 'RB', 'WR', 'TE'] as const
 type Filter = (typeof POS_FILTER)[number]
 
-const TABLE_COLS = ['#', 'PLAYER', 'POS', 'AGE', 'TEAM', 'PRIORITY', 'ADDS', 'EST. BID']
+const TABLE_COLS = ['#', 'PLAYER', 'POS', 'AGE', 'PRIORITY', 'ADDS', 'BID', 'DROP']
 
 function PriorityBar({ value }: { value: number }) {
   const color = value > 80 ? '#c93328' : value >= 60 ? '#d4860c' : '#00b8cc'
@@ -46,6 +46,7 @@ export function Waivers() {
   })
 
   const candidates = (data ?? []).filter((c) => filter === 'ALL' || c.position === filter)
+  const topCandidate = candidates[0]
 
   return (
     <div>
@@ -145,6 +146,56 @@ export function Waivers() {
         </div>
       </div>
 
+      {topCandidate && (
+        <div
+          className="px-5 py-4"
+          style={{ background: '#070d18', borderBottom: '1px solid #162035' }}
+        >
+          <div className="flex flex-wrap items-start gap-5">
+            <div style={{ minWidth: 220 }}>
+              <div
+                className="tracking-[0.24em] uppercase"
+                style={{
+                  color: topCandidate.urgency === 'HIGH' ? '#c93328' : '#6a8098',
+                  fontSize: 10,
+                }}
+              >
+                {topCandidate.urgency} PRIORITY
+              </div>
+              <div
+                className="uppercase leading-none"
+                style={{
+                  color: '#e8eef6',
+                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontSize: 30,
+                  fontWeight: 800,
+                  marginTop: 4,
+                }}
+              >
+                {topCandidate.name}
+              </div>
+              <div style={{ color: POS_COLOR[topCandidate.position], fontSize: 12, marginTop: 5 }}>
+                {topCandidate.position} · {topCandidate.team || 'FA'} · {topCandidate.trending_adds} adds
+              </div>
+            </div>
+            <div style={{ flex: 1, minWidth: 280 }}>
+              <div style={{ color: '#b8c6d8', fontSize: 13, lineHeight: 1.45 }}>
+                {topCandidate.decision}
+              </div>
+              <div style={{ color: '#6a8098', fontSize: 12, lineHeight: 1.45, marginTop: 6 }}>
+                {topCandidate.rationale}
+              </div>
+              <div
+                className="tracking-wider uppercase"
+                style={{ color: '#d4860c', fontSize: 10, marginTop: 8 }}
+              >
+                Downside · {topCandidate.downside}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ overflowX: 'auto' }}>
         <table className="w-full text-left war-table">
           <thead>
@@ -218,9 +269,6 @@ export function Waivers() {
                   >
                     {Math.round(c.age)}
                   </td>
-                  <td className="py-2.5 px-3" style={{ fontSize: 12, color: '#3d5070', width: 56 }}>
-                    {c.team || 'FA'}
-                  </td>
                   <td className="py-2.5 px-3" style={{ width: 120, minWidth: 100 }}>
                     <PriorityBar value={c.add_priority} />
                   </td>
@@ -244,7 +292,17 @@ export function Waivers() {
                       width: 80,
                     }}
                   >
-                    ${c.faab_estimate}
+                    ${c.bid_min}-${c.bid_max}
+                  </td>
+                  <td
+                    className="py-2.5 px-3"
+                    style={{
+                      fontSize: 12,
+                      color: c.drop_candidate ? '#6a8098' : '#3d5070',
+                      minWidth: 130,
+                    }}
+                  >
+                    {c.drop_candidate ?? 'Open spot'}
                   </td>
                 </motion.tr>
               )

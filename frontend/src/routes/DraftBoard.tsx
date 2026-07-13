@@ -22,6 +22,7 @@ const TABLE_COLS = [
 
 const POS_FILTER = ['ALL', 'QB', 'RB', 'WR', 'TE'] as const
 type Filter = (typeof POS_FILTER)[number]
+const AMBER = '#d4860c'
 
 function PlayerRow({
   rank,
@@ -290,6 +291,76 @@ export function DraftBoard() {
               picksUntil={data.picks_until_my_turn}
               currentRound={data.current_round}
             />
+          )}
+
+          {data.recommendation && (
+            <div
+              className="px-5 py-4"
+              style={{ borderBottom: '1px solid #162035', background: '#070d18' }}
+            >
+              <div className="flex flex-wrap items-start gap-5">
+                <div style={{ minWidth: 220 }}>
+                  <div
+                    className="tracking-[0.24em] uppercase"
+                    style={{ color: data.recommendation.urgency === 'ON_CLOCK' ? '#c93328' : '#6a8098', fontSize: 10 }}
+                  >
+                    {data.recommendation.urgency.replace('_', ' ')}
+                  </div>
+                  <div
+                    className="uppercase leading-none"
+                    style={{
+                      color: '#e8eef6',
+                      fontFamily: "'Barlow Condensed', sans-serif",
+                      fontSize: 30,
+                      fontWeight: 800,
+                      marginTop: 4,
+                    }}
+                  >
+                    {data.recommendation.name}
+                  </div>
+                  <div style={{ color: POS_COLOR[data.recommendation.position], fontSize: 12, marginTop: 5 }}>
+                    {data.recommendation.position} · {data.recommendation.team || 'FA'} · {data.recommendation.dynasty_value.toFixed(1)} dynasty
+                  </div>
+                </div>
+                <div style={{ flex: 1, minWidth: 280 }}>
+                  <div style={{ color: '#b8c6d8', fontSize: 13, lineHeight: 1.45 }}>
+                    {data.recommendation.reason}
+                  </div>
+                  <div
+                    className="tracking-wider uppercase"
+                    style={{ color: '#00b8cc', fontSize: 11, fontWeight: 700, marginTop: 8 }}
+                  >
+                    {data.recommendation.action}
+                  </div>
+                  {data.recommendation.alternatives.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      {data.recommendation.alternatives.map((alt) => (
+                        <span
+                          key={alt.player_id}
+                          style={{
+                            border: '1px solid #162035',
+                            color: '#6a8098',
+                            fontSize: 11,
+                            padding: '4px 7px',
+                            borderRadius: 2,
+                          }}
+                        >
+                          {alt.name} · {alt.position} · {alt.dynasty_value.toFixed(1)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {data.data_quality === 'DEGRADED' && data.warnings.length > 0 && (
+                <div
+                  className="mt-3 tracking-wide uppercase"
+                  style={{ color: AMBER, fontSize: 10 }}
+                >
+                  {data.warnings.join(' · ')}
+                </div>
+              )}
+            </div>
           )}
 
           {/* Controls */}

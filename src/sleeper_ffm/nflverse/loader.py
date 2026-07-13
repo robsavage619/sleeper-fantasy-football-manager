@@ -18,6 +18,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import cast
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import nfl_data_py as nfl
 import polars as pl
@@ -29,6 +31,10 @@ log = logging.getLogger(__name__)
 # Seasons available in nflverse. 2025 is the latest completed NFL season as of 2026-07.
 _FIRST_SEASON = 2014
 _CURRENT_SEASON = 2025
+_WEEKLY_URL = (
+    "https://github.com/nflverse/nflverse-data/releases/download/player_stats/"
+    "player_stats_{season}.parquet"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -91,25 +97,55 @@ def load_weekly(
         else:
             to_fetch.append(yr)
 
-    if to_fetch:
-        log.info("weekly: fetching seasons %s...", to_fetch)
-        df_raw = nfl.import_weekly_data(to_fetch)
-        df_new = cast(pl.DataFrame, pl.from_pandas(df_raw))
-        for yr in to_fetch:
-            yr_df = df_new.filter(pl.col("season") == yr)
+    for yr in to_fetch:
+        try:
+            log.info("weekly/%d: fetching...", yr)
+            df_raw = nfl.import_weekly_data([yr])
+            yr_df = cast(pl.DataFrame, pl.from_pandas(df_raw))
             dest = _weekly_path(yr)
             dest.parent.mkdir(parents=True, exist_ok=True)
             yr_df.write_parquet(dest)
             log.info("weekly/%d: %d rows written", yr, len(yr_df))
             frames.append(yr_df)
+        except (HTTPError, URLError, OSError) as exc:
+            log.warning("weekly/%d: unavailable from nflverse: %s", yr, exc)
 
     if not frames:
-        return pl.DataFrame()
+        return _empty_weekly_frame()
     return pl.concat(frames)
 
 
 def _weekly_path(season: int) -> Path:
     return NFLVERSE_DIR / "weekly" / f"{season}.parquet"
+
+
+def weekly_source_url(season: int) -> str:
+    """Return the nflverse weekly parquet URL for a season."""
+    return _WEEKLY_URL.format(season=season)
+
+
+def weekly_source_available(season: int, timeout: float = 3.0) -> bool:
+    """Check whether nflverse currently publishes weekly player stats for a season."""
+    request = Request(weekly_source_url(season), method="HEAD")
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            return 200 <= response.status < 400
+    except (HTTPError, URLError, TimeoutError, OSError):
+        return False
+
+
+def _empty_weekly_frame() -> pl.DataFrame:
+    return pl.DataFrame(
+        schema={
+            "season": pl.Int64,
+            "week": pl.Int64,
+            "season_type": pl.Utf8,
+            "player_id": pl.Utf8,
+            "position": pl.Utf8,
+            "player_display_name": pl.Utf8,
+            "recent_team": pl.Utf8,
+        }
+    )
 
 
 # ---------------------------------------------------------------------------

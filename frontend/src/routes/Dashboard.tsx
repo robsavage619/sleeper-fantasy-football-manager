@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import type { ReactNode } from 'react'
-import { api, type StartSitRec, type WarRoomAction } from '@/lib/api'
+import { useState } from 'react'
+import { api, type StartSitRec, type TransactionPlan, type WarRoomAction } from '@/lib/api'
 
 function Panel({
   label,
@@ -101,6 +102,11 @@ export function Dashboard() {
     queryFn: () => api.warRoomActions(12),
     refetchInterval: 60_000,
   })
+  const { data: evals } = useQuery({
+    queryKey: ['recommendation-evals'],
+    queryFn: () => api.recommendationEvals(8),
+    refetchInterval: 120_000,
+  })
 
   const leagueAny = league as Record<string, unknown> | undefined
 
@@ -144,6 +150,36 @@ export function Dashboard() {
         <StatBlock label="FAAB" value="$500" sub="continuous · Tue waivers" />
       </div>
 
+      {evals && evals.overall_status === 'DEGRADED' && (
+        <div
+          className="px-4 py-3"
+          style={{
+            background: '#0c1625',
+            border: '1px solid rgba(212, 134, 12, 0.35)',
+            borderLeft: '3px solid #d4860c',
+            borderRadius: 2,
+          }}
+        >
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <span
+              className="tracking-[0.3em] uppercase font-semibold"
+              style={{ color: '#d4860c', fontSize: 10 }}
+            >
+              RECOMMENDATION QUALITY · DEGRADED
+            </span>
+            <span style={{ color: '#b8c6d8', fontSize: 12 }}>
+              {evals.findings[0]?.detail}
+            </span>
+            <span
+              className="tracking-wider uppercase"
+              style={{ color: '#6a8098', fontSize: 10 }}
+            >
+              {evals.findings.length} finding{evals.findings.length === 1 ? '' : 's'}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Start/sit panel — only during regular season */}
       {state?.season_type === 'regular' && (
         <StartSitPanel rec={startSit} week={state?.week ?? null} />
@@ -175,6 +211,22 @@ const ACTION_COLOR: Record<WarRoomAction['kind'], string> = {
 
 function ActionQueue({ actions }: { actions: WarRoomAction[] }) {
   const top = actions.slice(0, 6)
+  const [plan, setPlan] = useState<TransactionPlan | null>(null)
+  const [planningId, setPlanningId] = useState<string | null>(null)
+
+  async function buildPlan(action: WarRoomAction) {
+    setPlanningId(action.action_id)
+    try {
+      setPlan(await api.transactionPlan({
+        action_id: action.action_id,
+        kind: action.kind,
+        command: action.command,
+      }))
+    } finally {
+      setPlanningId(null)
+    }
+  }
+
   return (
     <Panel label="ACTION QUEUE · NEXT BEST MOVES" accent="#d4860c">
       {top.length === 0 ? (
@@ -251,13 +303,46 @@ function ActionQueue({ actions }: { actions: WarRoomAction[] }) {
                   <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: '#3d5070' }}>
                     {action.source}
                   </span>
-                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: '#3d5070' }}>
-                    {action.confidence} CONF
-                  </span>
+                  <button
+                    onClick={() => void buildPlan(action)}
+                    style={{
+                      border: '1px solid #24344f',
+                      background: planningId === action.action_id ? '#162035' : 'transparent',
+                      color: '#6a8098',
+                      fontFamily: "'DM Mono', monospace",
+                      fontSize: 10,
+                      padding: '2px 6px',
+                      borderRadius: 2,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {planningId === action.action_id ? '...' : 'PLAN'}
+                  </button>
                 </div>
               </motion.div>
             )
           })}
+        </div>
+      )}
+      {plan && (
+        <div className="px-4 py-3" style={{ borderTop: '1px solid #162035', background: '#09111f' }}>
+          <div className="flex flex-wrap items-center gap-3 mb-2">
+            <span
+              className="tracking-[0.24em] uppercase"
+              style={{ color: '#d4860c', fontSize: 10, fontWeight: 700 }}
+            >
+              {plan.status}
+            </span>
+            <span style={{ color: '#e8eef6', fontFamily: "'DM Mono', monospace", fontSize: 11 }}>
+              {plan.confirm_phrase}
+            </span>
+          </div>
+          <div style={{ color: '#8aa0b8', fontSize: 12, lineHeight: 1.55 }}>
+            {plan.steps.join(' · ')}
+          </div>
+          <div className="mt-2" style={{ color: '#c93328', fontSize: 11 }}>
+            {plan.warnings.join(' · ')}
+          </div>
         </div>
       )}
     </Panel>

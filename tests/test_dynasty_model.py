@@ -8,6 +8,7 @@ from sleeper_ffm.model.dynasty import (
     value_pick,
     value_player,
 )
+from sleeper_ffm.model.valuation import _is_draftable_veteran
 
 
 def _player(pos: str, age: float, fpar: float, **kw) -> PlayerAsset:
@@ -62,6 +63,19 @@ def test_pick_future_season_discounted() -> None:
     r1_now = PickAsset(season="2026", round=1, original_owner_id=1, current_owner_id=1)
     r1_future = PickAsset(season="2027", round=1, original_owner_id=1, current_owner_id=1)
     assert value_pick(r1_future) < value_pick(r1_now)
+
+
+def test_old_free_agent_veteran_excluded_from_draft_pool() -> None:
+    asset = PlayerAsset(
+        player_id="vet",
+        name="Old Free Agent",
+        position="TE",
+        age=30,
+        current_fpar=80,
+        team="FA",
+    )
+    sleeper_players = {"vet": {"years_exp": 8, "search_rank": 999, "team": None}}
+    assert not _is_draftable_veteran(asset, sleeper_players)
 
 
 def test_pick_class_strength_multiplier() -> None:
