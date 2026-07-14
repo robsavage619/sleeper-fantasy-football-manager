@@ -40,7 +40,17 @@ class BoardState:
     picks_made: list[DraftPick]  # all picks so far (chronological)
     my_picks: list[DraftPick]  # only Rob's picks
     taken_player_ids: set[str]  # player_ids already off the board
-    my_slot: int  # pick slot in round (1-10)
+    my_slot: int | None  # pick slot in round (1-10), or None if truly unknown
+    # order_confirmed is False when Sleeper's own draft object has draft_order=null
+    # (pre-draft placeholder state) — slot_to_roster_id is then an identity map, NOT
+    # a real assignment. In that case my_slot may still be filled in from
+    # order_projected (see below); it is never read off the meaningless placeholder.
+    order_confirmed: bool = True
+    # True when my_slot/slot_to_roster_id come from project_draft_order() (this
+    # league's verified reverse-final-standings convention) rather than a
+    # Sleeper-confirmed draft_order. Always False once order_confirmed is True.
+    order_projected: bool = False
+    projection_source_season: str | None = None
     # slot_to_roster_id[slot] = roster_id (1-indexed str keys)
     slot_to_roster_id: dict[str, int] = field(default_factory=dict)
 
@@ -64,17 +74,27 @@ class BoardState:
 
     @property
     def my_pick_numbers(self) -> list[int]:
-        """All overall pick numbers that belong to Rob (linear draft, fixed slot)."""
+        """All overall pick numbers that belong to Rob (linear draft, fixed slot).
+
+        Uses my_slot whether it's Sleeper-confirmed or our own standings-based
+        projection (see order_projected) — empty only when neither is available,
+        i.e. my_slot itself is None.
+        """
+        if self.my_slot is None:
+            return []
         return [self.my_slot + (r * self.total_teams) for r in range(self.total_rounds)]
 
     @property
     def next_my_pick(self) -> int | None:
-        """The next pick number that is mine, or None if draft is over."""
+        """The next pick number that is mine, or None if unknown/draft is over."""
         future = [n for n in self.my_pick_numbers if n >= self.current_pick_no]
         return future[0] if future else None
 
     @property
-    def picks_until_my_turn(self) -> int:  # noqa: D102
+    def picks_until_my_turn(self) -> int | None:
+        """Picks remaining until my turn, or None if my_slot is unknown entirely."""
+        if self.my_slot is None:
+            return None
         nxt = self.next_my_pick
         if nxt is None:
             return 0
@@ -87,12 +107,15 @@ class BoardState:
 def sync_board(
     draft_id: str = DRAFT_ID,
     my_roster_id: int = MY_ROSTER_ID,
+    league_id: str = LEAGUE_ID,
 ) -> BoardState:
     """Fetch the current draft state from Sleeper.
 
     Args:
         draft_id: The Sleeper draft ID to query.
         my_roster_id: Rob's roster_id in this league.
+        league_id: The league this draft belongs to (for the standings-based
+            order projection fallback, and for resolving any traded picks).
 
     Returns:
         A ``BoardState`` snapshot of who has been picked and what's available.
@@ -104,25 +127,77 @@ def sync_board(
     settings = raw_draft.get("settings", {})
     total_rounds: int = settings.get("rounds", 4)
     total_teams: int = settings.get("teams", 10)
+    draft_season = raw_draft.get("season") or ""
     slot_to_roster_id: dict[str, int] = {
         str(k): int(v) for k, v in (raw_draft.get("slot_to_roster_id") or {}).items()
     }
 
-    # Determine my slot from slot_to_roster_id
-    my_slot = 1
-    for slot_str, rid in slot_to_roster_id.items():
-        if rid == my_roster_id:
-            my_slot = int(slot_str)
-            break
+    # Sleeper sets draft_order to null until the commissioner (or auto-randomize)
+    # assigns real slots. Until then, slot_to_roster_id is an identity placeholder
+    # ({"1":1,"2":2,...}) — NOT a real assignment — so my_slot must never be read
+    # off that map directly.
+    order_confirmed = raw_draft.get("draft_order") is not None
+    order_projected = False
+    projection_source_season: str | None = None
+    my_slot: int | None = None
+
+    if order_confirmed:
+        for slot_str, rid in slot_to_roster_id.items():
+            if rid == my_roster_id:
+                my_slot = int(slot_str)
+                break
+    else:
+        # Fall back to this league's verified convention: reverse order of the
+        # prior season's full final standings (see model.draft_order).
+        try:
+            from sleeper_ffm.model.draft_order import project_draft_order
+
+            projection = project_draft_order(league_id)
+        except Exception as exc:
+            log.warning("draft order projection failed: %s", exc)
+            projection = None
+
+        if projection is not None:
+            order_projected = True
+            projection_source_season = projection.source_season
+            slot_to_roster_id = {str(k): v for k, v in projection.slot_to_roster_id.items()}
+            natural_owner_by_slot = dict(projection.slot_to_roster_id)
+
+            # Round-1 trade awareness: if my natural round-1 pick was traded away, or
+            # I acquired someone else's, my_slot should reflect who I actually am this
+            # season, not just my natural standings slot. (Rounds 2-4 pick trades are
+            # not modeled here — a pre-existing simplification shared with the
+            # order-confirmed path above, which assumes a fixed slot across all rounds.)
+            try:
+                with SleeperClient(league_id=league_id) as c2:
+                    traded = c2.traded_picks()
+            except Exception as exc:
+                log.warning("draft order projection: traded_picks fetch failed: %s", exc)
+                traded = []
+
+            r1_owner_override: dict[int, int] = {}  # natural_owner_roster_id -> current owner
+            for tp in traded:
+                if tp.season == draft_season and tp.round == 1:
+                    r1_owner_override[tp.roster_id] = tp.owner_id
+
+            for slot_str, natural_rid in natural_owner_by_slot.items():
+                current_owner = r1_owner_override.get(natural_rid, natural_rid)
+                if current_owner == my_roster_id:
+                    my_slot = slot_str
+                    break
 
     picks_made = [DraftPick.model_validate(p) for p in (picks_raw or [])]
     my_picks = [p for p in picks_made if p.roster_id == my_roster_id]
     taken = {p.player_id for p in picks_made if p.player_id}
 
     log.info(
-        "board sync: %d/%d picks made, my slot=%d, my picks=%d",
+        "board sync: %d/%d picks made, order_confirmed=%s, order_projected=%s "
+        "(from %s), my slot=%s, my picks=%d",
         len(picks_made),
         total_rounds * total_teams,
+        order_confirmed,
+        order_projected,
+        projection_source_season,
         my_slot,
         len(my_picks),
     )
@@ -135,6 +210,9 @@ def sync_board(
         my_picks=my_picks,
         taken_player_ids=taken,
         my_slot=my_slot,
+        order_confirmed=order_confirmed,
+        order_projected=order_projected,
+        projection_source_season=projection_source_season,
         slot_to_roster_id=slot_to_roster_id,
     )
 

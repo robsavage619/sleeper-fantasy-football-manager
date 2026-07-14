@@ -53,6 +53,15 @@ class BriefingContext:
     draft_context: str
     prospect_context: str
     lineup_questions: str
+    # League-specific edge sections (default "" so older callers/tests stay valid).
+    mispricing: str = ""
+    roster_environment: str = ""
+    schedule_outlook: str = ""
+    title_equity: str = ""
+    contention: str = ""
+    regression: str = ""
+    handcuffs: str = ""
+    wire_watch: str = ""
 
 
 def build_master_briefing(context: BriefingContext, generated_at: str) -> str:
@@ -86,6 +95,12 @@ answer with ONE JSON document (schema at the bottom) and NOTHING ELSE.
 ## Roster Sabermetrics (GM performance signals)
 {context.saber_summary}
 
+## Title Equity (Monte-Carlo season simulation)
+Where this roster's raw strength places it in the league's title race. This is the
+currency that should drive contend-vs-rebuild framing and how aggressively to buy/sell:
+a high title share argues for pushing chips in now; a low one argues for accumulating.
+{context.title_equity}
+
 ## Real-World Intel (injuries, depth-chart risk, opportunity, league moves)
 Factor this into every call: don't chase or hold an injured/buried player, and
 jump waiver opportunities before the herd.
@@ -97,8 +112,37 @@ cornerstone), pay the market premium a coveted position commands here, and only
 send a QB to a QB-needy partner. Prefer these over the raw angles below.
 {context.trade_offers}
 
+## League-Specific Mispricing (our exact scoring vs the generic dynasty market)
+The trade market prices on generic PPR; we score with bonuses. These are players our
+rules value differently than the market does — BUY where we underprice-relative-to-market
+is negative (market cheap for us), SELL where the market overpays for a profile our rules
+don't reward. This is a real, defensible edge: act on it in trade targeting.
+{context.mispricing}
+
+## League Contention Windows (who's buying, who's selling)
+Each rival's competitive window and what they want. Target trades at the fit: sell aging
+assets to WIN-NOW teams, pry vets from REBUILD teams for picks, don't pitch win-now help
+to a RETOOL team hoarding youth.
+{context.contention}
+
+## Regression Watch (TD-over-expected — buy-low / sell-high)
+Players whose touchdown output ran ahead of or behind their yardage volume last season.
+Over-expected scorers are sell-high candidates (TD rate tends to correct down); under-
+expected are buy-lows on real, unlucky usage. A lean to time the market, not a verdict.
+{context.regression}
+
 ## Trade Candidates (raw positional angles — directional only, not value-balanced)
 {context.trade_candidates}
+
+## Handcuffs & Leverage (contingent value)
+Which of my starters have an unrostered backup (an injury cliff worth insuring), and
+which available backups sit behind rivals' key starters (stashes that create leverage).
+{context.handcuffs}
+
+## Wire Early-Warning (snap-share risers, still available)
+Players whose offensive snap share is trending up sharply and who are unrostered in this
+league — emerging roles to claim before the points show up and the herd bids.
+{context.wire_watch}
 
 ## Waiver Candidates
 {context.waiver_candidates}
@@ -111,6 +155,17 @@ send a QB to a QB-needy partner. Prefer these over the raw angles below.
 
 ## Lineup Questions
 {context.lineup_questions}
+
+## Roster Stadium & Weather Leans (start/sit context)
+How my rostered players have historically performed by venue and conditions. Use to
+break start/sit ties — fade a cold/wind-averse player outdoors in December, lean into a
+dome specialist. Descriptive of past games, not a forecast.
+{context.roster_environment}
+
+## Playoff Schedule Outlook (defense-vs-position, weeks 15-17)
+Opponent-adjusted schedule softness for my players. Index >1 = soft matchups (good),
+<1 = tough. Weight the fantasy-playoff weeks heavily for hold/acquire calls.
+{context.schedule_outlook}
 
 ---
 ## Your Task
@@ -161,7 +216,206 @@ def gather_briefing_context(my_roster_id: int = MY_ROSTER_ID) -> BriefingContext
         draft_context=_draft_context(),
         prospect_context=_prospect_context(),
         lineup_questions=lineup_questions,
+        mispricing=_mispricing_section(),
+        roster_environment=_environment_section(my_roster_id),
+        schedule_outlook=_schedule_outlook_section(my_roster_id),
+        title_equity=_title_equity_section(my_roster_id),
+        contention=_contention_section(my_roster_id),
+        regression=_regression_section(),
+        handcuffs=_handcuff_section(my_roster_id),
+        wire_watch=_wire_watch_section(my_roster_id),
     )
+
+
+def _wire_watch_section(my_roster_id: int, top: int = 8) -> str:
+    """Available snap-share risers from the wire early-warning engine."""
+    try:
+        from sleeper_ffm.model.wire_watch import build_wire_watch
+
+        watch = build_wire_watch(my_roster_id=my_roster_id)
+    except Exception as exc:
+        log.warning("master: wire watch unavailable: %s", exc)
+        return "(degraded — wire watch unavailable)"
+
+    available = [a for a in watch.alerts if a.available][:top]
+    if not available:
+        note = "; ".join(watch.warnings) or "no risers cleared the bar"
+        return f"  (no available risers — {note})"
+    return "\n".join(f"  {a.name} ({a.position} {a.team}): {a.note}" for a in available)
+
+
+def _handcuff_section(my_roster_id: int) -> str:
+    """Exposed handcuffs on my roster + available leverage stashes."""
+    try:
+        from sleeper_ffm.model.handcuff import build_handcuff_map
+
+        hc = build_handcuff_map(my_roster_id)
+    except Exception as exc:
+        log.warning("master: handcuff map unavailable: %s", exc)
+        return "(degraded — handcuff map unavailable)"
+
+    lines: list[str] = ["  Exposed starters (backup not on my roster):"]
+    lines += [
+        f"    {h.starter_name} ({h.position} {h.team}) → backup "
+        f"{h.backup_name or 'none'} [{h.backup_owner}]"
+        for h in hc.exposed[:8]
+    ] or ["    (none — contingent value secured)"]
+    lines.append("  Leverage stashes (free-agent backups behind rivals' starters):")
+    lines += [
+        f"    {s.backup_name} ({s.position} {s.team}) behind {s.starter_name} [{s.starter_owner}]"
+        for s in hc.leverage_stashes[:6]
+    ] or ["    (none available)"]
+    return "\n".join(lines)
+
+
+def _regression_section(top: int = 8) -> str:
+    """TD-over-expected buy-low / sell-high candidates."""
+    try:
+        from sleeper_ffm.model.regression import build_regression
+
+        board = build_regression(top=top)
+    except Exception as exc:
+        log.warning("master: regression unavailable: %s", exc)
+        return "(degraded — regression engine unavailable)"
+
+    if not board.sell_high and not board.buy_low:
+        note = "; ".join(board.warnings) or "no qualifying players"
+        return f"  (no regression signal — {note})"
+    lines = ["  SELL-HIGH (rode TD variance up):"]
+    lines += [
+        f"    {f.name} ({f.position} {f.team}): {f.total_tds:.0f} TDs vs "
+        f"{f.expected_tds:.1f} expected (+{f.td_oe:.1f})"
+        for f in board.sell_high
+    ] or ["    (none)"]
+    lines.append("  BUY-LOW (unlucky on real usage):")
+    lines += [
+        f"    {f.name} ({f.position} {f.team}): {f.total_tds:.0f} TDs vs "
+        f"{f.expected_tds:.1f} expected ({f.td_oe:.1f})"
+        for f in board.buy_low
+    ] or ["    (none)"]
+    return "\n".join(lines)
+
+
+def _contention_section(my_roster_id: int) -> str:
+    """League contention windows with buy/sell guidance per roster."""
+    try:
+        from sleeper_ffm.model.contention import build_contention
+
+        board = build_contention(n_sims=2000)
+    except Exception as exc:
+        log.warning("master: contention unavailable: %s", exc)
+        return "(degraded — contention classifier unavailable)"
+
+    lines: list[str] = []
+    for w in board.windows:
+        tag = " ← my team" if w.roster_id == my_roster_id else ""
+        lines.append(
+            f"  roster {w.roster_id} [{w.label}] playoff {w.playoff_odds:.0%}, "
+            f"core age {w.core_age:.1f}, youth {w.young_share:.0%}{tag} — "
+            f"wants {w.seeking}; should move {w.shedding}"
+        )
+    return "\n".join(lines) if lines else "(no rosters classified)"
+
+
+def _title_equity_section(my_roster_id: int) -> str:
+    """Per-team playoff/title odds from the Monte-Carlo season simulator."""
+    try:
+        from sleeper_ffm.model.season_sim import build_season_sim
+
+        sim = build_season_sim(n_sims=2000)
+    except Exception as exc:
+        log.warning("master: title equity unavailable: %s", exc)
+        return "(degraded — season simulation unavailable)"
+
+    caveat = sim.warnings[0] if sim.warnings else ""
+    lines = [f"  _{sim.schedule_source} schedule, {sim.n_sims} sims. {caveat}_".rstrip()]
+    for rank, t in enumerate(sim.teams, start=1):
+        tag = " ← my team" if t.roster_id == my_roster_id else ""
+        lines.append(
+            f"  {rank}. roster {t.roster_id}: title {t.title_odds:.0%}, "
+            f"playoff {t.playoff_odds:.0%}, ~{t.avg_wins:.1f} wins, "
+            f"strength {t.strength:.0f}/wk{tag}"
+        )
+    return "\n".join(lines)
+
+
+def _my_roster_players(my_roster_id: int) -> dict[str, tuple[str, str, str]]:
+    """Return ``{player_id: (name, position, team)}`` for my rostered skill players."""
+    from sleeper_ffm.model.valuation import SKILL_POSITIONS
+    from sleeper_ffm.sleeper.client import SleeperClient
+
+    with SleeperClient() as c:
+        rosters = c.rosters()
+        players = c.players()
+    mine = next((r for r in rosters if r.roster_id == my_roster_id), None)
+    if mine is None:
+        return {}
+    ids: set[str] = set(mine.players or []) | set(mine.taxi or []) | set(mine.reserve or [])
+    out: dict[str, tuple[str, str, str]] = {}
+    for pid in ids:
+        meta = players.get(pid, {})
+        pos = meta.get("position")
+        if pos in SKILL_POSITIONS:
+            out[pid] = (meta.get("full_name") or pid, pos, meta.get("team") or "FA")
+    return out
+
+
+def _mispricing_section(top: int = 8) -> str:
+    """Buy/sell board from the scoring-leverage mispricing engine."""
+    try:
+        from sleeper_ffm.model.mispricing import build_mispricing, mispricing_summary
+
+        return mispricing_summary(build_mispricing(top=top), limit=top).rstrip()
+    except Exception as exc:
+        log.warning("master: mispricing unavailable: %s", exc)
+        return "(degraded — mispricing engine unavailable)"
+
+
+def _environment_section(my_roster_id: int) -> str:
+    """Stadium/weather leans for my rostered players."""
+    try:
+        from sleeper_ffm.model.stadium_weather import build_environment_splits
+
+        profiles = build_environment_splits()
+        mine = _my_roster_players(my_roster_id)
+    except Exception as exc:
+        log.warning("master: environment section unavailable: %s", exc)
+        return "(degraded — stadium/weather splits unavailable)"
+
+    lines: list[str] = []
+    for pid, (name, pos, team) in mine.items():
+        prof = profiles.get(pid)
+        if prof and prof.flags:
+            lines.append(f"  {name} ({pos} {team}): " + "; ".join(prof.flags))
+    return "\n".join(lines) if lines else "  (no material stadium/weather leans on the roster)"
+
+
+def _schedule_outlook_section(my_roster_id: int) -> str:
+    """Playoff-weighted DvP schedule softness for my rostered players."""
+    try:
+        from sleeper_ffm.model.schedule_strength import build_schedule_strength
+
+        ss = build_schedule_strength()
+        mine = _my_roster_players(my_roster_id)
+    except Exception as exc:
+        log.warning("master: schedule outlook unavailable: %s", exc)
+        return "(degraded — schedule strength unavailable)"
+
+    if not ss.sos:
+        note = "; ".join(ss.warnings) or "no schedule data"
+        return f"  (schedule outlook unavailable — {note})"
+
+    sos_map = {(s.team, s.position): s for s in ss.sos}
+    lines: list[str] = []
+    for _pid, (name, pos, team) in mine.items():
+        s = sos_map.get((team, pos))
+        if s and s.playoff_weeks_counted:
+            lines.append(
+                f"  {name} ({pos} {team}): playoff SoS {s.playoff_index:.2f}, "
+                f"full-season {s.full_season_index:.2f}"
+            )
+    lines.sort(key=lambda ln: ln)
+    return "\n".join(lines) if lines else "  (no playoff schedule data for rostered players)"
 
 
 def _intel_feed(my_roster_id: int) -> str:
@@ -287,9 +541,28 @@ def _draft_context() -> str:
 
     if board.is_complete():
         return "(draft complete — no live picks)"
+    if board.order_confirmed:
+        return (
+            f"Live draft: pick {board.current_pick_no}/{board.total_picks} "
+            f"(round {board.current_round}), {board.picks_until_my_turn} picks until my turn."
+        )
+    if board.order_projected and board.my_slot is not None:
+        return (
+            f"Draft created ({board.total_picks} picks, {board.total_teams} teams). Sleeper has "
+            f"NOT yet officially set the draft order, but this league's rookie draft order is a "
+            f"verified convention (reverse of the full final standings from the prior completed "
+            f"season, {board.projection_source_season}) — under that rule my projected slot is "
+            f"{board.my_slot}, with pick {board.next_my_pick} overall "
+            f"({board.picks_until_my_turn} picks away). Treat this as a strong projection, not an "
+            "official Sleeper-confirmed slot — a name recommended as 'the pick' must account for "
+            "how many picks happen before this projected turn, since top names may not survive."
+        )
     return (
-        f"Live draft: pick {board.current_pick_no}/{board.total_picks} "
-        f"(round {board.current_round}), {board.picks_until_my_turn} picks until my turn."
+        f"Draft created ({board.total_picks} picks, {board.total_teams} teams) but Sleeper has "
+        "NOT yet set/randomized the draft order, and no standings-based projection was available "
+        "either — there is no confirmed or projected pick number yet. Do not state a specific "
+        "slot or 'picks until my turn' as fact; recommend players generally and note the order "
+        "is pending."
     )
 
 

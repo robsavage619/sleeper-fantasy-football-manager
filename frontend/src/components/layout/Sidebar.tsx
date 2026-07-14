@@ -11,11 +11,15 @@ import {
   Telescope,
   FileText,
   Award,
+  Gauge,
+  Crosshair,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 const NAV: Array<{ to: string; label: string; icon: LucideIcon }> = [
   { to: '/', label: 'War Room', icon: BarChart2 },
+  { to: '/edges', label: 'Market Edges', icon: Crosshair },
+  { to: '/matchups', label: 'Matchup Lab', icon: Gauge },
   { to: '/draft', label: 'Draft Board', icon: Zap },
   { to: '/roster', label: 'Roster', icon: Users },
   { to: '/trades', label: 'Trades', icon: ArrowLeftRight },

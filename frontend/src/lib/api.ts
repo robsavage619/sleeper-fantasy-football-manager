@@ -164,12 +164,17 @@ export type OfferLogEntry = {
 }
 
 export type DraftBoard = {
-  status: 'active' | 'complete'
+  status: 'pre_draft' | 'active' | 'complete'
+  // True when my_slot below is our own standings-based projection (this league's
+  // verified reverse-final-standings convention), not yet a Sleeper-confirmed order.
+  order_projected: boolean
+  projection_source_season: string | null
   current_pick: number
   total_picks: number
   current_round: number
-  my_slot: number
-  picks_until_my_turn: number
+  // null only when neither Sleeper nor the standings projection has an answer
+  my_slot: number | null
+  picks_until_my_turn: number | null
   next_my_pick: number | null
   data_quality: 'FULL' | 'DEGRADED'
   warnings: string[]
@@ -338,6 +343,16 @@ export type OwnerProfile = {
   archetype: 'REBUILDER' | 'CONTENDER' | 'BALANCED' | 'UNKNOWN'
   archetype_rationale: string
   is_me: boolean
+}
+
+export type DraftClassStrength = {
+  season: string
+  strength: number // index centered on ~1.0
+  pct: number // (strength - 1) * 100, signed
+  label: 'STACKED' | 'STRONG' | 'AVERAGE' | 'SOFT' | 'WEAK' | 'UNRATED'
+  note: string
+  rated: boolean
+  source: 'fantasycalc' | 'unavailable'
 }
 
 export type PickMarketSignal = {
@@ -866,6 +881,37 @@ export type ManagerReportCard = {
   headline: string
 }
 
+export type OwnerGMMetrics = {
+  roster_id: number
+  user_id: string
+  display_name: string | null
+  skill_season: string
+  luck: {
+    skill_season: string
+    actual_wins: number
+    allplay_pct: number
+    expected_wins: number
+    luck_index: number
+    close_wins: number
+    close_losses: number
+    one_score_games: number
+  }
+  lineup_efficiency: { efficiency: number | null; weeks: number; missing: boolean }
+  faab: { budget: number; used: number | null; remaining: number | null }
+  trade_ledger: {
+    value_in: number
+    value_out: number
+    net: number
+    trade_count: number
+    resolved: number
+    unresolved: number
+    label: string // UNCALIBRATED
+    evidence_count: number
+  }
+  data_quality: string
+  warnings: string[]
+}
+
 export type TxPickup = {
   player_id: string
   name: string
@@ -957,6 +1003,205 @@ export interface RefreshStatus {
   freshness: Record<string, RefreshFreshness>
 }
 
+// --- Edge & matchup surfaces (scoring-leverage, sim, regression, environment) ---
+
+export type MispricingEntry = {
+  player_id: string
+  name: string
+  position: 'QB' | 'RB' | 'WR' | 'TE'
+  team: string
+  games_played: number
+  our_fp: number
+  generic_fp: number
+  leverage: number
+  pos_median_leverage: number
+  edge_pct: number
+  verdict: 'BUY' | 'SELL' | 'FAIR'
+  market_value: number | null
+  value_gap: number | null
+  note: string
+}
+
+export type MispricingBoard = {
+  season: number
+  calibration: string
+  min_games: number
+  market_source: string
+  entries: MispricingEntry[]
+  buys: MispricingEntry[]
+  sells: MispricingEntry[]
+  warnings: string[]
+}
+
+export type TeamOdds = {
+  roster_id: number
+  strength: number
+  playoff_odds: number
+  title_odds: number
+  bye_odds: number
+  avg_wins: number
+  avg_seed: number
+  is_me: boolean
+}
+
+export type SeasonSim = {
+  season: number
+  n_sims: number
+  regular_weeks: number
+  playoff_teams: number
+  schedule_source: string
+  teams: TeamOdds[]
+  warnings: string[]
+}
+
+export type ContentionRow = {
+  roster_id: number
+  label: 'WIN-NOW' | 'SUSTAIN' | 'RETOOL' | 'REBUILD' | 'HOLD'
+  playoff_odds: number
+  title_odds: number
+  core_age: number
+  young_share: number
+  strength: number
+  seeking: string
+  shedding: string
+  rationale: string
+  is_me: boolean
+}
+
+export type ContentionBoard = { season: number; windows: ContentionRow[]; warnings: string[] }
+
+export type RegressionFlag = {
+  player_id: string
+  name: string
+  position: 'QB' | 'RB' | 'WR' | 'TE'
+  team: string
+  total_yards: number
+  total_tds: number
+  expected_tds: number
+  td_oe: number
+  verdict: 'SELL-HIGH' | 'BUY-LOW' | 'NEUTRAL'
+  note: string
+}
+
+export type RegressionBoard = {
+  season: number
+  baselines: Record<string, number>
+  sell_high: RegressionFlag[]
+  buy_low: RegressionFlag[]
+  warnings: string[]
+}
+
+export type SoSWeek = { week: number; opponent: string; index: number }
+
+export type TeamPositionSoS = {
+  team: string
+  position: 'QB' | 'RB' | 'WR' | 'TE'
+  full_season_index: number
+  playoff_index: number
+  weeks_counted: number
+  playoff_weeks_counted: number
+  softest_week: SoSWeek | null
+  toughest_week: SoSWeek | null
+}
+
+export type ScheduleStrength = {
+  dvp_season: number
+  schedule_season: number
+  dvp: Record<string, number>
+  sos: TeamPositionSoS[]
+  warnings: string[]
+}
+
+export type EnvSplit = { bucket: string; games: number; avg_fp: number; delta: number }
+export type StadiumSplit = { stadium: string; games: number; avg_fp: number; delta: number }
+
+export type PlayerEnvironmentProfile = {
+  player_id: string
+  name: string
+  position: 'QB' | 'RB' | 'WR' | 'TE'
+  total_games: number
+  overall_avg_fp: number
+  splits: Record<string, EnvSplit>
+  stadiums: StadiumSplit[]
+  flags: string[]
+}
+
+export type EnvironmentFlags = { count: number; flagged: PlayerEnvironmentProfile[] }
+
+export type HandcuffLink = {
+  starter_id: string
+  starter_name: string
+  position: 'QB' | 'RB' | 'WR' | 'TE'
+  team: string
+  backup_id: string | null
+  backup_name: string | null
+  backup_owner: string
+  status: 'SECURED' | 'EXPOSED' | 'NO_BACKUP'
+}
+
+export type LeverageStash = {
+  backup_id: string
+  backup_name: string
+  position: 'QB' | 'RB' | 'WR' | 'TE'
+  team: string
+  starter_name: string
+  starter_owner: string
+}
+
+export type HandcuffMap = {
+  season: number
+  my_links: HandcuffLink[]
+  exposed: HandcuffLink[]
+  leverage_stashes: LeverageStash[]
+  warnings: string[]
+}
+
+export type WireAlert = {
+  player_id: string
+  name: string
+  position: 'QB' | 'RB' | 'WR' | 'TE'
+  team: string
+  recent_pct: number
+  prior_pct: number
+  delta: number
+  available: boolean
+  note: string
+}
+
+export type WireWatchBoard = { season: number; recent_n: number; alerts: WireAlert[]; warnings: string[] }
+
+export type GamedayBrief = {
+  week: number
+  season: number
+  has_matchup: boolean
+  my_roster_id: number
+  opponent_roster_id: number | null
+  my_projected: number
+  opponent_projected: number
+  win_probability: number
+  lineup_upside: number
+  recommended_swaps: Array<{ start: string; sit: string; gain: number }>
+  note: string
+  warnings: string[]
+}
+
+export type ScoreboardKind = {
+  kind: string
+  total: number
+  graded: number
+  correct: number
+  hit_rate: number | null
+}
+
+export type Scoreboard = {
+  recs: Array<{ finding_id: string; made_at: string; kind: string; subject: string; status: string; detail: string }>
+  by_kind: ScoreboardKind[]
+  overall_hit_rate: number | null
+  graded_count: number
+  pending_count: number
+  warnings: string[]
+}
+
 export const api = {
   draftBoard: (top = 50, season?: number) =>
     get<DraftBoard>(`/draft/board?top=${top}${season ? `&season=${season}` : ''}`),
@@ -986,6 +1231,7 @@ export const api = {
     get<StartSitRec>(`/season/startsit?week=${week}${season ? `&season=${season}` : ''}`),
   ownerProfiles: () => get<OwnerProfile[]>('/owners/profiles'),
   ownerSkill: () => get<OwnerSkillIndex[]>('/owners/skill'),
+  ownersSabermetrics: () => get<OwnerGMMetrics[]>('/owners/sabermetrics'),
   reportCard: () => get<ManagerReportCard[]>('/owners/report-card'),
   transactionValue: () => get<TransactionValue[]>('/owners/transaction-value'),
   draftProfile: () => get<DraftProfile[]>('/owners/draft-profile'),
@@ -1040,6 +1286,7 @@ export const api = {
     return get<{ prompt: string }>(`/draft/prospects/scouting-prompt?${qs.toString()}`)
   },
   pickMarket: () => get<PickMarketSignal[]>('/picks/market'),
+  draftClassStrength: () => get<DraftClassStrength[]>('/picks/class-strength'),
   playerSabermetrics: (playerId: string) =>
     get<PlayerSabermetrics>(`/players/${encodeURIComponent(playerId)}/sabermetrics`),
   ownerDossier: (rosterId: number, season?: number) =>
@@ -1063,4 +1310,19 @@ export const api = {
     post<TransactionPlan>('/war-room/transaction-plan', body),
   narrative: () => get<NarrativeContext>('/season/narrative'),
   warRoomActions: (top = 12) => get<WarRoomAction[]>(`/war-room/actions?top=${top}`),
+  // Edge & matchup surfaces
+  mispricing: (top = 15) => get<MispricingBoard>(`/mispricing?top=${top}`),
+  seasonSim: (nSims = 4000) => get<SeasonSim>(`/season-sim?n_sims=${nSims}`),
+  contention: () => get<ContentionBoard>('/contention'),
+  regression: (top = 15) => get<RegressionBoard>(`/regression?top=${top}`),
+  scheduleStrength: (position?: string) =>
+    get<ScheduleStrength>(`/schedule-strength${position ? `?position=${position}` : ''}`),
+  environmentFlags: () => get<EnvironmentFlags>('/environment'),
+  playerEnvironment: (playerId: string) =>
+    get<PlayerEnvironmentProfile>(`/environment/${encodeURIComponent(playerId)}`),
+  handcuffs: () => get<HandcuffMap>('/handcuffs'),
+  wireWatch: (availableOnly = true) => get<WireWatchBoard>(`/wire-watch?available_only=${availableOnly}`),
+  gameday: (week = 1) => get<GamedayBrief>(`/gameday?week=${week}`),
+  scoreboard: () => get<Scoreboard>('/scoreboard'),
+  gmAddressPrompt: () => get<{ prompt: string; generated_at: string }>('/gm-address'),
 }

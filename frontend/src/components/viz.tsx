@@ -17,6 +17,75 @@ export const POS_COLOR: Record<string, string> = {
 }
 export const STATUS = { good: '#1a9b5e', ok: '#3a8cd4', warn: '#d4860c', bad: '#c93328', info: '#00b8cc' }
 
+/**
+ * Inline "ⓘ" affordance that reveals a plain-English metric definition on hover
+ * or tap. Popover anchors below-left of the icon; click toggles for touch.
+ */
+export function InfoTip({ text, label, align = 'left' }: { text: string; label?: string; align?: 'left' | 'right' }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <span
+      style={{ position: 'relative', display: 'inline-flex', verticalAlign: 'middle' }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        aria-label={label ? `What is ${label}?` : 'Explain this metric'}
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((o) => !o)
+        }}
+        style={{
+          width: 13,
+          height: 13,
+          borderRadius: '50%',
+          border: `1px solid ${SURFACE.border2}`,
+          background: 'transparent',
+          color: INK.muted,
+          fontFamily: "'DM Mono', monospace",
+          fontSize: 9,
+          lineHeight: 1,
+          cursor: 'pointer',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 0,
+          flexShrink: 0,
+        }}
+      >
+        i
+      </button>
+      {open && (
+        <span
+          role="tooltip"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            [align]: 0,
+            width: 244,
+            zIndex: 60,
+            background: SURFACE.card2,
+            border: `1px solid ${SURFACE.border2}`,
+            borderRadius: 4,
+            padding: '9px 11px',
+            color: INK.secondary,
+            fontSize: 11.5,
+            lineHeight: 1.5,
+            fontWeight: 400,
+            letterSpacing: 'normal',
+            textTransform: 'none',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+            pointerEvents: 'none',
+          }}
+        >
+          {text}
+        </span>
+      )}
+    </span>
+  )
+}
+
 /** Tier color for a 0..1 "higher-is-better" score (diverging poor→elite). */
 export function tierColor(pct01: number): string {
   if (pct01 >= 0.7) return STATUS.good
@@ -317,6 +386,332 @@ export function Donut({
         {label}
       </span>
     </div>
+  )
+}
+
+// --- owner-comparison primitives ------------------------------------------
+// Color follows the *entity* (avatar carries identity) or a *role* (sign / tier),
+// never rank. Compare-mode assigns these three well-separated hues in fixed order.
+export const OWNER_HUES = ['#00b8cc', '#d4860c', '#9085e9'] // cyan · amber · violet
+
+const BARLOW = "'Barlow Condensed', sans-serif"
+const MONO = "'DM Mono', monospace"
+
+/** Clipped owner-avatar disc used as a scatter mark (falls back to a ring dot). */
+function AvatarDisc({
+  avatar,
+  cx,
+  cy,
+  r,
+  ring,
+  id,
+}: {
+  avatar: string | null
+  cx: number
+  cy: number
+  r: number
+  ring: string
+  id: string
+}) {
+  if (!avatar) {
+    return <circle cx={cx} cy={cy} r={r * 0.7} fill={ring} stroke={SURFACE.card} strokeWidth={1.5} />
+  }
+  const clip = `disc-${id}`
+  return (
+    <>
+      <clipPath id={clip}>
+        <circle cx={cx} cy={cy} r={r} />
+      </clipPath>
+      <circle cx={cx} cy={cy} r={r + 1.5} fill={SURFACE.card} />
+      <image
+        href={`https://sleepercdn.com/avatars/thumbs/${avatar}`}
+        x={cx - r}
+        y={cy - r}
+        width={r * 2}
+        height={r * 2}
+        clipPath={`url(#${clip})`}
+        preserveAspectRatio="xMidYMid slice"
+      />
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={ring} strokeWidth={2} />
+    </>
+  )
+}
+
+export type ScatterPoint = {
+  id: string
+  x: number
+  y: number
+  name: string
+  avatar: string | null
+  ring?: string
+  me?: boolean
+  tip?: string
+}
+
+/**
+ * Quadrant scatter — two measures, avatar marks, median reference lines that
+ * split the plane into four labeled quadrants. Identity via the avatar, so no
+ * per-owner color is needed; the ring encodes an optional role/status.
+ */
+export function Scatter({
+  points,
+  xLabel,
+  yLabel,
+  xRef,
+  yRef,
+  quadrants,
+  height = 300,
+}: {
+  points: ScatterPoint[]
+  xLabel: string
+  yLabel: string
+  xRef: number
+  yRef: number
+  quadrants?: [string, string, string, string] // TL, TR, BR, BL
+  height?: number
+}) {
+  const W = 620
+  const H = height
+  const pad = { l: 46, r: 18, t: 16, b: 34 }
+  const xs = points.map((p) => p.x)
+  const ys = points.map((p) => p.y)
+  const xmin = Math.min(...xs, xRef)
+  const xmax = Math.max(...xs, xRef)
+  const ymin = Math.min(...ys, yRef)
+  const ymax = Math.max(...ys, yRef)
+  const xpad = (xmax - xmin || 1) * 0.12
+  const ypad = (ymax - ymin || 1) * 0.12
+  const sx = (v: number) =>
+    pad.l + ((v - (xmin - xpad)) / (xmax - xmin + 2 * xpad || 1)) * (W - pad.l - pad.r)
+  const sy = (v: number) =>
+    H - pad.b - ((v - (ymin - ypad)) / (ymax - ymin + 2 * ypad || 1)) * (H - pad.t - pad.b)
+  const rx = sx(xRef)
+  const ry = sy(yRef)
+  const qLabel = (t: string, x: number, y: number, anchor: 'start' | 'end') => (
+    <text
+      x={x}
+      y={y}
+      textAnchor={anchor}
+      style={{ fill: INK.dim, fontSize: 8.5, fontFamily: BARLOW, letterSpacing: '0.18em' }}
+      className="uppercase"
+    >
+      {t}
+    </text>
+  )
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block' }} role="img" aria-label={`${yLabel} versus ${xLabel}`}>
+      {/* quadrant reference lines (median split) */}
+      <line x1={rx} y1={pad.t} x2={rx} y2={H - pad.b} stroke={SURFACE.border2} strokeWidth={1} strokeDasharray="3 4" />
+      <line x1={pad.l} y1={ry} x2={W - pad.r} y2={ry} stroke={SURFACE.border2} strokeWidth={1} strokeDasharray="3 4" />
+      {quadrants && (
+        <>
+          {qLabel(quadrants[0], pad.l + 4, pad.t + 10, 'start')}
+          {qLabel(quadrants[1], W - pad.r - 4, pad.t + 10, 'end')}
+          {qLabel(quadrants[2], W - pad.r - 4, H - pad.b - 6, 'end')}
+          {qLabel(quadrants[3], pad.l + 4, H - pad.b - 6, 'start')}
+        </>
+      )}
+      {/* axis titles */}
+      <text x={pad.l + (W - pad.l - pad.r) / 2} y={H - 4} textAnchor="middle" style={{ fill: INK.muted, fontSize: 9.5, fontFamily: BARLOW, letterSpacing: '0.16em' }} className="uppercase">
+        {xLabel} →
+      </text>
+      <text transform={`rotate(-90 12 ${pad.t + (H - pad.t - pad.b) / 2})`} x={12} y={pad.t + (H - pad.t - pad.b) / 2} textAnchor="middle" style={{ fill: INK.muted, fontSize: 9.5, fontFamily: BARLOW, letterSpacing: '0.16em' }} className="uppercase">
+        {yLabel} →
+      </text>
+      {points.map((p) => (
+        <g key={p.id}>
+          <title>{p.tip ?? `${p.name}: ${xLabel} ${p.x.toFixed(2)}, ${yLabel} ${p.y.toFixed(2)}`}</title>
+          <AvatarDisc avatar={p.avatar} cx={sx(p.x)} cy={sy(p.y)} r={p.me ? 15 : 12} ring={p.me ? STATUS.info : p.ring ?? SURFACE.border2} id={p.id} />
+        </g>
+      ))}
+    </svg>
+  )
+}
+
+export type RankedItem = {
+  id: string
+  label: string
+  avatar: string | null
+  value: number
+  me?: boolean
+  sub?: string
+}
+
+/**
+ * Horizontal ranked bars. `diverging` anchors bars at a center zero line and
+ * colors by sign (good/critical); otherwise bars are left-anchored and colored
+ * by `colorFor` (default status.info). Avatar + label carry identity.
+ */
+export function RankedBar({
+  items,
+  format = (v) => v.toFixed(0),
+  diverging = false,
+  colorFor,
+  maxRows,
+}: {
+  items: RankedItem[]
+  format?: (v: number) => string
+  diverging?: boolean
+  colorFor?: (v: number) => string
+  maxRows?: number
+}) {
+  const rows = maxRows ? items.slice(0, maxRows) : items
+  const maxAbs = Math.max(1, ...rows.map((r) => Math.abs(r.value)))
+  const color = (v: number) => (colorFor ? colorFor(v) : diverging ? (v >= 0 ? STATUS.good : STATUS.bad) : STATUS.info)
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+      {rows.map((r) => {
+        const w = (Math.abs(r.value) / maxAbs) * 100
+        const c = color(r.value)
+        return (
+          <div key={r.id} title={`${r.label}: ${format(r.value)}${r.sub ? ` · ${r.sub}` : ''}`} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 20, textAlign: 'right', flexShrink: 0 }}>
+              <OwnerAvatar avatar={r.avatar} name={r.label} size={18} />
+            </div>
+            <span style={{ width: 92, flexShrink: 0, fontFamily: BARLOW, fontWeight: 700, fontSize: 12.5, color: r.me ? STATUS.info : INK.primary, letterSpacing: '0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} className="uppercase">
+              {r.label}
+            </span>
+            {diverging ? (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', height: 12 }}>
+                <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+                  {r.value < 0 && <div style={{ width: `${w}%`, height: 8, background: c, borderRadius: '3px 0 0 3px' }} />}
+                </div>
+                <div style={{ width: 1, height: 12, background: SURFACE.border2, flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  {r.value >= 0 && <div style={{ width: `${w}%`, height: 8, background: c, borderRadius: '0 3px 3px 0' }} />}
+                </div>
+              </div>
+            ) : (
+              <div style={{ flex: 1, height: 8, background: SURFACE.border, borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ width: `${w}%`, height: '100%', background: c, borderRadius: 3, transition: 'width 0.5s ease' }} />
+              </div>
+            )}
+            <span style={{ width: 58, flexShrink: 0, textAlign: 'right', fontFamily: MONO, fontSize: 11, color: r.me ? STATUS.info : INK.secondary }}>
+              {format(r.value)}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+export type RadarSeries = { id: string; name: string; color: string; values: number[] }
+
+/** Radar / spider chart comparing 2–3 owners across N normalized (0..1) axes. */
+export function Radar({ axes, series, size = 300 }: { axes: string[]; series: RadarSeries[]; size?: number }) {
+  const cx = size / 2
+  const cy = size / 2
+  const r = size / 2 - 46
+  const n = axes.length
+  const angle = (i: number) => (Math.PI * 2 * i) / n - Math.PI / 2
+  const pt = (i: number, v: number) => [cx + Math.cos(angle(i)) * r * v, cy + Math.sin(angle(i)) * r * v]
+  const rings = [0.25, 0.5, 0.75, 1]
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} width="100%" role="img" aria-label="Owner dimension comparison radar">
+      {rings.map((rr) => (
+        <polygon
+          key={rr}
+          points={axes.map((_, i) => pt(i, rr).join(',')).join(' ')}
+          fill="none"
+          stroke={SURFACE.border}
+          strokeWidth={1}
+        />
+      ))}
+      {axes.map((a, i) => {
+        const [ex, ey] = pt(i, 1)
+        const [lx, ly] = pt(i, 1.18)
+        return (
+          <g key={a}>
+            <line x1={cx} y1={cy} x2={ex} y2={ey} stroke={SURFACE.border} strokeWidth={1} />
+            <text x={lx} y={ly} textAnchor="middle" dominantBaseline="central" style={{ fill: INK.muted, fontSize: 8.5, fontFamily: BARLOW, letterSpacing: '0.12em' }} className="uppercase">
+              {a}
+            </text>
+          </g>
+        )
+      })}
+      {series.map((s) => (
+        <g key={s.id}>
+          <polygon
+            points={s.values.map((v, i) => pt(i, Math.max(0.02, Math.min(1, v))).join(',')).join(' ')}
+            fill={`${s.color}22`}
+            stroke={s.color}
+            strokeWidth={2}
+            strokeLinejoin="round"
+          />
+          {s.values.map((v, i) => {
+            const [px, py] = pt(i, Math.max(0.02, Math.min(1, v)))
+            return <circle key={i} cx={px} cy={py} r={2.5} fill={s.color} />
+          })}
+        </g>
+      ))}
+    </svg>
+  )
+}
+
+export type BumpSeries = { id: string; name: string; ranks: (number | null)[]; me?: boolean; highlight?: boolean }
+
+/** Rank/bump chart — finish position (1 = top) across seasons, one line per owner. */
+export function BumpChart({
+  seasons,
+  series,
+  ofTeams,
+  height = 260,
+}: {
+  seasons: string[]
+  series: BumpSeries[]
+  ofTeams: number
+  height?: number
+}) {
+  const W = 620
+  const H = height
+  const pad = { l: 30, r: 96, t: 16, b: 24 }
+  const n = seasons.length
+  const sx = (i: number) => pad.l + (n <= 1 ? 0 : (i / (n - 1)) * (W - pad.l - pad.r))
+  const sy = (rank: number) => pad.t + ((rank - 1) / Math.max(1, ofTeams - 1)) * (H - pad.t - pad.b)
+  const anyHi = series.some((s) => s.highlight || s.me)
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Season finish by owner">
+      {[1, Math.ceil(ofTeams / 2), ofTeams].map((rk) => (
+        <g key={rk}>
+          <line x1={pad.l} y1={sy(rk)} x2={W - pad.r} y2={sy(rk)} stroke={SURFACE.border} strokeWidth={1} strokeDasharray="2 5" />
+          <text x={pad.l - 6} y={sy(rk)} textAnchor="end" dominantBaseline="central" style={{ fill: INK.dim, fontSize: 9, fontFamily: MONO }}>
+            {rk}
+          </text>
+        </g>
+      ))}
+      {seasons.map((s, i) => (
+        <text key={s} x={sx(i)} y={H - 6} textAnchor="middle" style={{ fill: INK.muted, fontSize: 9, fontFamily: MONO }}>
+          {`'${s.slice(2)}`}
+        </text>
+      ))}
+      {series.map((s) => {
+        const hi = s.highlight || s.me
+        const col = s.me ? STATUS.info : hi ? STATUS.warn : INK.dim
+        const op = anyHi && !hi ? 0.28 : 1
+        const pts = s.ranks
+          .map((rk, i) => (rk == null ? null : [sx(i), sy(rk)]))
+          .filter(Boolean) as number[][]
+        if (!pts.length) return null
+        const last = pts[pts.length - 1]
+        const lastRank = [...s.ranks].reverse().find((x) => x != null)
+        return (
+          <g key={s.id} opacity={op}>
+            <title>{s.name}</title>
+            <polyline points={pts.map((p) => p.join(',')).join(' ')} fill="none" stroke={col} strokeWidth={hi ? 2.5 : 1.5} strokeLinejoin="round" strokeLinecap="round" />
+            {pts.map((p, i) => (
+              <circle key={i} cx={p[0]} cy={p[1]} r={hi ? 3 : 2.2} fill={col} stroke={SURFACE.card} strokeWidth={1} />
+            ))}
+            {hi && (
+              <text x={last[0] + 8} y={last[1]} dominantBaseline="central" style={{ fill: col, fontSize: 10, fontFamily: BARLOW, fontWeight: 700, letterSpacing: '0.04em' }} className="uppercase">
+                {s.name}
+                {lastRank != null ? ` #${lastRank}` : ''}
+              </text>
+            )}
+          </g>
+        )
+      })}
+    </svg>
   )
 }
 

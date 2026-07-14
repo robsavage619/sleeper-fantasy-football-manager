@@ -204,6 +204,13 @@ def value_pick(pick: PickAsset) -> float:
     base (with class-strength and time-discount adjustments) only when the market
     has no price for the pick.
 
+    Class strength (how loaded a season's rookie class is) is NOT applied on top
+    of the live market branch below — a market price already reflects the
+    crowd's read on that class, so multiplying it again would double-count. It
+    IS applied in the fallback branch, which has no market signal to draw on
+    otherwise and would be class-blind without it. Uses the same computation
+    ``model.draft_class`` surfaces on the Report Card, so the two never disagree.
+
     Args:
         pick: A ``PickAsset``.
 
@@ -211,12 +218,14 @@ def value_pick(pick: PickAsset) -> float:
         Dynasty value in the same units as ``value_player``.
     """
     from sleeper_ffm.market.blend import market_pick_value
+    from sleeper_ffm.model.draft_class import class_strength_for_season
 
     market = market_pick_value(pick.season, pick.round)
     if market is not None:
         return round(market * pick.class_strength, 2)
 
     base = _PICK_ROUND_BASE.get(pick.round, 30.0) * pick.class_strength
+    base *= class_strength_for_season(pick.season)
     try:
         seasons_out = max(0, int(pick.season) - CURRENT_LEAGUE_YEAR)
     except ValueError:

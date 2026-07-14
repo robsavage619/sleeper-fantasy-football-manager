@@ -9,6 +9,7 @@ from datetime import UTC
 
 from sleeper_ffm.cache import ttl_cache
 from sleeper_ffm.config import DEFAULT_VALUE_SEASON, MY_ROSTER_ID
+from sleeper_ffm.market.blend import pick_market_available
 from sleeper_ffm.model.dynasty import PickAsset, value_pick
 from sleeper_ffm.model.owner_dossier import OwnerDossier, build_dossier
 from sleeper_ffm.model.owner_history import OwnerHistory, build_league_history
@@ -461,6 +462,11 @@ def _offer_for_partner(
                 receive_asset, give_value, receive_value, my_needs
             )
             calibration, evidence_count, calibration_notes = _calibration_context(history)
+            if sweetener is not None and not pick_market_available():
+                calibration_notes += (
+                    " FantasyCalc pick market unavailable — the pick sweetener's "
+                    "value uses the static fallback table, not live pricing."
+                )
             offer = TradeOfferRecommendation(
                 partner_roster_id=partner.roster_id,
                 partner_name=partner.display_name,

@@ -13,6 +13,6 @@ Public API::
 
 from __future__ import annotations
 
-from sleeper_ffm.market.blend import class_strength_for_season, divergence, market_anchor, pick_market_values
+from sleeper_ffm.market.blend import divergence, market_anchor, pick_market_values
 
-__all__ = ["class_strength_for_season", "divergence", "market_anchor", "pick_market_values"]
+__all__ = ["divergence", "market_anchor", "pick_market_values"]

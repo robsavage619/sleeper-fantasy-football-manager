@@ -150,7 +150,14 @@ def load_weekly(
 
     if not frames:
         return _empty_weekly_frame()
-    return pl.concat(frames)
+    # Seasons can straddle the nflverse schema boundary: the legacy ``player_stats``
+    # format (≤2023, ~145 cols) and the new ``stats_player`` format (2024+, ~53 cols)
+    # differ in width. ``diagonal_relaxed`` unions columns by name (null-filling the
+    # ones an era lacks) and supertypes shared columns, so cross-era spans concat
+    # instead of raising a ShapeError. Single-season calls are unaffected.
+    if len({tuple(f.columns) for f in frames}) == 1:
+        return pl.concat(frames)
+    return pl.concat(frames, how="diagonal_relaxed")
 
 
 def _weekly_path(season: int) -> Path:

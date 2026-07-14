@@ -18,3 +18,11 @@ def pick_market() -> list[dict]:
     """Pick accumulation arbitrage signals."""
     signals = analyze_pick_market()
     return [dataclasses.asdict(s) for s in signals]
+
+
+@router.get("/class-strength")
+def draft_class_strength() -> list[dict]:
+    """Market-implied strength of each upcoming rookie class (refreshed from FantasyCalc)."""
+    from sleeper_ffm.model.draft_class import build_draft_class_strength
+
+    return [dataclasses.asdict(c) for c in build_draft_class_strength()]

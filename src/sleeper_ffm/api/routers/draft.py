@@ -13,21 +13,53 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/draft", tags=["draft"])
 
 
-def _decision_card(players: list[dict], picks_until: int) -> dict | None:
-    """Build the first-screen draft decision card from the ranked board."""
+def _decision_card(players: list[dict], picks_until: int | None) -> dict | None:
+    """Build the first-screen draft decision card from the ranked board.
+
+    When picks_until is a known, positive number, the recommendation targets the
+    best player LIKELY TO SURVIVE to that actual turn — not just the #1 overall
+    name, which may be long gone by then. The true #1 overall is still surfaced
+    in the reason text for context (e.g. for a trade-up decision).
+    """
     if not players:
         return None
-    primary = players[0]
-    alternatives = players[1:4]
+
+    overall_best = players[0]
+    # "Realistically gone" / "risky" mirror prompts.draft._survival_signal's bands
+    # (1-indexed rank <= picks_until -> GONE?, <= picks_until*1.6 -> RISKY).
+    if picks_until and picks_until > 0:
+        target_idx = next(
+            (i for i, _ in enumerate(players) if (i + 1) > picks_until * 1.6),
+            0,
+        )
+    else:
+        target_idx = 0
+    primary = players[target_idx]
+    alternatives = players[target_idx + 1 : target_idx + 4]
     alt_gap = (
         round(primary["dynasty_value"] - alternatives[0]["dynasty_value"], 1)
         if alternatives
         else 0.0
     )
-    urgency = "ON_CLOCK" if picks_until == 0 else "MONITOR" if picks_until <= 3 else "BOARD"
+    if picks_until is None:
+        urgency = "BOARD"
+    elif picks_until == 0:
+        urgency = "ON_CLOCK"
+    elif picks_until <= 3:
+        urgency = "MONITOR"
+    else:
+        urgency = "BOARD"
+
+    survival_note = (
+        f" {overall_best['name']} is the true #1 overall but {picks_until} picks happen "
+        f"first and won't likely survive to your turn."
+        if target_idx > 0
+        else ""
+    )
     reason = (
-        f"Top remaining dynasty value at {primary['position']} with "
-        f"{primary['fpar']:.1f} FPAR; {alt_gap:+.1f} value gap over next option."
+        f"Best value realistically available at your actual turn: {primary['position']} "
+        f"with {primary['fpar']:.1f} FPAR; {alt_gap:+.1f} value gap over next option."
+        f"{survival_note}"
     )
     return {
         "player_id": primary["player_id"],
@@ -40,7 +72,10 @@ def _decision_card(players: list[dict], picks_until: int) -> dict | None:
         "action": (
             f"Draft {primary['name']} in Sleeper."
             if picks_until == 0
-            else f"Hold board; {primary['name']} is current top target."
+            else f"Draft order not yet set — {primary['name']} is the top target once it is."
+            if picks_until is None
+            else f"Hold board; {primary['name']} is the realistic target "
+            f"at your turn ({picks_until} picks away)."
         ),
         "alternatives": [
             {
@@ -102,19 +137,21 @@ def draft_board(top: int = 50, season: int = DEFAULT_VALUE_SEASON) -> dict:
                     signal = "STEAL"
                 elif diff_pct < -25:
                     signal = "REACH"
-        players.append({
-            "player_id": p.player_id,
-            "name": p.name,
-            "position": p.position,
-            "age": p.age,
-            "team": p.team,
-            "fpar": p.current_fpar,
-            "dynasty_value": dv,
-            "is_rookie": p.is_taxi,
-            "market_fpar": market_fpar,
-            "divergence_pct": diff_pct,
-            "signal": signal,
-        })
+        players.append(
+            {
+                "player_id": p.player_id,
+                "name": p.name,
+                "position": p.position,
+                "age": p.age,
+                "team": p.team,
+                "fpar": p.current_fpar,
+                "dynasty_value": dv,
+                "is_rookie": p.is_taxi,
+                "market_fpar": market_fpar,
+                "divergence_pct": diff_pct,
+                "signal": signal,
+            }
+        )
 
     warnings = []
     if season != PREFERRED_VALUE_SEASON:
@@ -124,9 +161,32 @@ def draft_board(top: int = 50, season: int = DEFAULT_VALUE_SEASON) -> dict:
         )
     if not market_values:
         warnings.append("FantasyCalc market unavailable; STEAL/REACH signals disabled.")
+    if not board.order_confirmed and not board.is_complete():
+        if board.order_projected:
+            warnings.append(
+                f"Sleeper has not officially set the draft order — my_slot below is a "
+                f"projection from this league's verified reverse-standings convention "
+                f"(source: {board.projection_source_season} final standings), not yet "
+                "Sleeper-confirmed."
+            )
+        else:
+            warnings.append(
+                "Sleeper has not yet set/randomized the draft order, and no standings-based "
+                "projection was available — my_slot, next_my_pick, and picks_until_my_turn "
+                "are unknown."
+            )
+
+    if board.is_complete():
+        status = "complete"
+    elif not board.order_confirmed:
+        status = "pre_draft"
+    else:
+        status = "active"
 
     return {
-        "status": "complete" if board.is_complete() else "active",
+        "status": status,
+        "order_projected": board.order_projected,
+        "projection_source_season": board.projection_source_season,
         "current_pick": board.current_pick_no,
         "total_picks": board.total_picks,
         "current_round": board.current_round,
@@ -157,6 +217,7 @@ def draft_prompt(top: int = 25, season: int = DEFAULT_VALUE_SEASON) -> dict:
 
     try:
         from sleeper_ffm.market.fantasycalc import fetch as _fc_fetch
+
         market_values = _fc_fetch()
     except Exception:
         market_values = {}

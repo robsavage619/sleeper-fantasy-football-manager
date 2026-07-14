@@ -1,9 +1,11 @@
 """Tests for the market data module (blend layer only — no network calls)."""
 
 from __future__ import annotations
+
 from unittest.mock import patch
 
-from sleeper_ffm.market.blend import class_strength_for_season, divergence
+from sleeper_ffm.market.blend import divergence
+from sleeper_ffm.model.draft_class import class_strength_for_season
 
 
 def test_divergence_positive_when_model_above_market() -> None:
@@ -36,33 +38,40 @@ def test_divergence_skips_zero_market_value() -> None:
     assert "p2" in result
 
 
-def test_class_strength_returns_one_when_no_picks() -> None:
-    with patch("sleeper_ffm.market.fantasycalc.fetch_picks", return_value={}):
+def test_class_strength_returns_one_when_no_market_price() -> None:
+    with patch("sleeper_ffm.market.blend.market_pick_value", return_value=None):
         assert class_strength_for_season("2026") == 1.0
 
 
-def test_class_strength_above_one_when_picks_above_historical() -> None:
-    # FC pick values 2x the historical baseline → multiplier ≈ 2.0 (clamped)
-    mock_picks = {
-        ("2026", 1): 13_000.0,  # 2× historical 6500
-        ("2026", 2): 7_000.0,   # 2× historical 3500
-    }
-    with patch("sleeper_ffm.market.fantasycalc.fetch_picks", return_value=mock_picks):
+def test_class_strength_above_one_when_price_above_neutral_base() -> None:
+    # CURRENT_LEAGUE_YEAR (no time discount) round bases are {1: 190, 2: 100, ...};
+    # pricing both well above their neutral base should read as a loaded class.
+    def fake_market_pick_value(season: str, round_: int) -> float | None:
+        return {1: 380.0, 2: 200.0}.get(round_)  # 2x each round's neutral base
+
+    with patch(
+        "sleeper_ffm.market.blend.market_pick_value", side_effect=fake_market_pick_value
+    ):
         strength = class_strength_for_season("2026")
     assert strength > 1.0
 
 
-def test_class_strength_below_one_when_picks_below_historical() -> None:
-    mock_picks = {
-        ("2026", 1): 3_250.0,  # 0.5× historical 6500
-        ("2026", 2): 1_750.0,  # 0.5× historical 3500
-    }
-    with patch("sleeper_ffm.market.fantasycalc.fetch_picks", return_value=mock_picks):
+def test_class_strength_below_one_when_price_below_neutral_base() -> None:
+    def fake_market_pick_value(season: str, round_: int) -> float | None:
+        return {1: 95.0, 2: 50.0}.get(round_)  # 0.5x each round's neutral base
+
+    with patch(
+        "sleeper_ffm.market.blend.market_pick_value", side_effect=fake_market_pick_value
+    ):
         strength = class_strength_for_season("2026")
     assert strength < 1.0
 
 
 def test_class_strength_ignores_other_seasons() -> None:
-    mock_picks = {("2027", 1): 9_000.0}
-    with patch("sleeper_ffm.market.fantasycalc.fetch_picks", return_value=mock_picks):
+    def fake_market_pick_value(season: str, round_: int) -> float | None:
+        return 900.0 if season == "2027" else None
+
+    with patch(
+        "sleeper_ffm.market.blend.market_pick_value", side_effect=fake_market_pick_value
+    ):
         assert class_strength_for_season("2026") == 1.0

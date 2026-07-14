@@ -262,7 +262,7 @@ def build_gm_metrics() -> list[OwnerGMMetrics]:
         weekly_matchups, skill_roster_owner, player_positions, roster_positions
     )
 
-    value_by_asset, ledger_warn = _asset_values(sleeper_players)
+    value_by_asset, ledger_warnings = _asset_values(sleeper_players)
     trades_by_roster = _trades_by_current_roster()
 
     results: list[OwnerGMMetrics] = []
@@ -312,8 +312,7 @@ def build_gm_metrics() -> list[OwnerGMMetrics]:
             "picks at model pick value; historical trade partners resolved by name."
         )
         ledger["evidence_count"] = ledger["trade_count"]
-        if ledger_warn:
-            warnings.append(ledger_warn)
+        warnings.extend(ledger_warnings)
 
         results.append(
             OwnerGMMetrics(
@@ -334,17 +333,18 @@ def build_gm_metrics() -> list[OwnerGMMetrics]:
     return results
 
 
-def _asset_values(sleeper_players: dict[str, dict]) -> tuple[dict[str, float], str | None]:
+def _asset_values(sleeper_players: dict[str, dict]) -> tuple[dict[str, float], list[str]]:
     """Build a ``{asset_key: value}`` map keyed by player name and "<season> R<round>" pick label.
 
     Player keys are full names (history stores names, not ids). Pick keys match the history
-    format ``"2026 R1"``. Returns the map plus an optional warning string.
+    format ``"2026 R1"``. Returns the map plus any data-quality warnings.
     """
+    from sleeper_ffm.market.blend import pick_market_available
     from sleeper_ffm.model.dynasty import PickAsset, value_pick
     from sleeper_ffm.model.valuation import build_player_assets
 
     values: dict[str, float] = {}
-    warn: str | None = None
+    warnings: list[str] = []
     try:
         for asset in build_player_assets(
             seasons=[DEFAULT_VALUE_SEASON], sleeper_players=sleeper_players
@@ -352,7 +352,13 @@ def _asset_values(sleeper_players: dict[str, dict]) -> tuple[dict[str, float], s
             values[asset.name] = asset.current_fpar
     except Exception as exc:
         log.warning("trade ledger: player valuation failed (%s)", exc)
-        warn = "Player FPAR unavailable; trade ledger resolves picks only."
+        warnings.append("Player FPAR unavailable; trade ledger resolves picks only.")
+
+    if not pick_market_available():
+        warnings.append(
+            "FantasyCalc pick market unavailable; pick sides of the trade ledger use the "
+            "static fallback table, not live pricing."
+        )
 
     # Pre-value any pick label appearing in trades is done lazily at lookup; here we seed common
     # season/round combinations so exact-string keys resolve.
@@ -362,7 +368,7 @@ def _asset_values(sleeper_players: dict[str, dict]) -> tuple[dict[str, float], s
             values[key] = value_pick(
                 PickAsset(season=str(season), round=rnd, original_owner_id=0, current_owner_id=0)
             )
-    return values, warn
+    return values, warnings
 
 
 def _trades_by_current_roster() -> dict[int, list[dict]]:

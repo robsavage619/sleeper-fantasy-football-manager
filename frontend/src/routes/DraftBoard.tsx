@@ -190,14 +190,19 @@ function PickTimeline({
   mySlot,
   picksUntil,
   currentRound,
+  orderProjected,
+  projectionSourceSeason,
 }: {
   current: number
   total: number
-  mySlot: number
-  picksUntil: number
+  mySlot: number | null
+  picksUntil: number | null
   currentRound: number
+  orderProjected: boolean
+  projectionSourceSeason: string | null
 }) {
   const pct = Math.min(100, ((current - 1) / total) * 100)
+  const orderKnown = picksUntil !== null
   const isMyTurn = picksUntil === 0
 
   return (
@@ -250,18 +255,37 @@ function PickTimeline({
               PICK {current}
             </span>
             <span style={{ fontSize: 13, color: '#3d5070' }}>
-              of {total} · Round {currentRound} · Slot {mySlot}
+              of {total} · Round {currentRound} · Slot {mySlot ?? '—'}
+              {orderProjected && (
+                <span
+                  className="tracking-wide uppercase"
+                  style={{ color: '#d4860c', marginLeft: 6 }}
+                  title={`Not yet Sleeper-confirmed — projected from this league's reverse-standings convention, using ${projectionSourceSeason ?? 'last season'}'s final standings.`}
+                >
+                  (projected)
+                </span>
+              )}
             </span>
           </div>
-          {!isMyTurn && (
-            <span style={{ fontSize: 13, color: '#6a8098' }}>
-              <span
-                style={{ fontFamily: "'DM Mono', monospace", fontWeight: 700, color: '#e8eef6' }}
-              >
-                {picksUntil}
-              </span>{' '}
-              {picksUntil === 1 ? 'pick' : 'picks'} until your turn
+          {!orderKnown ? (
+            <span
+              className="tracking-wide uppercase"
+              style={{ fontSize: 11, color: '#d4860c' }}
+              title="Sleeper has not set the draft order and no standings-based projection was available — turn position is unknown."
+            >
+              ⚠ draft order unknown
             </span>
+          ) : (
+            !isMyTurn && (
+              <span style={{ fontSize: 13, color: '#6a8098' }}>
+                <span
+                  style={{ fontFamily: "'DM Mono', monospace", fontWeight: 700, color: '#e8eef6' }}
+                >
+                  {picksUntil}
+                </span>{' '}
+                {picksUntil === 1 ? 'pick' : 'picks'} until your turn
+              </span>
+            )
           )}
         </div>
         <div
@@ -371,6 +395,8 @@ export function DraftBoard() {
               mySlot={data.my_slot}
               picksUntil={data.picks_until_my_turn}
               currentRound={data.current_round}
+              orderProjected={data.order_projected}
+              projectionSourceSeason={data.projection_source_season}
             />
           )}
 

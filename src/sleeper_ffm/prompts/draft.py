@@ -21,11 +21,11 @@ from sleeper_ffm.model.dynasty import PickAsset, PlayerAsset, RosterAssets, valu
 
 # Dynasty value tier thresholds.
 _TIERS: list[tuple[float, str]] = [
-    (350.0, "T1"),   # franchise cornerstone
-    (200.0, "T2"),   # starter-quality
-    (100.0, "T3"),   # developmental
-    (50.0,  "T4"),   # depth/flier
-    (0.0,   "T5"),   # lottery
+    (350.0, "T1"),  # franchise cornerstone
+    (200.0, "T2"),  # starter-quality
+    (100.0, "T3"),  # developmental
+    (50.0, "T4"),  # depth/flier
+    (0.0, "T5"),  # lottery
 ]
 
 
@@ -58,16 +58,18 @@ def _divergence_label(
         return ""
     diff_pct = (value_player(player) - market_dv) / market_dv * 100
     if diff_pct > 20:
-        return "★STEAL"   # model rates dynasty value >20% above market
+        return "★STEAL"  # model rates dynasty value >20% above market
     if diff_pct < -25:
-        return "⚠REACH"   # market rates player >25% above model
+        return "⚠REACH"  # market rates player >25% above model
     return ""
 
 
-def _survival_signal(rank: int, picks_until: int) -> str:
+def _survival_signal(rank: int, picks_until: int | None) -> str:
     """Estimate whether a player at this board rank will survive to our next pick."""
+    if picks_until is None:
+        return ""  # turn position unknown — can't estimate survival odds
     if picks_until == 0:
-        return ""   # we're on the clock
+        return ""  # we're on the clock
     if rank <= picks_until:
         return "GONE?"
     if rank <= picks_until * 1.6:
@@ -80,7 +82,7 @@ def build_draft_prompt(
     pick_number: int,
     round_number: int,
     picks_remaining_in_round: int,
-    picks_until_my_turn: int = 0,
+    picks_until_my_turn: int | None = 0,
     my_roster: RosterAssets,
     available_players: list[PlayerAsset],
     all_picks: dict[int, list[PickAsset]],
@@ -96,7 +98,8 @@ def build_draft_prompt(
         pick_number: Overall pick number in the draft.
         round_number: Current round (1-4).
         picks_remaining_in_round: How many picks until round ends.
-        picks_until_my_turn: Picks between now and my next selection (for survival).
+        picks_until_my_turn: Picks between now and my next selection (for survival), or
+            None if Sleeper hasn't set/randomized the draft order yet.
         my_roster: Current state of my roster including already-drafted players.
         available_players: Undrafted players sorted by dynasty value descending.
         all_picks: Map of roster_id → list of held picks (for run detection).
@@ -119,7 +122,11 @@ def build_draft_prompt(
         vault_section = f"\n## Vault Research Notes\n{vault_notes}\n"
 
     clock_label = (
-        "ON THE CLOCK" if picks_until_my_turn == 0 else f"{picks_until_my_turn} picks away"
+        "DRAFT ORDER NOT YET SET — turn position unknown"
+        if picks_until_my_turn is None
+        else "ON THE CLOCK"
+        if picks_until_my_turn == 0
+        else f"{picks_until_my_turn} picks away"
     )
 
     return f"""# Draft Decision — Pick {pick_number} (Round {round_number})
@@ -177,7 +184,7 @@ def _format_roster(roster: RosterAssets) -> str:
 
 def _format_board(
     players: list[PlayerAsset],
-    picks_until: int,
+    picks_until: int | None,
     market_values: dict[str, float],
 ) -> str:
     if not players:

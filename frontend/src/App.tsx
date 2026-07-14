@@ -10,6 +10,8 @@ import { Toaster, toast } from 'sonner'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Dashboard } from '@/routes/Dashboard'
 import { DraftBoard } from '@/routes/DraftBoard'
+import { Edges } from '@/routes/Edges'
+import { Matchups } from '@/routes/Matchups'
 import { Roster } from '@/routes/Roster'
 import { Trades } from '@/routes/Trades'
 import { Waivers } from '@/routes/Waivers'
@@ -108,6 +110,8 @@ export function App() {
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/draft" element={<DraftBoard />} />
                 <Route path="/roster" element={<Roster />} />
+                <Route path="/edges" element={<Edges />} />
+                <Route path="/matchups" element={<Matchups />} />
                 <Route path="/trades" element={<Trades />} />
                 <Route path="/waivers" element={<Waivers />} />
                 <Route path="/owners" element={<Owners />} />

@@ -110,5 +110,8 @@ class BracketMatchup(_Base):
     t2: int | None = None  # roster_id team 2
     w: int | None = None  # winner roster_id
     loser: int | None = Field(None, alias="l")  # Sleeper key is "l"; aliased to avoid E741
+    # A placement game (e.g. championship, 3rd-place, 5th-place); winner gets
+    # `place`, loser gets `place + 1`. None for a normal bracket-advancement match.
+    place: int | None = Field(None, alias="p")
     t1_from: dict | None = None
     t2_from: dict | None = None

@@ -71,55 +71,6 @@ def market_anchor() -> dict[str, float]:
     return {}
 
 
-# Historical average FC pick values by round, calibrated from 2023-2025 samples.
-# Used as the baseline for class_strength_for_season() when FC pick data is thin.
-_HISTORICAL_PICK_VALUE: dict[int, float] = {
-    1: 6500.0,
-    2: 3500.0,
-    3: 1800.0,
-    4: 700.0,
-}
-
-
-def class_strength_for_season(season: str) -> float:
-    """Return a class-strength multiplier for a given season's rookie picks.
-
-    Derives the multiplier from FantasyCalc pick values relative to the
-    historical average per round. A loaded rookie class (e.g. 2024 WR depth)
-    scores > 1.0; a weak class scores < 1.0.
-
-    Falls back to 1.0 when FC pick data is unavailable or the season is not
-    present.
-
-    Args:
-        season: Season string, e.g. "2026".
-
-    Returns:
-        Multiplier to use as ``PickAsset.class_strength``.
-    """
-    from sleeper_ffm.market import fantasycalc
-
-    picks = fantasycalc.fetch_picks()
-    if not picks:
-        return 1.0
-
-    season_picks = {round_: val for (s, round_), val in picks.items() if s == season}
-    if not season_picks:
-        return 1.0
-
-    ratios = []
-    for round_, val in season_picks.items():
-        hist = _HISTORICAL_PICK_VALUE.get(round_)
-        if hist and hist > 0:
-            ratios.append(val / hist)
-
-    if not ratios:
-        return 1.0
-
-    multiplier = sum(ratios) / len(ratios)
-    return round(max(0.5, min(2.0, multiplier)), 3)
-
-
 def pick_market_values() -> dict[tuple[str, int], float]:
     """Return FC pick values for use in pick_market arbitrage analysis.
 
@@ -132,6 +83,18 @@ def pick_market_values() -> dict[tuple[str, int], float]:
     from sleeper_ffm.market import fantasycalc
 
     return fantasycalc.fetch_picks()
+
+
+def pick_market_available() -> bool:
+    """Whether the FantasyCalc pick-value feed is currently reachable and populated.
+
+    Distinct from "this specific pick isn't priced" (normal — e.g. a season far
+    enough out that FC hasn't listed it): this is the coarser "is the feed down
+    at all" signal, so callers can flag a real outage rather than a routine gap.
+    """
+    from sleeper_ffm.market import fantasycalc
+
+    return bool(fantasycalc.fetch_picks())
 
 
 @ttl_cache()

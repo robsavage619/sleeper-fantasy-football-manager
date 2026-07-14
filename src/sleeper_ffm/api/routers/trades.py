@@ -127,7 +127,7 @@ def analyze_trade(req: TradeAnalysisRequest) -> dict:
             }
         )
 
-    from sleeper_ffm.market.blend import blended_value, build_player_blend
+    from sleeper_ffm.market.blend import blended_value, build_player_blend, pick_market_available
 
     give_players = [asset_map[pid] for pid in req.give_player_ids]
     get_players = [asset_map[pid] for pid in req.get_player_ids]
@@ -178,6 +178,10 @@ def analyze_trade(req: TradeAnalysisRequest) -> dict:
 
     if blend is not None and blend.model_valued_only:
         warnings.append("FantasyCalc market unavailable; values are model-only, not blended.")
+    if (req.give_pick_ids or req.get_pick_ids) and not pick_market_available():
+        warnings.append(
+            "FantasyCalc pick market unavailable; pick values use the static fallback table."
+        )
 
     return {
         "give_value": round(give_value, 2),
