@@ -18,3 +18,23 @@ dynastyprocess.com
 
 # CollegeFootballData (CFBD) college prospect stats/recruiting/bio (Phase 3)
 api.collegefootballdata.com
+
+# --- Research + design references (Rob-approved 2026-07: richer visuals + valuation
+# grounding). Read-only research/design inspiration; no data is sent to these. ---
+# Dynasty analytics (aging curves, positional value, pick values)
+4for4.com
+fscollective.com
+apexfantasyleagues.com
+fantasypros.com
+dynastyleaguefootball.com
+keeptradecut.com
+playerprofiler.com
+# Data-viz + UI design references
+observablehq.com
+airbnb.io
+recharts.org
+d3js.org
+tailwindcss.com
+# Player headshot / avatar CDNs used by the dashboard
+sleepercdn.com
+a.espncdn.com
