@@ -4,19 +4,22 @@ import logging
 from dataclasses import dataclass
 
 from sleeper_ffm.config import CURRENT_LEAGUE_YEAR, LEAGUE_ID
+from sleeper_ffm.market.blend import market_pick_value
+from sleeper_ffm.model.dynasty import _PICK_ROUND_BASE, PICK_DISCOUNT_RATE
 from sleeper_ffm.sleeper.client import SleeperClient
 
 log = logging.getLogger(__name__)
 
-_BASE: dict[int, float] = {1: 80.0, 2: 50.0, 3: 25.0, 4: 10.0}
+# Model production-expectation base, in the SAME dynasty units as the market
+# (so the divergence below is a true apples-to-apples comparison, not the old
+# fc/78-vs-fc*0.066 scale mismatch that made every pick read BUY).
+_BASE: dict[int, float] = dict(_PICK_ROUND_BASE)
 _CURRENT_YEAR = CURRENT_LEAGUE_YEAR
-_DECAY = 0.85
+# Same per-year discount the dynasty currency applies to future picks, so the
+# arbitrage detector and the trade currency price a pick identically.
+_DECAY = 1.0 - PICK_DISCOUNT_RATE
 _FUTURE_SEASONS = ["2027", "2028"]
 _ALL_ROUNDS = [1, 2, 3, 4]
-
-# FantasyCalc pick values normalized to the same FPAR scale as the model.
-# FC uses a 0-10000 scale; dividing by this factor aligns with model's 0-100 scale.
-_FC_TO_FPAR_SCALE: float = 78.0
 
 
 @dataclass
@@ -82,7 +85,7 @@ def analyze_pick_market(league_id: str = LEAGUE_ID) -> list[PickMarketSignal]:
         fc_picks = pick_market_values()
         log.info("analyze_pick_market: %d FC pick prices loaded", len(fc_picks))
     except Exception as exc:
-        log.warning("analyze_pick_market: FC pick fetch failed (%s); using trade-frequency fallback", exc)
+        log.warning("analyze_pick_market: FC pick fetch failed (%s); using trade-frequency", exc)
         fc_picks = {}
 
     trade_counts: dict[tuple[str, int], int] = {}
@@ -124,9 +127,9 @@ def analyze_pick_market(league_id: str = LEAGUE_ID) -> list[PickMarketSignal]:
         count = trade_counts.get((season, round_), 0)
         mv = _model_value(season, round_)
 
-        fc_raw = fc_picks.get((season, round_))
-        if fc_raw is not None:
-            mkt = round(fc_raw / _FC_TO_FPAR_SCALE, 2)
+        market = market_pick_value(season, round_)
+        if market is not None:
+            mkt = market
             source = "fantasycalc"
         else:
             mkt, source = _market_value_from_trades(mv, count)

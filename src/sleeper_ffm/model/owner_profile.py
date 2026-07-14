@@ -6,7 +6,7 @@ import logging
 from collections import Counter
 from dataclasses import dataclass
 
-from sleeper_ffm.config import LEAGUE_ID
+from sleeper_ffm.config import DRAFT_ID, LEAGUE_ID
 from sleeper_ffm.sleeper.client import SleeperClient
 
 log = logging.getLogger(__name__)
@@ -51,6 +51,12 @@ def build_owner_profiles(league_id: str = LEAGUE_ID) -> list[OwnerProfile]:
         rosters = c.rosters(league_id=league_id)
         picks = c.traded_picks(league_id=league_id)
         players_dump = c.players()
+        try:
+            draft = c.draft(DRAFT_ID)
+            draft_rounds = int(draft.settings.get("rounds", 4) or 4)
+        except Exception as exc:
+            log.warning("could not load draft rounds (%s); defaulting to 4", exc)
+            draft_rounds = 4
 
     user_by_id = {u.user_id: u for u in users}
     profiles: list[OwnerProfile] = []
@@ -81,7 +87,11 @@ def build_owner_profiles(league_id: str = LEAGUE_ID) -> list[OwnerProfile]:
         data_seasons = {p.season for p in picks if int(p.season) >= current_year}
         data_seasons |= {str(current_year), str(current_year + 1)}
         live_seasons = sorted(data_seasons)
-        live_rounds = sorted({p.round for p in picks}) or [1, 2, 3, 4]
+        # Round space must come from the draft's configured rounds, not from traded picks:
+        # a round nobody has traded still exists for every owner. Inferring rounds from the
+        # traded-picks set (previous behaviour) silently dropped own untouched picks in those
+        # rounds while foreign_held still counted them — an asymmetric, understated count.
+        live_rounds = list(range(1, draft_rounds + 1))
 
         traded_away = {
             (p.season, p.round)

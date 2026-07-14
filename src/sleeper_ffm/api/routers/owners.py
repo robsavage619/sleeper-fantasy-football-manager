@@ -7,6 +7,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
+from sleeper_ffm.config import MY_ROSTER_ID
 from sleeper_ffm.model.owner_profile import build_owner_profiles
 
 log = logging.getLogger(__name__)
@@ -16,8 +17,15 @@ router = APIRouter(prefix="/owners", tags=["owners"])
 
 @router.get("/profiles")
 def get_owner_profiles() -> list[dict]:
-    """Return a behavioral profile for every owner in the league."""
-    return [dataclasses.asdict(p) for p in build_owner_profiles()]
+    """Return a behavioral profile for every owner in the league.
+
+    Each profile carries ``is_me`` so the frontend never has to hardcode the
+    owner's identity or match on display name.
+    """
+    profiles = [dataclasses.asdict(p) for p in build_owner_profiles()]
+    for profile in profiles:
+        profile["is_me"] = profile["roster_id"] == MY_ROSTER_ID
+    return profiles
 
 
 @router.get("/report-card")

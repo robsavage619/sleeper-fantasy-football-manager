@@ -29,22 +29,27 @@ from sleeper_ffm.config import CURRENT_LEAGUE_YEAR
 # factors on a player's current FPAR estimate.
 # ---------------------------------------------------------------------------
 
-# Age at which each position typically reaches peak production.
+# Age at which each position typically reaches peak production (2026 dynasty
+# aging-curve consensus: Fantasy Points / Apex / FSCollective). RB prime is years
+# 2-6 (~22-26); WR/TE peak ~26-27; QB flat and late (28-33). Note: QB is priced
+# market-only in the blend, so its curve only shapes model-side ranking.
 _PEAK_AGE: dict[str, int] = {
-    "QB": 27,
-    "RB": 24,
-    "WR": 26,
+    "QB": 29,
+    "RB": 25,
+    "WR": 27,
     "TE": 26,
     "K": 28,
     "DEF": 26,
 }
 
 # Annual decay rate after peak, by position (fraction of prior season's value).
+# RB is the steepest — the research describes a post-~28 cliff, not a gentle ramp;
+# WR/TE decline slowly with a longer tail; QB is the flattest.
 _DECAY_RATE: dict[str, float] = {
-    "QB": 0.92,
-    "RB": 0.85,
-    "WR": 0.88,
-    "TE": 0.90,
+    "QB": 0.94,
+    "RB": 0.82,
+    "WR": 0.90,
+    "TE": 0.88,
     "K": 0.92,
     "DEF": 0.90,
 }
@@ -60,6 +65,10 @@ _ASCENT_RATE: dict[str, float] = {
 
 # Discount rate applied to future seasons (prefer near-term production).
 _DISCOUNT_RATE: float = 0.12
+
+# Canonical per-year discount for future picks, shared with the pick-market model
+# so both price a pick with the same decay.
+PICK_DISCOUNT_RATE: float = _DISCOUNT_RATE
 
 # Seasons to project forward when computing dynasty value.
 _PROJECTION_HORIZON: int = 8
@@ -180,40 +189,39 @@ def value_player(player: PlayerAsset) -> float:
     return round(total, 2)
 
 
-def value_pick(pick: PickAsset) -> float:
-    """Compute a future pick's dynasty value in FPAR units.
+# Fallback round-base pick values in dynasty units, calibrated to the 2026 market
+# (an early 1st ≈ one RB1 / mid-WR2; values fall off a cliff after round 1). Used
+# only when the live FantasyCalc pick market has no price for the pick.
+_PICK_ROUND_BASE: dict[int, float] = {1: 190.0, 2: 100.0, 3: 68.0, 4: 52.0}
 
-    Uses round-based expected draft-slot value, adjusted for:
-      - Round (earlier rounds = higher expected production)
-      - Draft-class strength (``pick.class_strength`` multiplier)
-      - Seasons until pick is used (time-discounting)
+
+def value_pick(pick: PickAsset) -> float:
+    """Compute a future pick's dynasty value, market-anchored.
+
+    Picks are priced off the live FantasyCalc pick market (same dynasty units as
+    players) so a pick and a player are directly comparable — critical in a league
+    where 90% of trades involve picks. Falls back to a market-calibrated round
+    base (with class-strength and time-discount adjustments) only when the market
+    has no price for the pick.
 
     Args:
         pick: A ``PickAsset``.
 
     Returns:
-        Dynasty value in FPAR units.
+        Dynasty value in the same units as ``value_player``.
     """
-    # Base value by round — calibrated to approximate player values at each slot.
-    # Round 1 mid-pick ≈ solid WR2/RB2 dynasty value; round 4 ≈ flier.
-    round_base: dict[int, float] = {
-        1: 80.0,
-        2: 50.0,
-        3: 25.0,
-        4: 10.0,
-    }
-    base = round_base.get(pick.round, 4.0)
+    from sleeper_ffm.market.blend import market_pick_value
 
-    # Adjust for class strength (>1 = loaded class worth more)
-    base *= pick.class_strength
+    market = market_pick_value(pick.season, pick.round)
+    if market is not None:
+        return round(market * pick.class_strength, 2)
 
-    # Time discount: future picks are worth less than the current league year.
+    base = _PICK_ROUND_BASE.get(pick.round, 30.0) * pick.class_strength
     try:
         seasons_out = max(0, int(pick.season) - CURRENT_LEAGUE_YEAR)
     except ValueError:
         seasons_out = 1
     discount = (1.0 - _DISCOUNT_RATE) ** seasons_out
-
     return round(base * discount, 2)
 
 

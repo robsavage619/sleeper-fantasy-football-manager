@@ -127,15 +127,44 @@ def analyze_trade(req: TradeAnalysisRequest) -> dict:
             }
         )
 
+    from sleeper_ffm.market.blend import blended_value, build_player_blend
+
     give_players = [asset_map[pid] for pid in req.give_player_ids]
     get_players = [asset_map[pid] for pid in req.get_player_ids]
 
-    give_value = sum(value_player(p) for p in give_players) + sum(
-        value_trade_pick(pid) for pid in req.give_pick_ids
-    )
-    get_value = sum(value_player(p) for p in get_players) + sum(
-        value_trade_pick(pid) for pid in req.get_pick_ids
-    )
+    blend = build_player_blend(list(asset_map.values())) if all_ids else None
+
+    def _player_breakdown(assets: list[PlayerAsset]) -> tuple[list[dict], float]:
+        rows: list[dict] = []
+        subtotal = 0.0
+        for p in assets:
+            model_value = value_player(p)
+            if blend is not None:
+                dyn, market_valued = blended_value(p.player_id, p.position, model_value, blend)
+                market_dyn = blend.market_dyn(p.player_id)
+                market_value = (
+                    round(market_dyn, 2) if market_valued and market_dyn is not None else None
+                )
+            else:
+                dyn, market_value = model_value, None
+            subtotal += dyn
+            rows.append(
+                {
+                    "player_id": p.player_id,
+                    "name": p.name,
+                    "position": p.position,
+                    "model_value": round(model_value, 2),
+                    "market_value": market_value,
+                    "blended_value": dyn,
+                }
+            )
+        return rows, subtotal
+
+    give_breakdown, give_players_value = _player_breakdown(give_players)
+    get_breakdown, get_players_value = _player_breakdown(get_players)
+
+    give_value = give_players_value + sum(value_trade_pick(pid) for pid in req.give_pick_ids)
+    get_value = get_players_value + sum(value_trade_pick(pid) for pid in req.get_pick_ids)
     delta = get_value - give_value
     verdict = "ACCEPT" if delta > 10 else "DECLINE" if delta < -10 else "CLOSE"
 
@@ -147,11 +176,17 @@ def analyze_trade(req: TradeAnalysisRequest) -> dict:
         seasons=seasons,
     )
 
+    if blend is not None and blend.model_valued_only:
+        warnings.append("FantasyCalc market unavailable; values are model-only, not blended.")
+
     return {
         "give_value": round(give_value, 2),
         "get_value": round(get_value, 2),
         "delta": round(delta, 2),
         "verdict": verdict,
+        "give_breakdown": give_breakdown,
+        "get_breakdown": get_breakdown,
+        "currency": "model-only" if blend is None or blend.model_valued_only else "blended",
         "data_quality": "DEGRADED" if warnings else "FULL",
         "warnings": warnings,
         "prompt": prompt,
@@ -172,10 +207,32 @@ def trade_offers(top: int = 8) -> list[dict]:
 
 @router.get("/picks")
 def my_traded_picks() -> list[dict]:
-    """Return traded picks currently held by Rob's roster (owner_id == MY_ROSTER_ID)."""
+    """Return traded picks currently held by Rob's roster (owner_id == MY_ROSTER_ID).
+
+    Each pick carries a backend-computed dynasty ``value`` so the UI never
+    re-derives pick values client-side.
+    """
+    from sleeper_ffm.model.dynasty import PickAsset, value_pick
     from sleeper_ffm.sleeper.client import SleeperClient
 
     with SleeperClient() as c:
         all_picks = c.traded_picks()
 
-    return [p.model_dump() for p in all_picks if p.owner_id == MY_ROSTER_ID]
+    out: list[dict] = []
+    for p in all_picks:
+        if p.owner_id != MY_ROSTER_ID:
+            continue
+        row = p.model_dump()
+        row["value"] = round(
+            value_pick(
+                PickAsset(
+                    season=str(p.season),
+                    round=int(p.round),
+                    original_owner_id=p.roster_id,
+                    current_owner_id=MY_ROSTER_ID,
+                )
+            ),
+            1,
+        )
+        out.append(row)
+    return out

@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 
+from sleeper_ffm.cache import ttl_cache
 from sleeper_ffm.config import CACHE_DIR, LEAGUE_ID, SLEEPER_BASE
 from sleeper_ffm.sleeper.models import (
     BracketMatchup,
@@ -31,6 +32,16 @@ log = logging.getLogger(__name__)
 
 _PLAYERS_CACHE = CACHE_DIR / "players_nfl.json"
 _PLAYERS_TTL_SECONDS = 24 * 3600
+
+
+@ttl_cache(key=lambda: "players")
+def _load_players_from_disk() -> dict[str, dict]:
+    """Parse the ~16MB player dump once and hold it in-process (TTL-cached).
+
+    Avoids re-parsing the dump on every ``players()`` call — the per-partner
+    dossier loop would otherwise pay that parse cost N times per request.
+    """
+    return json.loads(_PLAYERS_CACHE.read_text())
 
 
 class SleeperClient:
@@ -102,9 +113,10 @@ class SleeperClient:
         The dump is ~5 MB and refreshed once a day by Sleeper; we cache it locally.
         """
         if not force and _fresh(_PLAYERS_CACHE, _PLAYERS_TTL_SECONDS):
-            return json.loads(_PLAYERS_CACHE.read_text())
+            return _load_players_from_disk()
         data = self._get("/players/nfl")
         _PLAYERS_CACHE.write_text(json.dumps(data))
+        _load_players_from_disk.cache_clear()  # type: ignore[attr-defined]
         return data
 
     # --- nfl state ------------------------------------------------------------

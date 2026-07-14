@@ -305,10 +305,40 @@ def _compute_changes(
         key=lambda p: p.projected_pts,
     )
 
-    changes = []
-    for start, sit in zip(starts, sits, strict=False):
-        gain = round(start.projected_pts - sit.projected_pts, 1)
-        changes.append({"start": start.player_id, "sit": sit.player_id, "gain": gain})
+    changes: list[dict] = []
+    used_sits: set[str] = set()
+
+    def _pair(start: PlayerProjection, sit: PlayerProjection) -> None:
+        used_sits.add(sit.player_id)
+        changes.append(
+            {
+                "start": start.player_id,
+                "sit": sit.player_id,
+                "gain": round(start.projected_pts - sit.projected_pts, 1),
+            }
+        )
+
+    # Same-position swaps first (a QB only ever replaces a QB).
+    for start in starts:
+        same_pos = [
+            s for s in sits if s.player_id not in used_sits and s.position == start.position
+        ]
+        if same_pos:
+            _pair(start, min(same_pos, key=lambda p: p.projected_pts))
+
+    # Remaining swaps must be FLEX-legal (RB/WR/TE interchange only) — never
+    # pair a QB against a non-QB.
+    paired_starts = {c["start"] for c in changes}
+    for start in starts:
+        if start.player_id in paired_starts or start.position not in _FLEX_POSITIONS:
+            continue
+        flex_sits = [
+            s
+            for s in sits
+            if s.player_id not in used_sits and s.position in _FLEX_POSITIONS
+        ]
+        if flex_sits:
+            _pair(start, min(flex_sits, key=lambda p: p.projected_pts))
 
     return sorted(changes, key=lambda x: x["gain"], reverse=True)
 

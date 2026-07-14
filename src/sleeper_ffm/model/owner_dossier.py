@@ -7,8 +7,10 @@ from dataclasses import dataclass, field
 
 from sleeper_ffm.api.routers.roster import _build_player_rows
 from sleeper_ffm.config import DEFAULT_VALUE_SEASON, DRAFT_ID
+from sleeper_ffm.market.blend import build_player_blend
+from sleeper_ffm.model.dynasty import PickAsset, value_pick
 from sleeper_ffm.model.owner_profile import _classify
-from sleeper_ffm.model.valuation import build_player_assets
+from sleeper_ffm.model.valuation import build_player_assets_cached
 from sleeper_ffm.sleeper.client import SleeperClient
 
 log = logging.getLogger(__name__)
@@ -223,10 +225,11 @@ def build_dossier(roster_id: int, season: int = DEFAULT_VALUE_SEASON) -> OwnerDo
     avatar = user.avatar if user else None
 
     log.info("building dossier for roster %d, season=%d", roster_id, season)
-    vet_assets = build_player_assets(seasons=[season], sleeper_players=sleeper_players)
+    vet_assets = build_player_assets_cached(seasons=[season], sleeper_players=sleeper_players)
     vet_map = {a.player_id: a for a in vet_assets}
+    blend = build_player_blend(vet_assets)
 
-    players = _build_player_rows(roster, vet_map, sleeper_players)
+    players = _build_player_rows(roster, vet_map, sleeper_players, blend=blend)
     total_dynasty_value = round(sum(p["dynasty_value"] for p in players), 1)
 
     ages = [p["age"] for p in players]
@@ -250,10 +253,21 @@ def build_dossier(roster_id: int, season: int = DEFAULT_VALUE_SEASON) -> OwnerDo
         (p.season, p.round) for p in picks if p.roster_id == roster_id and p.owner_id != roster_id
     }
 
+    def _valued(season: str, round_: int, source: str) -> dict:
+        value = value_pick(
+            PickAsset(
+                season=str(season),
+                round=int(round_),
+                original_owner_id=roster_id,
+                current_owner_id=roster_id,
+            )
+        )
+        return {"season": season, "round": round_, "source": source, "value": round(value, 1)}
+
     # Own original picks not traded away
     own_picks = sorted(
         [
-            {"season": s, "round": r, "source": "own"}
+            _valued(s, r, "own")
             for s in live_seasons
             for r in live_rounds
             if (s, r) not in traded_away_set
@@ -264,7 +278,7 @@ def build_dossier(roster_id: int, season: int = DEFAULT_VALUE_SEASON) -> OwnerDo
     # Foreign picks received from other teams
     foreign_picks = sorted(
         [
-            {"season": p.season, "round": p.round, "source": "acquired"}
+            _valued(p.season, p.round, "acquired")
             for p in picks
             if p.owner_id == roster_id and p.roster_id != roster_id and p.season in live_seasons
         ],
@@ -288,7 +302,7 @@ def build_dossier(roster_id: int, season: int = DEFAULT_VALUE_SEASON) -> OwnerDo
         if r.roster_id == roster_id:
             rows = players
         else:
-            rows = _build_player_rows(r, vet_map, sleeper_players)
+            rows = _build_player_rows(r, vet_map, sleeper_players, blend=blend)
         roster_totals[r.roster_id] = sum(p["dynasty_value"] for p in rows)
         roster_pos[r.roster_id] = _position_totals(rows)
 

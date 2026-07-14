@@ -5,11 +5,75 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from sleeper_ffm.config import DEFAULT_VALUE_SEASON, LEAGUE_ID
+from sleeper_ffm.config import DATA_DIR, DEFAULT_VALUE_SEASON, LEAGUE_ID
 from sleeper_ffm.sleeper.client import SleeperClient
 from sleeper_ffm.sleeper.models import Roster
 
 log = logging.getLogger(__name__)
+
+# Positions eligible for a FLEX slot in this league (standard RB/WR/TE flex).
+_FLEX_ELIGIBLE: frozenset[str] = frozenset({"RB", "WR", "TE"})
+# Slots that never start a player (bench / injured-reserve / taxi).
+_NON_STARTING_SLOTS: frozenset[str] = frozenset({"BN", "IR", "TAXI"})
+
+
+def _roster_positions() -> list[str]:
+    """Load the league's roster-slot layout from data/league_settings.json (BN etc. included)."""
+    import json
+
+    path = DATA_DIR / "league_settings.json"
+    try:
+        with path.open() as fh:
+            positions = json.load(fh).get("roster_positions", [])
+        return [str(p) for p in positions]
+    except (OSError, ValueError, KeyError) as exc:
+        log.warning("could not load roster_positions (%s); using QB/2RB/2WR/TE/2FLEX", exc)
+        return ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "FLEX"]
+
+
+def optimal_lineup_points(
+    players_points: dict[str, float],
+    player_positions: dict[str, str],
+    roster_positions: list[str],
+) -> float:
+    """Best legal lineup score given each slot's position eligibility.
+
+    Fills dedicated position slots (QB/RB/WR/TE) with the best available player at that position,
+    then fills FLEX slots with the best remaining flex-eligible player. Greedy is optimal here
+    because FLEX eligibility is a superset of the dedicated skill positions.
+
+    Args:
+        players_points: {player_id: week points} for the whole roster.
+        player_positions: {player_id: position}.
+        roster_positions: League slot layout (e.g. ["QB", "RB", "RB", ..., "FLEX", "BN"]).
+
+    Returns:
+        Total points of the optimal legal starting lineup.
+    """
+    pools: dict[str, list[float]] = {pos: [] for pos in ("QB", "RB", "WR", "TE")}
+    for pid, pts in players_points.items():
+        pos = player_positions.get(pid)
+        if pos in pools:
+            pools[pos].append(float(pts))
+    for pos in pools:
+        pools[pos].sort(reverse=True)
+
+    total = 0.0
+    flex_slots = 0
+    for slot in roster_positions:
+        if slot in _NON_STARTING_SLOTS:
+            continue
+        if slot == "FLEX":
+            flex_slots += 1
+            continue
+        if pools.get(slot):
+            total += pools[slot].pop(0)
+
+    remaining = sorted(
+        (pts for pos in _FLEX_ELIGIBLE for pts in pools.get(pos, [])), reverse=True
+    )
+    total += sum(remaining[:flex_slots])
+    return round(total, 2)
 
 
 @dataclass
@@ -30,8 +94,9 @@ class OwnerSkillIndex:
     expected_wins: float  # all-play equivalent wins across actual schedule weeks
     schedule_luck: float  # actual_wins - expected_wins; positive = lucky
     skill_season: str
-    # Lineup efficiency: actual pts / optimal pts from their roster
-    lineup_efficiency: float  # 0-1, e.g. 0.87 = started 87% of optimal lineup
+    # Lineup efficiency: actual pts / optimal pts from their roster. None when lineup data is
+    # missing for every week — reported honestly rather than filled with a fabricated default.
+    lineup_efficiency: float | None  # 0-1, e.g. 0.87 = started 87% of optimal lineup
     # Roster value relative to league average
     roster_value: int  # total dynasty value of their roster
     roster_value_pct: float  # their value / average value, e.g. 1.15 = 15% above avg
@@ -39,6 +104,7 @@ class OwnerSkillIndex:
     skill_score: float
     skill_tier: str  # 'ELITE' / 'STRONG' / 'AVERAGE' / 'WEAK'
     summary: str  # one human-readable line
+    lineup_data_missing: bool = False  # True when lineup_efficiency could not be computed
 
 
 def _tier(score: float) -> str:
@@ -85,7 +151,13 @@ def build_owner_skill() -> list[OwnerSkillIndex]:
     with SleeperClient() as client:
         rosters = client.rosters(LEAGUE_ID)
         users = client.users(LEAGUE_ID)
+        sleeper_players = client.players()
         skill_season, skill_rosters, weekly_matchups = _find_skill_sample(client)
+
+    player_positions: dict[str, str] = {
+        pid: str(p.get("position") or "") for pid, p in sleeper_players.items()
+    }
+    roster_positions = _roster_positions()
 
     log.info("fetched %d weeks of matchup data for %s", len(weekly_matchups), skill_season)
 
@@ -110,7 +182,9 @@ def build_owner_skill() -> list[OwnerSkillIndex]:
         ties = int(r.settings.get("ties", 0) or 0)
         owner_standings[owner_id] = (wins + ties * 0.5, losses, ties)
 
-    n_teams = len(rosters)
+    # All-play games come from the historical skill season, so the denominator must use that
+    # season's team count — not the current league size, which may differ after expansion/folds.
+    n_teams = len(skill_rosters) or len(rosters)
 
     # --- All-play accumulator per owner_id ---
     allplay_wins_acc: dict[str, int] = {r.owner_id or "": 0 for r in rosters}
@@ -154,16 +228,13 @@ def build_owner_skill() -> list[OwnerSkillIndex]:
             players_points: dict[str, float] = entry.get("players_points") or {}
 
             actual_pts = sum(players_points.get(pid, 0.0) for pid in starters)
-            all_pts = list(players_points.values())
-
-            n_starters = len(starters)
-            if n_starters > 0 and all_pts:
-                all_pts_sorted = sorted(all_pts, reverse=True)
-                optimal_pts = sum(all_pts_sorted[:n_starters])
-                if optimal_pts > 0:
-                    eff = min(actual_pts / optimal_pts, 1.0)
-                    eff_sum[owner_id] = eff_sum.get(owner_id, 0.0) + eff
-                    eff_count[owner_id] = eff_count.get(owner_id, 0) + 1
+            optimal_pts = optimal_lineup_points(
+                players_points, player_positions, roster_positions
+            )
+            if starters and players_points and optimal_pts > 0:
+                eff = min(actual_pts / optimal_pts, 1.0)
+                eff_sum[owner_id] = eff_sum.get(owner_id, 0.0) + eff
+                eff_count[owner_id] = eff_count.get(owner_id, 0) + 1
 
     # --- Roster dynasty value ---
     try:
@@ -198,7 +269,8 @@ def build_owner_skill() -> list[OwnerSkillIndex]:
         ap_games = allplay_games_acc.get(uid, 0)
         ap_pct = (ap_wins / ap_games) if ap_games > 0 else 0.0
 
-        eff = eff_sum.get(uid, 0.0) / eff_count.get(uid, 1) if eff_count.get(uid, 0) > 0 else 0.85
+        has_eff = eff_count.get(uid, 0) > 0
+        eff: float | None = eff_sum.get(uid, 0.0) / eff_count[uid] if has_eff else None
         actual_wins, actual_losses, actual_ties = owner_standings.get(uid, (0.0, 0, 0))
         actual_games = actual_wins + actual_losses + actual_ties * 0.5
         expected_wins = ap_pct * actual_games
@@ -207,15 +279,22 @@ def build_owner_skill() -> list[OwnerSkillIndex]:
         rv = roster_values.get(rid, 0)
         rv_pct = rv / avg_value
 
-        score = ap_pct * 40.0 + eff * 35.0 + min(rv_pct, 1.5) / 1.5 * 25.0
+        # Skill score weights all-play (40), lineup efficiency (35), roster value (25). When
+        # lineup data is missing, drop that channel and renormalize the remaining 65 to 100 —
+        # never invent an efficiency to fill the slot.
+        rv_term = min(rv_pct, 1.5) / 1.5 * 25.0
+        if eff is not None:
+            score = ap_pct * 40.0 + eff * 35.0 + rv_term
+        else:
+            score = (ap_pct * 40.0 + rv_term) * (100.0 / 65.0)
         score = round(min(max(score, 0.0), 100.0), 1)
 
         ap_display = round(ap_pct * 100)
-        eff_display = round(eff * 100)
+        eff_display = f"{round(eff * 100)}%" if eff is not None else "n/a"
         rv_display = round((rv_pct - 1.0) * 100)
         rv_sign = "+" if rv_display >= 0 else ""
         summary = (
-            f"All-play {ap_display}% · {eff_display}% lineup eff · "
+            f"All-play {ap_display}% · {eff_display} lineup eff · "
             f"roster {rv_sign}{rv_display}% {'above' if rv_display >= 0 else 'below'} avg"
         )
 
@@ -234,7 +313,8 @@ def build_owner_skill() -> list[OwnerSkillIndex]:
                 expected_wins=round(expected_wins, 2),
                 schedule_luck=round(schedule_luck, 2),
                 skill_season=skill_season,
-                lineup_efficiency=round(eff, 4),
+                lineup_efficiency=round(eff, 4) if eff is not None else None,
+                lineup_data_missing=eff is None,
                 roster_value=rv,
                 roster_value_pct=round(rv_pct, 4),
                 skill_score=score,

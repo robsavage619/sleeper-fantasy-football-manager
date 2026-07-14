@@ -9,20 +9,23 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from sleeper_ffm.api.routers import actions as actions_router
+from sleeper_ffm.api.routers import admin as admin_router
 from sleeper_ffm.api.routers import dossier as dossier_router
 from sleeper_ffm.api.routers import draft as draft_router
 from sleeper_ffm.api.routers import evals as evals_router
 from sleeper_ffm.api.routers import findings as findings_router
 from sleeper_ffm.api.routers import history as history_router
+from sleeper_ffm.api.routers import intel as intel_router
 from sleeper_ffm.api.routers import league as league_router
+from sleeper_ffm.api.routers import offers as offers_router
 from sleeper_ffm.api.routers import owners as owners_router
 from sleeper_ffm.api.routers import picks as picks_router
 from sleeper_ffm.api.routers import players as players_router
 from sleeper_ffm.api.routers import prospects as prospects_router
 from sleeper_ffm.api.routers import roster as roster_router
+from sleeper_ffm.api.routers import sabermetrics as sabermetrics_router
 from sleeper_ffm.api.routers import season as season_router
 from sleeper_ffm.api.routers import skill as skill_router
-from sleeper_ffm.api.routers import offers as offers_router
 from sleeper_ffm.api.routers import trades as trades_router
 from sleeper_ffm.reasoning.findings import load_findings_from_disk
 
@@ -63,6 +66,10 @@ def create_app() -> FastAPI:
     app.include_router(skill_router.router)
     app.include_router(actions_router.router)
     app.include_router(offers_router.router)
+    app.include_router(sabermetrics_router.players_router)
+    app.include_router(sabermetrics_router.owners_router)
+    app.include_router(admin_router.router)
+    app.include_router(intel_router.router)
     return app
 
 

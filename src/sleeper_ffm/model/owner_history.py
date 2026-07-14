@@ -14,6 +14,7 @@ from statistics import median
 
 import httpx
 
+from sleeper_ffm.cache import ttl_cache
 from sleeper_ffm.config import LEAGUE_ID
 from sleeper_ffm.sleeper.client import SleeperClient
 
@@ -192,6 +193,7 @@ def _build_trade_event(
     )
 
 
+@ttl_cache()
 def build_league_history(league_id: str = LEAGUE_ID) -> LeagueHistory:
     """Build multi-season transaction history for every current owner.
 

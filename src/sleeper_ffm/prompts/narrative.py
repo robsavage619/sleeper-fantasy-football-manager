@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 from sleeper_ffm.api.routers.roster import _build_player_rows
 from sleeper_ffm.config import DEFAULT_VALUE_SEASON, LEAGUE_ID, MY_ROSTER_ID
+from sleeper_ffm.market.blend import build_player_blend
 from sleeper_ffm.model.owner_dossier import _contention
 from sleeper_ffm.model.owner_profile import _classify
 from sleeper_ffm.model.valuation import SKILL_POSITIONS, build_player_assets
@@ -138,9 +139,11 @@ def _build_trade_summaries(
     """Build one valuation-backed trade summary per roster."""
     vet_assets = build_player_assets(seasons=[valuation_season], sleeper_players=sleeper_players)
     vet_map = {a.player_id: a for a in vet_assets}
+    blend = build_player_blend(vet_assets)
 
     players_by_roster = {
-        roster.roster_id: _build_player_rows(roster, vet_map, sleeper_players) for roster in rosters
+        roster.roster_id: _build_player_rows(roster, vet_map, sleeper_players, blend=blend)
+        for roster in rosters
     }
     total_values = {
         roster_id: round(sum(p["dynasty_value"] for p in players), 1)

@@ -74,29 +74,34 @@ def draft_board(top: int = 50, season: int = DEFAULT_VALUE_SEASON) -> dict:
     pool = build_full_pool(board, seasons=[season])
 
     # Fetch FC market values for steal/reach signals (non-fatal if unavailable).
+    from sleeper_ffm.market.blend import FC_TO_DYNASTY_SCALE, FC_TO_FPAR_SCALE
+
     try:
         from sleeper_ffm.market.fantasycalc import fetch as _fc_fetch
-        from sleeper_ffm.market.blend import _FC_TO_FPAR_SCALE  # type: ignore[attr-defined]
 
-        _FC_TO_FPAR_SCALE = 78.0  # local shadow in case import path changes
         market_values = _fc_fetch()
     except Exception:
+        log.warning("draft board: FC market fetch failed; STEAL/REACH signals disabled")
         market_values = {}
 
     players = []
     for p in pool[:top]:
+        # STEAL/REACH compares age-adjusted dynasty value (not age-blind current
+        # FPAR) against the market on the same scale, so old producers are not
+        # systematically flagged STEAL and young ascenders REACH.
         dv = value_player(p)
         fc_raw = market_values.get(p.player_id)
-        market_fpar = round(fc_raw / 78.0, 1) if fc_raw is not None else None
+        market_fpar = round(fc_raw / FC_TO_FPAR_SCALE, 1) if fc_raw is not None else None
         diff_pct = None
         signal = "HOLD"
-        if market_fpar is not None and market_fpar > 0:
-            # Compare annual FPAR vs market annual FPAR (not discounted DV vs annual).
-            diff_pct = round((p.current_fpar - market_fpar) / market_fpar * 100, 1)
-            if diff_pct > 20:
-                signal = "STEAL"
-            elif diff_pct < -25:
-                signal = "REACH"
+        if fc_raw is not None:
+            market_dv = fc_raw * FC_TO_DYNASTY_SCALE
+            if market_dv > 0:
+                diff_pct = round((dv - market_dv) / market_dv * 100, 1)
+                if diff_pct > 20:
+                    signal = "STEAL"
+                elif diff_pct < -25:
+                    signal = "REACH"
         players.append({
             "player_id": p.player_id,
             "name": p.name,
@@ -117,6 +122,8 @@ def draft_board(top: int = 50, season: int = DEFAULT_VALUE_SEASON) -> dict:
             f"Using valuation season {season}; preferred season "
             f"{PREFERRED_VALUE_SEASON} is unavailable locally."
         )
+    if not market_values:
+        warnings.append("FantasyCalc market unavailable; STEAL/REACH signals disabled.")
 
     return {
         "status": "complete" if board.is_complete() else "active",

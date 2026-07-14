@@ -224,6 +224,8 @@ __marimo__/
 data/cache/
 data/nflverse/
 data/findings.jsonl
+data/offers.jsonl
+data/market/
 
 # Frontend
 node_modules/

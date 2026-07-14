@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from sleeper_ffm.config import (
     DEFAULT_VALUE_SEASON,
     LATEST_COMPLETED_NFL_SEASON,
+    MY_ROSTER_ID,
     NFLVERSE_DIR,
     PREFERRED_VALUE_SEASON,
     cached_weekly_seasons,
@@ -23,6 +24,57 @@ def league_info() -> dict:
     with SleeperClient() as c:
         lg = c.league()
     return lg.model_dump()
+
+
+@router.get("/me")
+def me() -> dict:
+    """Identity + FAAB for the configured roster — the single source of truth.
+
+    Replaces hardcoded ``MY_ROSTER_ID``/display-name constants in the frontend.
+    """
+    with SleeperClient() as c:
+        lg = c.league()
+        rosters = c.rosters()
+        users = c.users()
+
+    roster = next((r for r in rosters if r.roster_id == MY_ROSTER_ID), None)
+    owner_id = roster.owner_id if roster else None
+    user = next((u for u in users if u.user_id == owner_id), None)
+
+    settings = lg.settings or {}
+    budget = int(settings.get("waiver_budget", 0) or 0)
+    used = int((roster.settings or {}).get("waiver_budget_used", 0) or 0) if roster else 0
+
+    return {
+        "roster_id": MY_ROSTER_ID,
+        "user_id": owner_id,
+        "display_name": (user.display_name if user else None) or owner_id,
+        "avatar": user.avatar if user else None,
+        "faab_budget": budget,
+        "faab_used": used,
+        "faab_remaining": max(0, budget - used),
+    }
+
+
+@router.get("/faab")
+def faab() -> list[dict]:
+    """Per-roster FAAB remaining, so bid ranges can weigh who can outbid you."""
+    with SleeperClient() as c:
+        lg = c.league()
+        rosters = c.rosters()
+    budget = int((lg.settings or {}).get("waiver_budget", 0) or 0)
+    out: list[dict] = []
+    for r in rosters:
+        used = int((r.settings or {}).get("waiver_budget_used", 0) or 0)
+        out.append(
+            {
+                "roster_id": r.roster_id,
+                "faab_budget": budget,
+                "faab_used": used,
+                "faab_remaining": max(0, budget - used),
+            }
+        )
+    return out
 
 
 @router.get("/rosters")

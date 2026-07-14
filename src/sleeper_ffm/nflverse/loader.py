@@ -21,6 +21,7 @@ still come from ``nfl_data_py.import_weekly_data`` which targets the working leg
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import cast
 from urllib.error import HTTPError, URLError
@@ -62,7 +63,9 @@ _NEW_FORMAT_RENAMES: dict[str, str] = {
 
 def _normalize_stats_player(df: pl.DataFrame) -> pl.DataFrame:
     """Rename new-format columns to match the legacy nfl_data_py schema."""
-    renames = {k: v for k, v in _NEW_FORMAT_RENAMES.items() if k in df.columns and v not in df.columns}
+    renames = {
+        k: v for k, v in _NEW_FORMAT_RENAMES.items() if k in df.columns and v not in df.columns
+    }
     if renames:
         df = df.rename(renames)
     return df
@@ -120,21 +123,28 @@ def load_weekly(
     frames: list[pl.DataFrame] = []
     to_fetch: list[int] = []
 
+    # Completed seasons (<= _CURRENT_SEASON) are immutable — a cached parquet is a
+    # true cache hit. Only future/in-progress seasons or force refetch from source.
     for yr in seasons:
         dest = _weekly_path(yr)
-        if dest.exists() and not force and yr < _CURRENT_SEASON:
+        if dest.exists() and not force and yr <= _CURRENT_SEASON:
             log.info("weekly/%d: cache hit", yr)
             frames.append(pl.read_parquet(dest))
         else:
             to_fetch.append(yr)
 
     for yr in to_fetch:
+        dest = _weekly_path(yr)
         yr_df = _fetch_weekly_season(yr)
         if yr_df is None:
+            if dest.exists():
+                log.warning("weekly/%d: fetch failed; falling back to cached parquet", yr)
+                frames.append(pl.read_parquet(dest))
+            else:
+                log.error("weekly/%d: fetch failed and no cache available; season dropped", yr)
             continue
-        dest = _weekly_path(yr)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        yr_df.write_parquet(dest)
+        _atomic_write_parquet(yr_df, dest)
         log.info("weekly/%d: %d rows written", yr, len(yr_df))
         frames.append(yr_df)
 
@@ -145,6 +155,13 @@ def load_weekly(
 
 def _weekly_path(season: int) -> Path:
     return NFLVERSE_DIR / "weekly" / f"{season}.parquet"
+
+
+def _atomic_write_parquet(df: pl.DataFrame, dest: Path) -> None:
+    """Write a parquet via a temp file + atomic rename to avoid torn reads."""
+    tmp = dest.with_suffix(dest.suffix + f".tmp-{os.getpid()}")
+    df.write_parquet(tmp)
+    os.replace(tmp, dest)
 
 
 def _fetch_weekly_season(year: int) -> pl.DataFrame | None:
@@ -158,7 +175,7 @@ def _fetch_weekly_season(year: int) -> pl.DataFrame | None:
             log.info("weekly/%d: %d rows (new format)", year, len(df))
             return df
         except Exception as exc:
-            log.warning("weekly/%d: stats_player URL failed (%s); falling back to legacy", year, exc)
+            log.warning("weekly/%d: stats_player URL failed (%s); using legacy", year, exc)
 
     try:
         log.info("weekly/%d: fetching via nfl_data_py...", year)

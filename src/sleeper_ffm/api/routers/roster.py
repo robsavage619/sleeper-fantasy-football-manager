@@ -7,8 +7,13 @@ import logging
 from fastapi import APIRouter, Query
 
 from sleeper_ffm.config import DEFAULT_VALUE_SEASON, MY_ROSTER_ID
+from sleeper_ffm.market.blend import MarketBlend, blended_value, build_player_blend
 from sleeper_ffm.model.dynasty import PlayerAsset, value_player
-from sleeper_ffm.model.valuation import SKILL_POSITIONS, _rookie_fpar, build_player_assets
+from sleeper_ffm.model.valuation import (
+    SKILL_POSITIONS,
+    _rookie_fpar,
+    build_player_assets_cached,
+)
 from sleeper_ffm.sleeper.client import SleeperClient
 from sleeper_ffm.sleeper.models import Roster
 
@@ -21,6 +26,7 @@ def _build_player_rows(
     roster: Roster,
     vet_map: dict[str, PlayerAsset],
     sleeper_players: dict[str, dict],
+    blend: MarketBlend | None = None,
 ) -> list[dict]:
     """Build valued player rows for a single roster.
 
@@ -28,6 +34,8 @@ def _build_player_rows(
         roster: Sleeper Roster model.
         vet_map: player_id → PlayerAsset built from build_player_assets.
         sleeper_players: Full Sleeper player dump.
+        blend: Optional market blend. When provided, ``dynasty_value`` is the
+            model/market blend and rows carry ``model_value``/``market_value``.
 
     Returns:
         List of player dicts sorted by dynasty_value descending.
@@ -74,7 +82,16 @@ def _build_player_rows(
                 is_reserve=is_reserve,
             )
 
-        dynasty_value = value_player(asset)
+        model_value = value_player(asset)
+        market_value: float | None = None
+        if blend is not None:
+            dynasty_value, market_valued = blended_value(pid, asset.position, model_value, blend)
+            if market_valued:
+                market_dyn = blend.market_dyn(pid)
+                market_value = round(market_dyn, 2) if market_dyn is not None else None
+        else:
+            dynasty_value = model_value
+            market_valued = False
         rows.append(
             {
                 "player_id": pid,
@@ -84,6 +101,9 @@ def _build_player_rows(
                 "team": asset.team,
                 "fpar": asset.current_fpar,
                 "dynasty_value": dynasty_value,
+                "model_value": model_value,
+                "market_value": market_value,
+                "market_valued": market_valued,
                 "is_starter": is_starter,
                 "is_taxi": is_taxi,
                 "is_reserve": is_reserve,
@@ -112,10 +132,11 @@ def my_roster(season: int = Query(default=DEFAULT_VALUE_SEASON)) -> dict:
         return {"error": f"roster_id {MY_ROSTER_ID} not found"}
 
     log.info("building player assets for my roster, season=%d", season)
-    vet_assets = build_player_assets(seasons=[season], sleeper_players=sleeper_players)
+    vet_assets = build_player_assets_cached(seasons=[season], sleeper_players=sleeper_players)
     vet_map = {a.player_id: a for a in vet_assets}
+    blend = build_player_blend(vet_assets)
 
-    player_rows = _build_player_rows(my_roster_obj, vet_map, sleeper_players)
+    player_rows = _build_player_rows(my_roster_obj, vet_map, sleeper_players, blend=blend)
     total_value = round(sum(p["dynasty_value"] for p in player_rows), 2)
 
     return {
@@ -143,12 +164,13 @@ def all_rosters(season: int = Query(default=DEFAULT_VALUE_SEASON)) -> list[dict]
         sleeper_players = c.players()
 
     log.info("building player assets for all rosters, season=%d", season)
-    vet_assets = build_player_assets(seasons=[season], sleeper_players=sleeper_players)
+    vet_assets = build_player_assets_cached(seasons=[season], sleeper_players=sleeper_players)
     vet_map = {a.player_id: a for a in vet_assets}
+    blend = build_player_blend(vet_assets)
 
     results: list[dict] = []
     for roster in rosters:
-        player_rows = _build_player_rows(roster, vet_map, sleeper_players)
+        player_rows = _build_player_rows(roster, vet_map, sleeper_players, blend=blend)
         total_value = round(sum(p["dynasty_value"] for p in player_rows), 2)
         starter_count = sum(1 for p in player_rows if p["is_starter"])
         top_3 = [

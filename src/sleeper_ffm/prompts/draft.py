@@ -19,9 +19,6 @@ from __future__ import annotations
 
 from sleeper_ffm.model.dynasty import PickAsset, PlayerAsset, RosterAssets, value_player
 
-# FantasyCalc → FPAR conversion factor (see DECISIONS.md for calibration notes).
-_FC_TO_FPAR_SCALE: float = 78.0
-
 # Dynasty value tier thresholds.
 _TIERS: list[tuple[float, str]] = [
     (350.0, "T1"),   # franchise cornerstone
@@ -42,25 +39,28 @@ def _tier_label(dynasty_value: float) -> str:
 def _divergence_label(
     player: PlayerAsset,
     market_values: dict[str, float],
+    scale: float,
 ) -> str:
     """Return a steal/reach/hold signal vs FantasyCalc consensus.
 
-    Compares annual FPAR (our model) against FC value ÷ scale (market annual).
-    Positive diff = our model rates player higher than market → ★STEAL opportunity.
-    Negative diff = market rates player higher than our model → ⚠REACH risk.
+    Compares the age-adjusted dynasty value (model) against the market price on
+    the same dynasty-value scale, so old producers are not systematically flagged
+    STEAL and young ascenders REACH.
+
+    Positive diff = model rates player higher than market -> STEAL opportunity.
+    Negative diff = market rates player higher than model -> REACH risk.
     """
     fc_raw = market_values.get(player.player_id)
-    if fc_raw is None:
+    if fc_raw is None or scale <= 0:
         return ""
-    market_fpar = fc_raw / _FC_TO_FPAR_SCALE
-    if market_fpar <= 0:
+    market_dv = fc_raw * scale
+    if market_dv <= 0:
         return ""
-    # Use annual FPAR (not discounted DV) for an apples-to-apples comparison.
-    diff_pct = (player.current_fpar - market_fpar) / market_fpar * 100
+    diff_pct = (value_player(player) - market_dv) / market_dv * 100
     if diff_pct > 20:
-        return "★STEAL"   # our model rates annual production >20% above market
+        return "★STEAL"   # model rates dynasty value >20% above market
     if diff_pct < -25:
-        return "⚠REACH"   # market rates player >25% above our model
+        return "⚠REACH"   # market rates player >25% above model
     return ""
 
 
@@ -118,7 +118,9 @@ def build_draft_prompt(
     if vault_notes:
         vault_section = f"\n## Vault Research Notes\n{vault_notes}\n"
 
-    clock_label = "ON THE CLOCK" if picks_until_my_turn == 0 else f"{picks_until_my_turn} picks away"
+    clock_label = (
+        "ON THE CLOCK" if picks_until_my_turn == 0 else f"{picks_until_my_turn} picks away"
+    )
 
     return f"""# Draft Decision — Pick {pick_number} (Round {round_number})
 
@@ -135,7 +137,7 @@ def build_draft_prompt(
 - My next pick: {clock_label}
 
 ## Available Players (top {top_n} by dynasty value)
-Legend: tier T1-T5 | STEAL(★) = market underprices vs model | REACH(⚠) = model overprices | GONE?/RISKY = survival risk
+Legend: T1-T5 tier | STEAL = market underprices | REACH = model overprices | GONE?/RISKY = survival
 {board_lines}
 
 ## Pick Inventory Summary (future picks by team)
@@ -168,7 +170,7 @@ def _format_roster(roster: RosterAssets) -> str:
         taxi = " [taxi]" if p.is_taxi else ""
         dv = value_player(p)
         lines.append(
-            f"  {p.name} ({p.position}, {p.age:.0f}y) — FPAR {p.current_fpar:.0f}  DV {dv:.0f}{taxi}"
+            f"  {p.name} ({p.position}, {p.age:.0f}y) - FPAR {p.current_fpar:.0f} DV {dv:.0f}{taxi}"
         )
     return "\n".join(lines)
 
@@ -180,11 +182,14 @@ def _format_board(
 ) -> str:
     if not players:
         return "  (no players available)"
+
+    from sleeper_ffm.market.blend import FC_TO_DYNASTY_SCALE
+
     lines = []
     for i, p in enumerate(players, 1):
         dv = value_player(p)
         tier = _tier_label(dv)
-        steal = _divergence_label(p, market_values)
+        steal = _divergence_label(p, market_values, FC_TO_DYNASTY_SCALE)
         surv = _survival_signal(i, picks_until)
         flags = " ".join(f for f in (steal, surv) if f)
         flag_str = f"  {flags}" if flags else ""

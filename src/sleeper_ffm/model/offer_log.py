@@ -13,9 +13,11 @@ Each line is a JSON object with:
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
+import os
 from pathlib import Path
 
 from sleeper_ffm.config import DATA_DIR
@@ -23,6 +25,13 @@ from sleeper_ffm.config import DATA_DIR
 log = logging.getLogger(__name__)
 
 _OFFERS_PATH = DATA_DIR / "offers.jsonl"
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write text via a temp file + atomic rename to avoid torn reads/truncation."""
+    tmp = path.with_suffix(path.suffix + f".tmp-{os.getpid()}")
+    tmp.write_text(text)
+    os.replace(tmp, path)
 
 
 def _offer_id(offer_dict: dict) -> str:
@@ -49,10 +58,8 @@ def append_offers(offers: list[dict], logged_at: str) -> None:
     existing_ids: set[str] = set()
     if _OFFERS_PATH.exists():
         for line in _OFFERS_PATH.read_text().splitlines():
-            try:
+            with contextlib.suppress(json.JSONDecodeError, KeyError):
                 existing_ids.add(json.loads(line)["offer_id"])
-            except (json.JSONDecodeError, KeyError):
-                pass
 
     new_rows = 0
     with _OFFERS_PATH.open("a") as fh:
@@ -96,7 +103,7 @@ def mark_sent(offer_id: str) -> bool:
         new_lines.append(json.dumps(entry))
 
     if updated:
-        _OFFERS_PATH.write_text("\n".join(new_lines) + "\n")
+        _atomic_write_text(_OFFERS_PATH, "\n".join(new_lines) + "\n")
     return updated
 
 

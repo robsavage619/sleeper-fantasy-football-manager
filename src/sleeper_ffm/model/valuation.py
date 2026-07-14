@@ -23,7 +23,9 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
+from sleeper_ffm.cache import ttl_cache
 from sleeper_ffm.config import DATA_DIR, DEFAULT_VALUE_SEASON
+from sleeper_ffm.market.blend import FC_TO_FPAR_SCALE
 from sleeper_ffm.model.dynasty import PlayerAsset
 from sleeper_ffm.nflverse.loader import load_id_map, load_weekly
 from sleeper_ffm.scoring.engine import load_scoring, score, stats_from_nflverse
@@ -60,7 +62,7 @@ _FLEX_ALLOC: dict[str, float] = {"WR": 0.55, "RB": 0.40, "TE": 0.05}
 def _derive_replacement_ranks() -> dict[str, int]:
     """Derive replacement ranks from data/league_settings.json.
 
-    Computes (base_slots + flex_alloc) × num_teams for each skill position.
+    Computes (base_slots + flex_alloc) x num_teams for each skill position.
     Falls back to hardcoded dict if the settings file is absent or unparseable.
     """
     settings_path = DATA_DIR / "league_settings.json"
@@ -256,12 +258,6 @@ def _rookie_fpar(search_rank: int) -> float:
     return round(100.0 / (1.0 + search_rank / 20.0), 2)
 
 
-# Approximate conversion factor from FantasyCalc 0-10000 scale to FPAR scale.
-# Derived empirically: FC top-WR value (~8500) ≈ FPAR ~110 → scale ≈ 77.
-# Calibrated so that FC rank-1 rookie (≈8000 FC) ≈ 100 FPAR (solid WR2 upside).
-_FC_TO_FPAR_SCALE: float = 78.0
-
-
 def build_rookie_assets(
     sleeper_players: dict[str, dict],
     rostered_ids: set[str],
@@ -304,7 +300,7 @@ def build_rookie_assets(
 
         fc_val = market_values.get(pid)
         if fc_val is not None:
-            fpar = round(fc_val / _FC_TO_FPAR_SCALE, 2)
+            fpar = round(fc_val / FC_TO_FPAR_SCALE, 2)
             fc_hits += 1
         else:
             fpar = _rookie_fpar(search_rank)
@@ -378,7 +374,17 @@ def _blend_seasons(totals: pl.DataFrame, seasons: list[int]) -> pl.DataFrame:
         frame = (
             totals.filter(pl.col("season") == s)
             .with_columns((pl.col("season_fp") * w).alias("weighted_fp"))
-            .select(["gsis_id", "position", "weighted_fp", "games_played", "name", "team", "sleeper_id_str"])
+            .select(
+                [
+                    "gsis_id",
+                    "position",
+                    "weighted_fp",
+                    "games_played",
+                    "name",
+                    "team",
+                    "sleeper_id_str",
+                ]
+            )
         )
         weighted_frames.append(frame)
 
@@ -413,7 +419,6 @@ def build_player_assets(
     Returns:
         PlayerAsset list sorted by ``current_fpar`` descending.
     """
-    from sleeper_ffm.config import PREFERRED_VALUE_SEASON
     from sleeper_ffm.sleeper.client import SleeperClient
 
     if seasons is None:
@@ -522,6 +527,20 @@ def build_player_assets(
     )
 
     return sorted(assets, key=lambda p: p.current_fpar, reverse=True)
+
+
+@ttl_cache(key=lambda seasons=None, sleeper_players=None: tuple(seasons) if seasons else "default")
+def build_player_assets_cached(
+    seasons: list[int] | None = None,
+    sleeper_players: dict[str, dict] | None = None,
+) -> list[PlayerAsset]:
+    """TTL-cached ``build_player_assets`` for default league scoring.
+
+    Keyed on ``seasons`` only (the Sleeper dump is always the live one), so the
+    per-partner dossier/roster calls in one request share a single valuation
+    instead of re-scoring the weekly data N times.
+    """
+    return build_player_assets(seasons=seasons, sleeper_players=sleeper_players)
 
 
 def build_draft_pool(
