@@ -23,8 +23,9 @@ def client(monkeypatch) -> TestClient:
 
 def test_status_shape(client: TestClient) -> None:
     body = client.get("/admin/refresh/status").json()
-    assert set(body) == {"job", "freshness"}
+    assert set(body) == {"job", "freshness", "scheduler"}
     assert body["job"]["status"] == "idle"
+    assert body["scheduler"] == {"enabled": False, "jobs": []}  # off under pytest
     assert set(body["freshness"]) == {
         "sleeper_players",
         "nflverse_weekly",

@@ -28,12 +28,15 @@ from sleeper_ffm.api.routers import season as season_router
 from sleeper_ffm.api.routers import skill as skill_router
 from sleeper_ffm.api.routers import trades as trades_router
 from sleeper_ffm.reasoning.findings import load_findings_from_disk
+from sleeper_ffm.schedule.scheduler import start_scheduler, stop_scheduler
 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     load_findings_from_disk()
+    start_scheduler()
     yield
+    stop_scheduler()
 
 
 def create_app() -> FastAPI:

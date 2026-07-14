@@ -53,12 +53,19 @@ _JOB: dict[str, Any] = {
     "started_at": None,
     "finished_at": None,
     "sources": {},
+    "last_status_refresh": None,  # last cheap injury/depth pull (scheduled or manual)
 }
 _JOB_LOCK = threading.Lock()
 
 
 def _now_iso() -> str:
     return datetime.datetime.now(datetime.UTC).isoformat()
+
+
+def record_status_refresh(detail: Any) -> None:
+    """Record the timestamp/result of a light status (injury/depth) refresh."""
+    with _JOB_LOCK:
+        _JOB["last_status_refresh"] = {"at": _now_iso(), "detail": detail}
 
 
 # --- per-source refresh functions (module-level so tests can monkeypatch) ------
@@ -162,6 +169,7 @@ def refresh_status() -> dict[str, Any]:
             "started_at": _JOB["started_at"],
             "finished_at": _JOB["finished_at"],
             "sources": dict(_JOB["sources"]),
+            "last_status_refresh": _JOB.get("last_status_refresh"),
         }
     weekly_fresh = _file_freshness(NFLVERSE_DIR / "weekly" / f"{PREFERRED_VALUE_SEASON}.parquet")
     weekly_fresh["cached_seasons"] = cached_weekly_seasons()
@@ -171,7 +179,9 @@ def refresh_status() -> dict[str, Any]:
         "nflverse_snaps": _file_freshness(_SNAPS_PARQUET),
         "fantasycalc": _file_freshness(_FANTASYCALC_LATEST),
     }
-    return {"job": job, "freshness": freshness}
+    from sleeper_ffm.schedule.scheduler import scheduler_info
+
+    return {"job": job, "freshness": freshness, "scheduler": scheduler_info()}
 
 
 @router.get("/ai/briefing", tags=["ai"])
