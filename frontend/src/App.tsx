@@ -1,6 +1,12 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
-import { Toaster } from 'sonner'
+import {
+  QueryClient,
+  QueryClientProvider,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
+import { Toaster, toast } from 'sonner'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Dashboard } from '@/routes/Dashboard'
 import { DraftBoard } from '@/routes/DraftBoard'
@@ -18,7 +24,31 @@ const qc = new QueryClient({
 })
 
 function OpsBar() {
-  const { data: state } = useQuery({ queryKey: ['nfl-state'], queryFn: api.nflState })
+  const qc = useQueryClient()
+  const { data: state, isError: stateError } = useQuery({
+    queryKey: ['nfl-state'],
+    queryFn: api.nflState,
+  })
+  const { data: status } = useQuery({
+    queryKey: ['refresh-status'],
+    queryFn: api.refreshStatus,
+    refetchInterval: (q) => (q.state.data?.job.status === 'running' ? 3000 : 60_000),
+  })
+
+  const refreshing = status?.job.status === 'running'
+  const refresh = useMutation({
+    mutationFn: api.refresh,
+    onSuccess: () => {
+      toast.success('Refreshing data sources…')
+      qc.invalidateQueries({ queryKey: ['refresh-status'] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  // Connectivity reflects the actual API, not a decorative always-on light.
+  const online = !stateError && state !== undefined
+  const dot = online ? '#1a9b5e' : '#c0453a'
+  const label = online ? 'LIVE' : 'OFFLINE'
 
   return (
     <div
@@ -27,29 +57,38 @@ function OpsBar() {
     >
       <div className="flex items-center gap-2">
         <span
-          className="war-pulse inline-block w-1.5 h-1.5 rounded-full"
-          style={{ background: '#1a9b5e' }}
+          className={online ? 'war-pulse inline-block w-1.5 h-1.5 rounded-full' : 'inline-block w-1.5 h-1.5 rounded-full'}
+          style={{ background: dot }}
         />
         <span
           className="text-[11px] font-semibold tracking-[0.3em] uppercase"
-          style={{ color: '#1a9b5e' }}
+          style={{ color: dot }}
         >
-          LIVE
+          {label}
         </span>
       </div>
       <span style={{ width: 1, height: 12, background: '#162035', display: 'inline-block' }} />
-      <span
-        className="text-[11px] tracking-[0.2em] uppercase"
-        style={{ color: '#3d5070' }}
-      >
-        {state?.season ?? '2026'} · {state?.season_type?.toUpperCase() ?? 'PRE_DRAFT'} · WK{' '}
-        {state?.week ?? '0'}
+      <span className="text-[11px] tracking-[0.2em] uppercase" style={{ color: '#3d5070' }}>
+        {state?.season ?? '—'} · {state?.season_type?.toUpperCase() ?? '—'} · WK{' '}
+        {state?.week ?? '—'}
       </span>
       <div className="flex-1" />
-      <span
-        className="text-[11px] tracking-[0.2em] uppercase"
-        style={{ color: '#3a7cc0' }}
+      <button
+        onClick={() => refresh.mutate()}
+        disabled={refreshing || refresh.isPending}
+        className="text-[11px] tracking-[0.2em] uppercase px-2 py-0.5"
+        style={{
+          color: refreshing ? '#3d5070' : '#3a7cc0',
+          border: '1px solid #162035',
+          borderRadius: 2,
+          cursor: refreshing || refresh.isPending ? 'default' : 'pointer',
+        }}
+        title="Rebuild Sleeper, nflverse, and market caches"
       >
+        {refreshing ? 'Refreshing…' : '↻ Refresh Data'}
+      </button>
+      <span style={{ width: 1, height: 12, background: '#162035', display: 'inline-block' }} />
+      <span className="text-[11px] tracking-[0.2em] uppercase" style={{ color: '#3a7cc0' }}>
         AI ASSISTED · CLAUDE
       </span>
     </div>

@@ -22,7 +22,10 @@ import {
   type DraftProfile,
 } from '@/lib/api'
 
-const MY_ROSTER_ID = 2
+function useMyRosterId(): number | null {
+  const { data } = useQuery({ queryKey: ['me'], queryFn: api.me, staleTime: 5 * 60 * 1000 })
+  return data?.roster_id ?? null
+}
 
 // ── palette ────────────────────────────────────────────────────────────────
 const C = {
@@ -180,7 +183,7 @@ function OwnerCard({ profile, index, skill, history, onClick }: {
 }) {
   const [hovered, setHovered] = useState(false)
   const displayName = profile.display_name ?? profile.user_id
-  const isMe = profile.display_name === 'robsavage'
+  const isMe = profile.is_me
   const rvRaw = skill?.roster_value_pct ?? 1
   const nickname = history?.behavioral_type
 
@@ -294,7 +297,8 @@ function ScoutVerdict({ skill, history, dossier }: {
 
 // ── vs YOU ───────────────────────────────────────────────────────────────────
 function VsYou({ history }: { history: OwnerHistory }) {
-  const withMe = history.trades.filter(t => t.partner_roster_id === MY_ROSTER_ID)
+  const myRosterId = useMyRosterId()
+  const withMe = history.trades.filter(t => t.partner_roster_id === myRosterId)
   if (withMe.length === 0) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -682,6 +686,7 @@ function SkillLuckQuadrant({ skills, profiles, onSelect }: {
   profiles: OwnerProfile[]
   onSelect: (rosterId: number) => void
 }) {
+  const myRosterId = useMyRosterId()
   const profileByRoster = new Map(profiles.map(p => [p.roster_id, p]))
   const plotted = skills.filter(s => Number.isFinite(s.skill_score) && Number.isFinite(s.schedule_luck))
   const widthFloor = 620
@@ -769,7 +774,7 @@ function SkillLuckQuadrant({ skills, profiles, onSelect }: {
                   {plotted.map(skill => {
                     const profile = profileByRoster.get(skill.roster_id)
                     const name = profile?.display_name ?? skill.display_name ?? `Roster ${skill.roster_id}`
-                    const isMe = skill.roster_id === MY_ROSTER_ID
+                    const isMe = skill.roster_id === myRosterId
                     const color = TIER_COLOR[skill.skill_tier]
                     const x = xScale(skill.schedule_luck)
                     const y = yScale(skill.skill_score)
@@ -831,6 +836,7 @@ function TradeNetworkGraph({ profiles, histories, onSelect }: {
   histories: OwnerHistory[]
   onSelect: (rosterId: number) => void
 }) {
+  const myRosterId = useMyRosterId()
   const graph = useMemo(() => {
     const profileByRoster = new Map(profiles.map(p => [p.roster_id, p]))
     const historyByRoster = new Map(histories.map(h => [h.roster_id, h]))
@@ -938,7 +944,7 @@ function TradeNetworkGraph({ profiles, histories, onSelect }: {
                   {graph.nodes.map(node => {
                     const x = (node.x ?? 0) * scaleX
                     const y = (node.y ?? 0) * scaleY
-                    const isMe = node.rosterId === MY_ROSTER_ID
+                    const isMe = node.rosterId === myRosterId
                     const color = TRADE_NODE_COLOR[node.archetype]
                     const radius = 9 + (node.tradeCount / nodeMax) * 12
                     return (
@@ -992,6 +998,7 @@ function TradeNetworkGraph({ profiles, histories, onSelect }: {
 
 // ── TRADE FEED ───────────────────────────────────────────────────────────────
 function TradeFeed({ history }: { history?: OwnerHistory }) {
+  const myRosterId = useMyRosterId()
   if (!history) return <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>Loading history…</span>
   if (history.trades.length === 0) {
     return <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>No trades on record across {history.seasons_covered.length} seasons</span>
@@ -999,7 +1006,7 @@ function TradeFeed({ history }: { history?: OwnerHistory }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 360, overflowY: 'auto' }}>
       {history.trades.map((t, i) => {
-        const isMe = t.partner_roster_id === MY_ROSTER_ID
+        const isMe = t.partner_roster_id === myRosterId
         return (
           <div key={i} style={{ background: C.deep, border: `1px solid ${isMe ? 'rgba(0,184,204,0.35)' : C.border}`, borderRadius: 2, padding: '9px 12px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 }}>
@@ -1363,7 +1370,7 @@ function GMDrawer({ profile, skill, allSkills, history, onClose }: {
   profile: OwnerProfile; skill?: OwnerSkillIndex; allSkills: OwnerSkillIndex[]; history?: OwnerHistory; onClose: () => void
 }) {
   const displayName = profile.display_name ?? profile.user_id
-  const isMe = profile.display_name === 'robsavage'
+  const isMe = profile.is_me
   const borderColor = ARCH_BORDER[profile.archetype]
 
   const { data: dossier, isLoading: dossierLoading, error: dossierError } = useQuery({

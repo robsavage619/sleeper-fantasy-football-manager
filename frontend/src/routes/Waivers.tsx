@@ -46,6 +46,7 @@ export function Waivers() {
     queryKey: ['waiver-candidates'],
     queryFn: () => api.waiverCandidates(),
   })
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me, staleTime: 5 * 60 * 1000 })
 
   const candidates = (data ?? []).filter((c) => filter === 'ALL' || c.position === filter)
   const topCandidate = candidates[0]
@@ -92,7 +93,7 @@ export function Waivers() {
             className="tracking-[0.3em] uppercase"
             style={{ fontSize: 11, color: '#6a8098' }}
           >
-            FAAB $500 · TUESDAY · READ-ONLY
+            {me ? `FAAB $${me.faab_remaining} LEFT` : 'FAAB —'} · TUESDAY · READ-ONLY
           </span>
         </div>
       </div>

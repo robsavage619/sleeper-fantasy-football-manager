@@ -1,4 +1,6 @@
 import { NavLink } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { api, leagueTypeLabel } from '@/lib/api'
 import {
   BarChart2,
   Users,
@@ -25,6 +27,8 @@ const NAV: Array<{ to: string; label: string; icon: LucideIcon }> = [
 ]
 
 export function Sidebar() {
+  const { data: league } = useQuery({ queryKey: ['league'], queryFn: api.league, staleTime: 10 * 60 * 1000 })
+  const subtitle = league ? `${leagueTypeLabel(league)} · ${league.season}` : 'DYNASTY'
   return (
     <nav
       className="flex flex-col h-screen sticky top-0 shrink-0"
@@ -72,7 +76,7 @@ export function Sidebar() {
           className="mt-2 tracking-[0.3em] uppercase"
           style={{ fontSize: 10, color: '#3a7cc0' }}
         >
-          DYNASTY · 2026
+          {subtitle}
         </div>
       </div>
 

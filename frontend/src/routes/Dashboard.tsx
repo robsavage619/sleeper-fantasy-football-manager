@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
-import { api, type StartSitRec, type TransactionPlan, type WarRoomAction } from '@/lib/api'
+import { api, leagueFormatLabel, type StartSitRec, type TransactionPlan, type WarRoomAction } from '@/lib/api'
 
 function Panel({
   label,
@@ -86,6 +86,7 @@ function StatBlock({
 
 export function Dashboard() {
   const { data: league } = useQuery({ queryKey: ['league'], queryFn: api.league })
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me, staleTime: 5 * 60 * 1000 })
   const { data: picks } = useQuery({ queryKey: ['traded-picks'], queryFn: api.tradedPicks })
   const { data: state } = useQuery({ queryKey: ['nfl-state'], queryFn: api.nflState })
   const { data: trending } = useQuery({
@@ -97,7 +98,7 @@ export function Dashboard() {
     queryFn: () => api.startSit(),
     enabled: state?.season_type === 'regular',
   })
-  const { data: actions } = useQuery({
+  const { data: actions, isError: actionsError, error: actionsErrorObj } = useQuery({
     queryKey: ['war-room-actions'],
     queryFn: () => api.warRoomActions(12),
     refetchInterval: 60_000,
@@ -107,8 +108,6 @@ export function Dashboard() {
     queryFn: () => api.recommendationEvals(8),
     refetchInterval: 120_000,
   })
-
-  const leagueAny = league as Record<string, unknown> | undefined
 
   return (
     <div className="p-5 space-y-5">
@@ -123,13 +122,13 @@ export function Dashboard() {
             color: '#e8eef6',
           }}
         >
-          {(leagueAny?.name as string) ?? 'WAR ROOM'}
+          {league?.name ?? 'WAR ROOM'}
         </h1>
         <span
           className="tracking-[0.25em] uppercase"
           style={{ fontSize: 11, color: '#6a8098' }}
         >
-          {(leagueAny?.status as string) ?? '—'} ·{' '}
+          {league?.status ?? '—'} ·{' '}
           {state?.season_type ?? '—'} WK {state?.week ?? '—'}
         </span>
       </div>
@@ -138,16 +137,24 @@ export function Dashboard() {
       <div className="grid grid-cols-4 gap-3">
         <StatBlock
           label="Teams"
-          value={String((leagueAny?.total_rosters as number) ?? '—')}
-          sub="dynasty · 1QB · full PPR"
+          value={String(league?.total_rosters ?? '—')}
+          sub={leagueFormatLabel(league)}
         />
         <StatBlock
           label="Traded Picks"
           value={String(picks?.length ?? '—')}
           sub="live inventory"
         />
-        <StatBlock label="Scoring" value="PPR" sub="100/200 rush · 300/400 pass" />
-        <StatBlock label="FAAB" value="$500" sub="continuous · Tue waivers" />
+        <StatBlock
+          label="Season"
+          value={league?.season ?? '—'}
+          sub={league ? `${league.status} · ${state?.season_type ?? '—'}` : '—'}
+        />
+        <StatBlock
+          label="FAAB Left"
+          value={me ? `$${me.faab_remaining}` : '—'}
+          sub={me ? `of $${me.faab_budget} budget` : '—'}
+        />
       </div>
 
       {evals && evals.overall_status === 'DEGRADED' && (
@@ -185,7 +192,11 @@ export function Dashboard() {
         <StartSitPanel rec={startSit} week={state?.week ?? null} />
       )}
 
-      <ActionQueue actions={actions ?? []} />
+      <ActionQueue
+        actions={actions ?? []}
+        isError={actionsError}
+        errorMessage={actionsErrorObj instanceof Error ? actionsErrorObj.message : null}
+      />
 
       {/* Main grid: intel feed + wire */}
       <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 260px' }}>
@@ -209,19 +220,31 @@ const ACTION_COLOR: Record<WarRoomAction['kind'], string> = {
   SYSTEM: '#c93328',
 }
 
-function ActionQueue({ actions }: { actions: WarRoomAction[] }) {
+function ActionQueue({
+  actions,
+  isError,
+  errorMessage,
+}: {
+  actions: WarRoomAction[]
+  isError?: boolean
+  errorMessage?: string | null
+}) {
   const top = actions.slice(0, 6)
   const [plan, setPlan] = useState<TransactionPlan | null>(null)
   const [planningId, setPlanningId] = useState<string | null>(null)
+  const [planError, setPlanError] = useState<string | null>(null)
 
   async function buildPlan(action: WarRoomAction) {
     setPlanningId(action.action_id)
+    setPlanError(null)
     try {
       setPlan(await api.transactionPlan({
         action_id: action.action_id,
         kind: action.kind,
         command: action.command,
       }))
+    } catch (e) {
+      setPlanError(e instanceof Error ? e.message : 'Failed to build transaction plan')
     } finally {
       setPlanningId(null)
     }
@@ -229,7 +252,22 @@ function ActionQueue({ actions }: { actions: WarRoomAction[] }) {
 
   return (
     <Panel label="ACTION QUEUE · NEXT BEST MOVES" accent="#d4860c">
-      {top.length === 0 ? (
+      {planError && (
+        <div
+          className="px-4 py-2.5"
+          style={{ borderBottom: '1px solid #162035', color: '#e07060', background: 'rgba(201, 51, 40, 0.06)', fontSize: 12 }}
+        >
+          {planError}
+        </div>
+      )}
+      {isError ? (
+        <div
+          className="p-5"
+          style={{ color: '#e07060', background: 'rgba(201, 51, 40, 0.06)', fontSize: 12 }}
+        >
+          Failed to load action queue{errorMessage ? ` · ${errorMessage}` : ''}
+        </div>
+      ) : top.length === 0 ? (
         <div className="p-5" style={{ color: '#3d5070', fontSize: 12 }}>
           No live actions. Data source may still be warming.
         </div>
@@ -520,11 +558,65 @@ function StartSitPanel({ rec, week }: { rec: StartSitRec | undefined; week: numb
   )
 }
 
+function relativeTime(iso: string | undefined): string {
+  if (!iso) return ''
+  const then = Date.parse(iso)
+  if (Number.isNaN(then)) return ''
+  const mins = Math.round((Date.now() - then) / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.round(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.round(hrs / 24)}d ago`
+}
+
+function summarizeFinding(kind: string, body: Record<string, unknown>): {
+  title: string
+  detail: string
+} {
+  const s = (v: unknown) => (v == null ? '' : String(v))
+  switch (kind) {
+    case 'narrative':
+      return { title: 'Weekly narrative', detail: s(body.narrative) }
+    case 'trade':
+      return {
+        title: `Trade — ${s(body.partner) || 'target'}`,
+        detail:
+          body.send || body.receive
+            ? `Send ${s(body.send)} → Get ${s(body.receive)}. ${s(body.rationale)}`
+            : s(body.rationale),
+      }
+    case 'waiver':
+      return {
+        title: `Waiver — ${s(body.player)}`,
+        detail: `${body.faab_bid ? `Bid ${s(body.faab_bid)}` : ''}${
+          body.drop ? ` · drop ${s(body.drop)}` : ''
+        }. ${s(body.rationale)}`,
+      }
+    case 'draft':
+      return { title: `Draft — ${s(body.pick)}`, detail: s(body.rationale) }
+    case 'prospect':
+      return { title: `Prospect — ${s(body.name)}`, detail: `${s(body.verdict)}. ${s(body.rationale)}` }
+    case 'lineup':
+      return {
+        title: `Lineup — start ${s(body.start)}`,
+        detail: `Sit ${s(body.sit)}. ${s(body.rationale)}`,
+      }
+    default: {
+      const detail = Object.entries(body)
+        .filter(([k]) => k !== 'generated_at' && k !== 'data_quality_ack')
+        .map(([k, v]) => `${k}: ${s(v)}`)
+        .join(' · ')
+      return { title: kind, detail }
+    }
+  }
+}
+
 function FindingsFeed() {
   const { data: findings, isLoading } = useQuery({
     queryKey: ['findings'],
     queryFn: () => api.findings(),
-    refetchInterval: 5000,
+    refetchInterval: 60_000,
   })
 
   if (isLoading) {
@@ -560,35 +652,45 @@ function FindingsFeed() {
 
   return (
     <div>
-      {findings.slice(0, 5).map((f, i) => (
-        <motion.div
-          key={f.finding_id}
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: i * 0.06 }}
-          className="p-4 flex items-start gap-3"
-          style={{ borderBottom: '1px solid #162035' }}
-        >
-          <span
-            className="shrink-0 mt-0.5 px-2 py-0.5 tracking-wider uppercase"
-            style={{
-              fontSize: 10,
-              color: '#00b8cc',
-              background: 'rgba(0, 184, 204, 0.08)',
-              border: '1px solid rgba(0, 184, 204, 0.2)',
-              borderRadius: 2,
-            }}
+      {findings.slice(0, 6).map((f, i) => {
+        const body = (f.body ?? {}) as Record<string, unknown>
+        const { title, detail } = summarizeFinding(f.kind, body)
+        const stamp = relativeTime(body.generated_at as string | undefined)
+        return (
+          <motion.div
+            key={f.finding_id}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.06 }}
+            className="p-4 flex items-start gap-3"
+            style={{ borderBottom: '1px solid #162035' }}
           >
-            {f.kind}
-          </span>
-          <pre
-            className="text-xs overflow-auto whitespace-pre-wrap flex-1"
-            style={{ color: '#7a8fa8', margin: 0 }}
-          >
-            {JSON.stringify(f.body, null, 2)}
-          </pre>
-        </motion.div>
-      ))}
+            <span
+              className="shrink-0 mt-0.5 px-2 py-0.5 tracking-wider uppercase"
+              style={{
+                fontSize: 10,
+                color: '#00b8cc',
+                background: 'rgba(0, 184, 204, 0.08)',
+                border: '1px solid rgba(0, 184, 204, 0.2)',
+                borderRadius: 2,
+              }}
+            >
+              {f.kind}
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-baseline justify-between gap-2">
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#c9d6e8' }}>{title}</span>
+                {stamp && <span style={{ fontSize: 10, color: '#3d5070' }}>{stamp}</span>}
+              </div>
+              {detail && (
+                <p className="mt-1" style={{ fontSize: 12, color: '#7a8fa8', lineHeight: 1.5 }}>
+                  {detail}
+                </p>
+              )}
+            </div>
+          </motion.div>
+        )
+      })}
     </div>
   )
 }

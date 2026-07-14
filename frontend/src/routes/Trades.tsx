@@ -2,10 +2,13 @@ import { useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import type { DossierPick, OfferLogEntry, OwnerProfile, TradeAnalysis } from '@/lib/api'
-
-const MY_ROSTER_ID = 2
-const CURRENT_YEAR = new Date().getFullYear()
+import type {
+  DossierPick,
+  OfferLogEntry,
+  PickMarketSignal,
+  TradeAnalysis,
+  TradeOfferRecommendation,
+} from '@/lib/api'
 
 const C = {
   bg: '#060a12',
@@ -27,16 +30,14 @@ const ARCHETYPE_COLORS: Record<string, string> = {
   REBUILDER: '#c93328', CONTENDER: '#1a9b5e', BALANCED: '#00b8cc', UNKNOWN: '#6a8098',
 }
 
-const POS_ORDER = ['QB', 'RB', 'WR', 'TE']
-const ROUNDS = [1, 2, 3, 4]
-const FUTURE_SEASONS = [String(CURRENT_YEAR), String(CURRENT_YEAR + 1)]
 const ORDINALS = ['1st', '2nd', '3rd', '4th']
 const ordinal = (n: number) => ORDINALS[n - 1] ?? `${n}th`
 
-const ROUND_BASE: Record<number, number> = { 1: 80, 2: 50, 3: 25, 4: 10 }
-function pickValue(season: string | number, round: number): number {
-  const yearsAhead = Math.max(0, Number(season) - CURRENT_YEAR)
-  return Math.round((ROUND_BASE[round] ?? 5) * Math.pow(0.88, yearsAhead) * 10) / 10
+const CALIBRATION_COLOR: Record<string, string> = {
+  'OWNER-HISTORY': '#1a9b5e',
+  'LIMITED-HISTORY': '#00b8cc',
+  'LOW-SAMPLE': '#d4860c',
+  UNCALIBRATED: '#6a8098',
 }
 
 function makePickId(season: string | number, round: number): string {
@@ -59,45 +60,6 @@ type PickSlot = {
   source?: 'own' | 'acquired'
 }
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-function computeFitScore(profile: OwnerProfile, myProfile: OwnerProfile): number {
-  let score = 50
-  if (profile.archetype === 'REBUILDER') score += 15
-  if (profile.picks_owned > myProfile.picks_owned) score += 10
-  const complementaryPositions = POS_ORDER.filter((pos) => {
-    const mine = (myProfile.positions[pos] ?? 0) as number
-    const theirs = (profile.positions[pos] ?? 0) as number
-    return Math.abs(mine - theirs) >= 2
-  })
-  if (complementaryPositions.length >= 1) score += 10
-  if (complementaryPositions.length >= 2) score += 5
-  return Math.min(score, 99)
-}
-
-function buildRationale(profile: OwnerProfile, myProfile: OwnerProfile): string {
-  if (profile.picks_owned > myProfile.picks_owned) {
-    return 'Has excess picks — might deal for proven talent'
-  }
-  if (profile.archetype === 'REBUILDER') {
-    return 'Rebuilding — sell veterans while your window is open'
-  }
-  if (profile.archetype === 'CONTENDER') {
-    return 'Window-open — may overpay for depth you can spare'
-  }
-  for (const pos of POS_ORDER) {
-    const mine = (myProfile.positions[pos] ?? 0) as number
-    const theirs = (profile.positions[pos] ?? 0) as number
-    if (theirs === 0 && mine >= 2) {
-      return `${pos}-needy — your depth at ${pos} could unlock a deal`
-    }
-    if (mine === 0 && theirs >= 2) {
-      return `They stack ${pos} — potential swap for your positional gaps`
-    }
-  }
-  return 'Positional overlap suggests room to negotiate'
-}
-
 // ── micro-components ─────────────────────────────────────────────────────────
 
 function XBtn({ onClick }: { onClick: () => void }) {
@@ -114,32 +76,12 @@ function XBtn({ onClick }: { onClick: () => void }) {
   )
 }
 
-function OwnerAvatar({ avatar, name, size = 28 }: { avatar: string | null; name: string; size?: number }) {
-  if (avatar) {
-    return (
-      <img
-        src={`https://sleepercdn.com/avatars/thumbs/${avatar}`}
-        alt={name}
-        style={{ width: size, height: size, borderRadius: 2, objectFit: 'cover', border: `1px solid ${C.border}` }}
-      />
-    )
-  }
-  return (
-    <div style={{
-      width: size, height: size, borderRadius: 2, background: C.card, border: `1px solid ${C.border}`,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: "'DM Mono', monospace", fontSize: size * 0.34, color: C.muted, flexShrink: 0,
-    }}>
-      {name.slice(0, 2).toUpperCase()}
-    </div>
-  )
-}
-
 // ── OutgoingOffers ────────────────────────────────────────────────────────────
 
 function OutgoingOffers() {
   const qc = useQueryClient()
   const [markingId, setMarkingId] = useState<string | null>(null)
+  const [markError, setMarkError] = useState<string | null>(null)
 
   const { data: offers, isLoading } = useQuery({
     queryKey: ['offer-log', false],
@@ -149,9 +91,12 @@ function OutgoingOffers() {
 
   async function markSent(offerId: string) {
     setMarkingId(offerId)
+    setMarkError(null)
     try {
       await api.markOfferSent(offerId)
       await qc.invalidateQueries({ queryKey: ['offer-log'] })
+    } catch (e) {
+      setMarkError(e instanceof Error ? e.message : 'Failed to mark offer sent')
     } finally {
       setMarkingId(null)
     }
@@ -176,6 +121,15 @@ function OutgoingOffers() {
         <div style={{ color: C.muted, fontSize: 10, letterSpacing: '0.08em', marginTop: 2, fontFamily: "'DM Mono', monospace" }}>
           {offers.length} PENDING — MARK SENT AFTER SUBMITTING IN SLEEPER
         </div>
+        {markError && (
+          <div style={{
+            marginTop: 8, color: C.red, fontSize: 11, fontFamily: "'DM Mono', monospace",
+            background: C.bg, border: `1px solid ${C.red}55`, borderLeft: `3px solid ${C.red}`,
+            borderRadius: 2, padding: '6px 10px',
+          }}>
+            {markError}
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -213,8 +167,18 @@ function OutgoingOffers() {
                   <span style={{
                     fontFamily: "'DM Mono', monospace", fontSize: 11, color: C.amber,
                   }}>
-                    {offer.acceptance_score}% fit
+                    FIT {offer.acceptance_score}
                   </span>
+                  {offer.calibration && (
+                    <span style={{
+                      fontSize: 9, padding: '1px 5px', borderRadius: 1,
+                      background: (CALIBRATION_COLOR[offer.calibration] ?? C.muted) + '22',
+                      color: CALIBRATION_COLOR[offer.calibration] ?? C.muted,
+                      fontFamily: "'DM Mono', monospace", letterSpacing: '0.04em',
+                    }}>
+                      {offer.calibration}{offer.evidence_count != null ? ` · ${offer.evidence_count}` : ''}
+                    </span>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', gap: 16, marginBottom: 6, flexWrap: 'wrap' }}>
@@ -398,16 +362,16 @@ function PlayerModal({
 function PickModal({
   mode,
   ownedPicks,
+  emptyLabel,
   onAdd,
   onClose,
 }: {
   mode: 'give' | 'get'
   ownedPicks: DossierPick[]
-  onAdd: (id: string, season: string, round: number) => void
+  emptyLabel: string
+  onAdd: (id: string, season: string, round: number, value: number) => void
   onClose: () => void
 }) {
-  const PICK_COLORS: Record<number, string> = { 1: C.amber, 2: C.cyan, 3: C.muted, 4: C.muted }
-
   return (
     <div
       style={{
@@ -434,7 +398,7 @@ function PickModal({
             fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800,
             fontSize: 18, color: C.amber, letterSpacing: '0.06em',
           }}>
-            {mode === 'give' ? 'PICKS YOU OWN' : 'PICKS TO RECEIVE'}
+            {mode === 'give' ? 'PICKS YOU OWN' : 'PARTNER PICKS TO RECEIVE'}
           </span>
           <button
             onClick={onClose}
@@ -445,86 +409,43 @@ function PickModal({
         </div>
 
         <div style={{ padding: 16 }}>
-          {mode === 'give' ? (
-            ownedPicks.length === 0 ? (
-              <div style={{ color: C.muted, fontSize: 12, fontStyle: 'italic' }}>No picks available</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {ownedPicks.map(p => {
-                  const id = makePickId(p.season, p.round)
-                  const val = pickValue(p.season, p.round)
-                  return (
-                    <button
-                      key={id}
-                      onClick={() => { onAdd(id, p.season, p.round); onClose() }}
-                      style={{
-                        background: 'none', border: `1px solid ${C.border}`, borderRadius: 2,
-                        cursor: 'pointer', padding: '8px 12px',
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', textAlign: 'left',
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.background = C.bg }}
-                      onMouseLeave={e => { e.currentTarget.style.background = 'none' }}
-                    >
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <span style={{ color: C.text, fontFamily: "'DM Mono', monospace", fontSize: 13 }}>
-                          {p.season} {ordinal(p.round)}
-                        </span>
-                        <span style={{
-                          fontSize: 9, padding: '1px 4px', borderRadius: 1,
-                          background: p.source !== 'acquired' ? C.amber + '22' : C.cyan + '22',
-                          color: p.source !== 'acquired' ? C.amber : C.cyan,
-                          fontFamily: "'DM Mono', monospace", letterSpacing: '0.04em',
-                        }}>
-                          {p.source !== 'acquired' ? 'OWN' : 'ACQ'}
-                        </span>
-                      </div>
-                      <span style={{ fontFamily: "'DM Mono', monospace", color: C.amber, fontSize: 12 }}>
-                        {val.toFixed(1)}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            )
+          {ownedPicks.length === 0 ? (
+            <div style={{ color: C.muted, fontSize: 12, fontStyle: 'italic' }}>{emptyLabel}</div>
           ) : (
-            <div>
-              {FUTURE_SEASONS.map(season => (
-                <div key={season} style={{ marginBottom: 14 }}>
-                  <div style={{
-                    color: C.muted, fontSize: 10, letterSpacing: '0.08em', marginBottom: 8,
-                    fontFamily: "'DM Mono', monospace",
-                  }}>
-                    {season}
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
-                    {ROUNDS.map(round => {
-                      const val = pickValue(season, round)
-                      const id = makePickId(season, round)
-                      const col = PICK_COLORS[round]
-                      return (
-                        <button
-                          key={id}
-                          onClick={() => { onAdd(id, season, round); onClose() }}
-                          style={{
-                            background: C.bg, border: `1px solid ${C.border}`, borderRadius: 2,
-                            cursor: 'pointer', padding: '8px 4px',
-                            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-                          }}
-                          onMouseEnter={e => { e.currentTarget.style.borderColor = col }}
-                          onMouseLeave={e => { e.currentTarget.style.borderColor = C.border }}
-                        >
-                          <span style={{ color: col, fontSize: 11, fontFamily: "'DM Mono', monospace" }}>
-                            {ordinal(round)}
-                          </span>
-                          <span style={{ color: C.muted, fontSize: 9, fontFamily: "'DM Mono', monospace" }}>
-                            {val.toFixed(0)}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {ownedPicks.map((p, i) => {
+                const id = makePickId(p.season, p.round)
+                return (
+                  <button
+                    key={`${id}_${p.source ?? 'own'}_${i}`}
+                    onClick={() => { onAdd(id, p.season, p.round, p.value ?? 0); onClose() }}
+                    style={{
+                      background: 'none', border: `1px solid ${C.border}`, borderRadius: 2,
+                      cursor: 'pointer', padding: '8px 12px',
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', textAlign: 'left',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = C.bg }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'none' }}
+                  >
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <span style={{ color: C.text, fontFamily: "'DM Mono', monospace", fontSize: 13 }}>
+                        {p.season} {ordinal(p.round)}
+                      </span>
+                      <span style={{
+                        fontSize: 9, padding: '1px 4px', borderRadius: 1,
+                        background: p.source !== 'acquired' ? C.amber + '22' : C.cyan + '22',
+                        color: p.source !== 'acquired' ? C.amber : C.cyan,
+                        fontFamily: "'DM Mono', monospace", letterSpacing: '0.04em',
+                      }}>
+                        {p.source !== 'acquired' ? 'OWN' : 'ACQ'}
+                      </span>
+                    </div>
+                    <span style={{ fontFamily: "'DM Mono', monospace", color: C.amber, fontSize: 12 }}>
+                      {(p.value ?? 0).toFixed(1)}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
@@ -666,6 +587,257 @@ function TradePanel({
   )
 }
 
+// ── TradeTargets ──────────────────────────────────────────────────────────────
+
+function AssetChips({ assets, color }: { assets: TradeOfferRecommendation['give']; color: string }) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+      {assets.map(a => (
+        <span key={a.asset_id} style={{
+          fontSize: 11, padding: '1px 6px', borderRadius: 1,
+          background: color + '22', color,
+          fontFamily: "'DM Mono', monospace",
+        }}>
+          {a.label} · {a.value.toFixed(1)}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function TradeTargets() {
+  const qc = useQueryClient()
+  const [planningId, setPlanningId] = useState<number | null>(null)
+  const [planError, setPlanError] = useState<string | null>(null)
+
+  const { data: offers, isLoading, isError, error } = useQuery({
+    queryKey: ['trade-offers'],
+    queryFn: () => api.tradeOffers(8),
+    staleTime: 60_000,
+  })
+
+  async function planOffer(offer: TradeOfferRecommendation) {
+    setPlanningId(offer.partner_roster_id)
+    setPlanError(null)
+    try {
+      await api.logOffers([offer])
+      await qc.invalidateQueries({ queryKey: ['offer-log'] })
+    } catch (e) {
+      setPlanError(e instanceof Error ? e.message : 'Failed to log offer')
+    } finally {
+      setPlanningId(null)
+    }
+  }
+
+  return (
+    <div style={{
+      background: C.card, border: `1px solid ${C.border}`,
+      boxShadow: `inset 3px 0 0 ${C.amber}`,
+      borderRadius: 2, padding: '14px 16px', marginBottom: 14,
+    }}>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{
+          fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800,
+          fontSize: 22, color: C.amber, letterSpacing: '0.04em',
+        }}>
+          TRADE TARGETS
+        </div>
+        <div style={{ color: C.muted, fontSize: 10, letterSpacing: '0.08em', marginTop: 2, fontFamily: "'DM Mono', monospace" }}>
+          BACKEND FIT SCORE · CALIBRATED ON OWNER TRADE HISTORY · PLAN TO LOG
+        </div>
+        {planError && (
+          <div style={{
+            marginTop: 8, color: C.red, fontSize: 11, fontFamily: "'DM Mono', monospace",
+            background: C.bg, border: `1px solid ${C.red}55`, borderLeft: `3px solid ${C.red}`,
+            borderRadius: 2, padding: '6px 10px',
+          }}>
+            {planError}
+          </div>
+        )}
+      </div>
+
+      {isLoading ? (
+        <p style={{ color: C.muted, fontSize: 12, margin: 0, fontStyle: 'italic' }}>Loading trade targets…</p>
+      ) : isError ? (
+        <p style={{ color: C.red, fontSize: 12, margin: 0, fontFamily: "'DM Mono', monospace" }}>
+          {error instanceof Error ? error.message : 'Failed to load trade targets'}
+        </p>
+      ) : !offers || offers.length === 0 ? (
+        <p style={{ color: C.muted, fontSize: 12, margin: 0, fontStyle: 'italic' }}>No trade targets found.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {offers.map((offer, index) => {
+            const calColor = CALIBRATION_COLOR[offer.calibration] ?? C.muted
+            const isPlanning = planningId === offer.partner_roster_id
+            return (
+              <motion.div
+                key={`${offer.partner_roster_id}-${index}`}
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.18, delay: index * 0.05 }}
+                style={{
+                  background: C.bg, border: `1px solid ${C.border}`,
+                  boxShadow: `inset 3px 0 0 ${C.amber}`,
+                  borderRadius: 2, padding: '10px 14px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{
+                      fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700,
+                      fontSize: 15, color: C.text, letterSpacing: '0.04em',
+                    }}>
+                      {(offer.partner_name ?? `Roster ${offer.partner_roster_id}`).toUpperCase()}
+                    </span>
+                    <span style={{
+                      fontFamily: "'DM Mono', monospace", fontSize: 13, color: C.amber,
+                    }}>
+                      FIT {offer.acceptance_score}
+                    </span>
+                    <span style={{
+                      fontSize: 9, padding: '1px 5px', borderRadius: 1,
+                      background: calColor + '22', color: calColor,
+                      fontFamily: "'DM Mono', monospace", letterSpacing: '0.04em',
+                    }}>
+                      {offer.calibration} · {offer.evidence_count} trades
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => planOffer(offer)}
+                    disabled={isPlanning}
+                    style={{
+                      flexShrink: 0, padding: '5px 12px',
+                      background: isPlanning ? C.border : C.amber + '22',
+                      border: `1px solid ${isPlanning ? C.border : C.amber + '66'}`,
+                      borderRadius: 2, cursor: isPlanning ? 'default' : 'pointer',
+                      color: isPlanning ? C.muted : C.amber,
+                      fontSize: 9, letterSpacing: '0.06em', fontFamily: "'DM Mono', monospace",
+                    }}
+                  >
+                    {isPlanning ? 'LOGGING…' : 'PLAN'}
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', gap: 16, marginBottom: 6, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ color: C.muted, fontSize: 9, letterSpacing: '0.08em', marginBottom: 3, fontFamily: "'DM Mono', monospace" }}>
+                      GIVE ({offer.give_value.toFixed(1)})
+                    </div>
+                    <AssetChips assets={offer.give} color={C.cyan} />
+                  </div>
+                  <div>
+                    <div style={{ color: C.muted, fontSize: 9, letterSpacing: '0.08em', marginBottom: 3, fontFamily: "'DM Mono', monospace" }}>
+                      RECEIVE ({offer.receive_value.toFixed(1)})
+                    </div>
+                    <AssetChips assets={offer.receive} color={C.amber} />
+                  </div>
+                  <div>
+                    <div style={{ color: C.muted, fontSize: 9, letterSpacing: '0.08em', marginBottom: 3, fontFamily: "'DM Mono', monospace" }}>
+                      EDGE
+                    </div>
+                    <span style={{
+                      fontFamily: "'DM Mono', monospace", fontSize: 13,
+                      color: offer.value_delta >= 0 ? C.green : C.red,
+                    }}>
+                      {offer.value_delta >= 0 ? '+' : ''}{offer.value_delta.toFixed(1)}
+                    </span>
+                  </div>
+                </div>
+
+                {offer.rationale && (
+                  <div style={{ color: C.muted, fontSize: 11, fontStyle: 'italic', marginTop: 4, lineHeight: 1.4 }}>
+                    {offer.rationale}
+                  </div>
+                )}
+              </motion.div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── PickMarketPanel ───────────────────────────────────────────────────────────
+
+const SIGNAL_COLOR: Record<PickMarketSignal['signal'], string> = {
+  BUY: '#1a9b5e', SELL: '#c93328', HOLD: '#6a8098',
+}
+
+function PickMarketPanel() {
+  const { data: signals, isLoading, isError, error } = useQuery({
+    queryKey: ['pick-market'],
+    queryFn: api.pickMarket,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  return (
+    <div style={{
+      background: C.card, border: `1px solid ${C.border}`,
+      boxShadow: `inset 3px 0 0 ${C.cyan}`,
+      borderRadius: 2, padding: '14px 16px', marginBottom: 14,
+    }}>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{
+          fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800,
+          fontSize: 22, color: C.cyan, letterSpacing: '0.04em',
+        }}>
+          PICK MARKET
+        </div>
+        <div style={{ color: C.muted, fontSize: 10, letterSpacing: '0.08em', marginTop: 2, fontFamily: "'DM Mono', monospace" }}>
+          MODEL VALUE vs MARKET · BUY / SELL / HOLD SIGNALS
+        </div>
+      </div>
+
+      {isLoading ? (
+        <p style={{ color: C.muted, fontSize: 12, margin: 0, fontStyle: 'italic' }}>Loading pick market…</p>
+      ) : isError ? (
+        <p style={{ color: C.red, fontSize: 12, margin: 0, fontFamily: "'DM Mono', monospace" }}>
+          {error instanceof Error ? error.message : 'Failed to load pick market'}
+        </p>
+      ) : !signals || signals.length === 0 ? (
+        <p style={{ color: C.muted, fontSize: 12, margin: 0, fontStyle: 'italic' }}>No pick market data.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {signals.map((s, i) => {
+            const col = SIGNAL_COLOR[s.signal]
+            return (
+              <div key={`${s.season}-${s.round}-${i}`} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '7px 10px', background: C.bg, border: `1px solid ${C.border}`,
+                boxShadow: `inset 3px 0 0 ${col}`, borderRadius: 2,
+              }}>
+                <span style={{
+                  fontSize: 9, padding: '2px 6px', borderRadius: 1, flexShrink: 0,
+                  background: col + '22', color: col, fontFamily: "'DM Mono', monospace",
+                  letterSpacing: '0.06em', minWidth: 42, textAlign: 'center',
+                }}>
+                  {s.signal}
+                </span>
+                <span style={{ color: C.text, fontFamily: "'DM Mono', monospace", fontSize: 12, flexShrink: 0, minWidth: 64 }}>
+                  {s.season} {ordinal(s.round)}
+                </span>
+                <span style={{ color: C.muted, fontSize: 11, fontFamily: "'DM Mono', monospace", flexShrink: 0 }}>
+                  {s.model_value.toFixed(0)} / {s.market_value.toFixed(0)}
+                </span>
+                <span style={{
+                  fontFamily: "'DM Mono', monospace", fontSize: 11, flexShrink: 0,
+                  color: s.discount_pct < 0 ? C.green : C.red,
+                }}>
+                  {(s.discount_pct * 100).toFixed(0)}%
+                </span>
+                <span style={{ color: C.muted, fontSize: 11, lineHeight: 1.3, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {s.rationale}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export function Trades() {
@@ -682,10 +854,14 @@ export function Trades() {
   const [showPrompt, setShowPrompt] = useState(false)
   const [promptCopied, setPromptCopied] = useState(false)
 
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me, staleTime: 5 * 60 * 1000 })
+  const myRosterId = me?.roster_id ?? null
+
   const { data: myRoster } = useQuery({ queryKey: ['my-roster'], queryFn: () => api.myRoster() })
   const { data: myDossier } = useQuery({
-    queryKey: ['dossier', MY_ROSTER_ID],
-    queryFn: () => api.ownerDossier(MY_ROSTER_ID),
+    queryKey: ['dossier', myRosterId],
+    queryFn: () => api.ownerDossier(myRosterId!),
+    enabled: myRosterId !== null,
     staleTime: 5 * 60 * 1000,
   })
   const { data: ownerProfiles } = useQuery({ queryKey: ['owner-profiles'], queryFn: api.ownerProfiles })
@@ -711,6 +887,7 @@ export function Trades() {
   )
 
   const myPicksOwned: DossierPick[] = myDossier?.picks_owned ?? []
+  const partnerPicksOwned: DossierPick[] = partnerDossier?.picks_owned ?? []
 
   const hasGiveAssets = givePlayers.length > 0 || givePicks.length > 0
   const hasGetAssets = getPlayers.length > 0 || getPicks.length > 0
@@ -731,16 +908,16 @@ export function Trades() {
     }
   }
 
-  function addGivePick(id: string, season: string, round: number) {
+  function addGivePick(id: string, season: string, round: number, value: number) {
     if (!givePicks.find(x => x.id === id)) {
-      setGivePicks(prev => [...prev, { id, season, round, value: pickValue(season, round) }])
+      setGivePicks(prev => [...prev, { id, season, round, value }])
       setAnalysis(null)
     }
   }
 
-  function addGetPick(id: string, season: string, round: number) {
+  function addGetPick(id: string, season: string, round: number, value: number) {
     if (!getPicks.find(x => x.id === id)) {
-      setGetPicks(prev => [...prev, { id, season, round, value: pickValue(season, round) }])
+      setGetPicks(prev => [...prev, { id, season, round, value }])
       setAnalysis(null)
     }
   }
@@ -776,19 +953,8 @@ export function Trades() {
     }
   }
 
-  const myProfile = ownerProfiles?.find(p => p.display_name === 'robsavage')
-  const otherProfiles = ownerProfiles?.filter(p => p.roster_id !== myProfile?.roster_id) ?? []
+  const otherProfiles = ownerProfiles?.filter(p => !p.is_me) ?? []
   const partnerProfile = ownerProfiles?.find(p => p.roster_id === partnerId)
-
-  type FitCandidate = { profile: OwnerProfile; score: number; rationale: string }
-  const fitCandidates: FitCandidate[] = useMemo(() => {
-    if (!ownerProfiles || !myProfile) return []
-    return ownerProfiles
-      .filter(p => p.roster_id !== myProfile.roster_id)
-      .map(p => ({ profile: p, score: computeFitScore(p, myProfile), rationale: buildRationale(p, myProfile) }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 5)
-  }, [ownerProfiles, myProfile])
 
   const verdictColor = analysis
     ? analysis.verdict === 'ACCEPT' ? C.green
@@ -827,6 +993,9 @@ export function Trades() {
             const v = e.target.value
             setPartnerId(v ? Number(v) : null)
             setGetPlayers([])
+            setGetPicks([])
+            setAnalysis(null)
+            setAnalyzeError(null)
           }}
           style={{
             flex: 1, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 2,
@@ -1021,107 +1190,11 @@ export function Trades() {
         </div>
       )}
 
-      {/* Mutual Fit Scanner */}
-      <div style={{
-        background: C.card, border: `1px solid ${C.border}`,
-        boxShadow: `inset 3px 0 0 ${C.amber}`,
-        borderRadius: 2, padding: '14px 16px', marginBottom: 14,
-      }}>
-        <div style={{ marginBottom: 14 }}>
-          <div style={{
-            fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800,
-            fontSize: 22, color: C.amber, letterSpacing: '0.04em',
-          }}>
-            MUTUAL FIT SCANNER
-          </div>
-          <div style={{ color: C.muted, fontSize: 10, letterSpacing: '0.08em', marginTop: 2, fontFamily: "'DM Mono', monospace" }}>
-            ROSTER COMPLEMENTARITY · ARCHETYPE ALIGNMENT · PICK SURPLUS
-          </div>
-        </div>
+      {/* Trade Targets — backend-scored acceptance FIT */}
+      <TradeTargets />
 
-        {!ownerProfiles ? (
-          <p style={{ color: C.muted, fontSize: 12, margin: 0, fontStyle: 'italic' }}>Loading owner profiles…</p>
-        ) : !myProfile ? (
-          <p style={{ color: C.muted, fontSize: 12, margin: 0, fontStyle: 'italic' }}>Could not locate your profile.</p>
-        ) : fitCandidates.length === 0 ? (
-          <p style={{ color: C.muted, fontSize: 12, margin: 0, fontStyle: 'italic' }}>No trade candidates found.</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {fitCandidates.map((candidate, index) => {
-              const p = candidate.profile
-              const archetypeColor = ARCHETYPE_COLORS[p.archetype] ?? C.muted
-              const sortedPositions = Object.entries(p.positions)
-                .filter(([, count]) => (count as number) > 0)
-                .sort(([a], [b]) => POS_ORDER.indexOf(a) - POS_ORDER.indexOf(b))
-
-              return (
-                <motion.div
-                  key={p.roster_id}
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.18, delay: index * 0.06 }}
-                  style={{
-                    background: C.bg, border: `1px solid ${C.border}`,
-                    boxShadow: `inset 3px 0 0 ${archetypeColor}`,
-                    borderRadius: 2, padding: '10px 14px',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <OwnerAvatar avatar={p.avatar} name={p.display_name ?? 'Unknown'} size={30} />
-                      <div>
-                        <div style={{
-                          fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 700,
-                          fontSize: 15, color: C.text, letterSpacing: '0.04em', lineHeight: 1.1,
-                        }}>
-                          {(p.display_name ?? 'Unknown').toUpperCase()}
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
-                          <span style={{
-                            fontSize: 9, padding: '1px 5px', borderRadius: 1,
-                            background: archetypeColor + '22', color: archetypeColor,
-                            fontFamily: "'DM Mono', monospace", letterSpacing: '0.06em',
-                          }}>
-                            {p.archetype}
-                          </span>
-                          <span style={{ color: C.muted, fontSize: 10, fontFamily: "'DM Mono', monospace" }}>
-                            {p.picks_owned}pk
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ color: C.muted, fontSize: 9, letterSpacing: '0.08em', fontFamily: "'DM Mono', monospace" }}>
-                        MUTUAL FIT
-                      </div>
-                      <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 22, color: C.amber, lineHeight: 1 }}>
-                        {candidate.score}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ color: C.muted, fontSize: 11, fontStyle: 'italic', marginBottom: 8, paddingLeft: 40 }}>
-                    {candidate.rationale}
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', paddingLeft: 40 }}>
-                    {sortedPositions.map(([pos, count]) => (
-                      <span key={pos} style={{
-                        fontSize: 10, padding: '1px 6px', borderRadius: 1,
-                        background: (POS_COLORS[pos] ?? C.muted) + '22',
-                        color: POS_COLORS[pos] ?? C.muted,
-                        fontFamily: "'DM Mono', monospace", letterSpacing: '0.03em',
-                      }}>
-                        {pos} {count as number}
-                      </span>
-                    ))}
-                  </div>
-                </motion.div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+      {/* Pick Market signals */}
+      <PickMarketPanel />
 
       {/* Pick Inventory */}
       <div style={{
@@ -1199,6 +1272,7 @@ export function Trades() {
         <PickModal
           mode="give"
           ownedPicks={myPicksOwned}
+          emptyLabel={myDossier ? 'No picks in your inventory.' : 'Loading picks…'}
           onAdd={addGivePick}
           onClose={() => setPickModal(null)}
         />
@@ -1206,7 +1280,14 @@ export function Trades() {
       {pickModal === 'get' && (
         <PickModal
           mode="get"
-          ownedPicks={[]}
+          ownedPicks={partnerPicksOwned}
+          emptyLabel={
+            partnerId === null
+              ? 'Select a trade partner first.'
+              : partnerLoading
+                ? 'Loading partner picks…'
+                : 'Partner holds no tradeable picks.'
+          }
           onAdd={addGetPick}
           onClose={() => setPickModal(null)}
         />

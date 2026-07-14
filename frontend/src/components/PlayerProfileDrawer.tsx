@@ -3,6 +3,93 @@ import { motion, AnimatePresence } from 'framer-motion'
 import type { ReactNode } from 'react'
 import { api, type PlayerProfile } from '@/lib/api'
 
+function AnalyticsSection({ playerId }: { playerId: string }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['player-sabermetrics', playerId],
+    queryFn: () => api.playerSabermetrics(playerId),
+    enabled: !!playerId,
+  })
+
+  if (isLoading) {
+    return (
+      <Section title="Analytics">
+        <div style={{ color: '#3d5070', fontSize: 12 }}>Loading advanced metrics…</div>
+      </Section>
+    )
+  }
+  if (error || !data) {
+    return (
+      <Section title="Analytics">
+        <div style={{ color: '#3d5070', fontSize: 12 }}>No advanced metrics available.</div>
+      </Section>
+    )
+  }
+
+  const c = data.consistency
+  const xfp = data.xfp
+  const mom = data.market_momentum?.trend_30day
+  const degraded = data.data_quality !== 'ok'
+
+  return (
+    <Section title="Analytics">
+      {(degraded || data.warnings.length > 0) && (
+        <div
+          style={{
+            color: '#d4860c',
+            background: 'rgba(212, 134, 12, 0.08)',
+            border: '1px solid rgba(212, 134, 12, 0.25)',
+            borderRadius: 2,
+            padding: '8px 10px',
+            fontSize: 11,
+            lineHeight: 1.4,
+            marginBottom: 10,
+          }}
+        >
+          {degraded ? `Data quality: ${data.data_quality}` : ''}
+          {degraded && data.warnings.length > 0 ? ' · ' : ''}
+          {data.warnings.join(' · ')}
+        </div>
+      )}
+
+      {c && (
+        <>
+          <div className="grid grid-cols-3 gap-2">
+            <Metric label="Floor" value={c.floor.toFixed(1)} sub="10th pct week" />
+            <Metric label="Median" value={c.median.toFixed(1)} sub="typical week" />
+            <Metric label="Ceiling" value={c.ceiling.toFixed(1)} sub="90th pct week" />
+          </div>
+          <div className="grid grid-cols-2 gap-2" style={{ marginTop: 8 }}>
+            <Metric label="Boom %" value={`${(c.boom_pct * 100).toFixed(0)}%`} />
+            <Metric label="Bust %" value={`${(c.bust_pct * 100).toFixed(0)}%`} />
+          </div>
+        </>
+      )}
+
+      {xfp && (
+        <div style={{ marginTop: 12, borderTop: '1px solid #162035', paddingTop: 12 }}>
+          <div className="grid grid-cols-2 gap-2">
+            <Metric
+              label="xFP Residual"
+              value={`${xfp.residual >= 0 ? '+' : ''}${xfp.residual.toFixed(1)}`}
+              sub={`${xfp.actual_fp.toFixed(0)} actual vs ${xfp.xfp.toFixed(0)} expected`}
+            />
+            <Metric
+              label="30-Day Market"
+              value={mom == null ? '—' : `${mom >= 0 ? '+' : ''}${mom}`}
+              sub="value trend"
+            />
+          </div>
+          {xfp.label && (
+            <div style={{ color: '#6a8098', fontSize: 11, marginTop: 8, lineHeight: 1.4, fontStyle: 'italic' }}>
+              {xfp.label}
+            </div>
+          )}
+        </div>
+      )}
+    </Section>
+  )
+}
+
 const POS_COLOR: Record<string, string> = {
   QB: '#e05030',
   RB: '#24a870',
@@ -172,6 +259,8 @@ function ProfileBody({ profile }: { profile: PlayerProfile }) {
           </div>
         )}
       </Section>
+
+      <AnalyticsSection playerId={profile.player_id} />
 
       <Section title="Recent Weeks">
         {latestWeeks.length === 0 ? (

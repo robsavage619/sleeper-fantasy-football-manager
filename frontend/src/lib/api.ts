@@ -35,6 +35,49 @@ async function patch<T>(path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
+export type Me = {
+  roster_id: number
+  user_id: string
+  display_name: string
+  avatar: string | null
+  faab_budget: number
+  faab_used: number
+  faab_remaining: number
+}
+
+export type FaabEntry = {
+  roster_id: number
+  faab_budget: number
+  faab_used: number
+  faab_remaining: number
+}
+
+export type LeagueMeta = {
+  league_id: string
+  name: string
+  season: string
+  status: string
+  total_rosters: number
+  roster_positions: string[]
+  settings: Record<string, number>
+  scoring_settings: Record<string, number>
+  season_type: string
+}
+
+export function leagueTypeLabel(league?: LeagueMeta): string {
+  const t = league?.settings?.type
+  return t === 2 ? 'DYNASTY' : t === 1 ? 'KEEPER' : t === 0 ? 'REDRAFT' : '—'
+}
+
+export function leagueFormatLabel(league?: LeagueMeta): string {
+  if (!league) return '—'
+  const qb = league.roster_positions.filter((p) => p === 'QB').length
+  const sf = league.roster_positions.includes('SUPER_FLEX')
+  const rec = league.scoring_settings?.rec ?? 0
+  const ppr = rec >= 1 ? 'full PPR' : rec >= 0.5 ? 'half PPR' : rec > 0 ? `${rec} PPR` : 'standard'
+  return `${leagueTypeLabel(league).toLowerCase()} · ${sf ? 'SF' : `${qb}QB`} · ${ppr}`
+}
+
 export type Roster = {
   roster_id: number
   owner_id: string | null
@@ -115,6 +158,9 @@ export type OfferLogEntry = {
   partner_need: string
   rationale: string
   command: string
+  evidence_count?: number
+  calibration?: 'OWNER-HISTORY' | 'LIMITED-HISTORY' | 'LOW-SAMPLE' | 'UNCALIBRATED'
+  calibration_notes?: string
 }
 
 export type DraftBoard = {
@@ -291,6 +337,7 @@ export type OwnerProfile = {
   picks_given: number
   archetype: 'REBUILDER' | 'CONTENDER' | 'BALANCED' | 'UNKNOWN'
   archetype_rationale: string
+  is_me: boolean
 }
 
 export type PickMarketSignal = {
@@ -302,6 +349,74 @@ export type PickMarketSignal = {
   signal: 'BUY' | 'SELL' | 'HOLD'
   rationale: string
   trade_count: number
+  market_source: string
+}
+
+export type PlayerSabermetrics = {
+  player_id: string
+  name: string
+  position: 'QB' | 'RB' | 'WR' | 'TE'
+  seasons: number[]
+  consistency: {
+    games: number
+    floor: number
+    median: number
+    ceiling: number
+    volatility: number
+    boom_pct: number
+    bust_pct: number
+    startable_line: number
+    replacement_line: number
+    season: number
+  }
+  td_dependence: {
+    td_points: number
+    total_fp: number
+    td_share: number
+    positional_median: number
+    vs_median: number
+  }
+  opportunity_trend: {
+    snap_share_delta: number | null
+    target_share_delta: number | null
+    carries_delta: number | null
+    window_weeks: number
+  }
+  age_curve: {
+    residual: number
+    expected_fpar: number
+    actual_fpar: number
+    prior_season: number | null
+    current_season: number | null
+    prior_age: number | null
+    note: string
+  }
+  market_momentum: {
+    trend_30day: number | null
+    value: number | null
+    overall_rank: number | null
+    position_rank: number | null
+  }
+  usage_quality: {
+    wopr: number | null
+    target_share: number | null
+    air_yards_share: number | null
+    racr: number | null
+    epa_per_play: number | null
+    cpoe: number | null
+    explosive_play_rate: number | null
+    snap_share: number | null
+  }
+  xfp: {
+    xfp: number
+    actual_fp: number
+    residual: number
+    coeffs: Record<string, number>
+    evidence_count: number
+    label: string
+  }
+  data_quality: 'ok' | string
+  warnings: string[]
 }
 
 export type OwnerSkillIndex = {
@@ -360,7 +475,7 @@ export type ContentionWindow = {
   rationale: string
 }
 
-export type DossierPick = { season: string; round: number; source?: 'own' | 'acquired' }
+export type DossierPick = { season: string; round: number; source?: 'own' | 'acquired'; value?: number }
 
 export type PositionRank = {
   position: 'QB' | 'RB' | 'WR' | 'TE'
@@ -814,12 +929,44 @@ export type TransactionValue = {
   trade_deals: TxTradeDeal[]
 }
 
+export interface RefreshStart {
+  status: string
+  started_at?: string
+}
+
+export interface RefreshSourceState {
+  ok: boolean
+  detail?: string
+  error?: string
+  refreshed_at?: string
+}
+
+export interface RefreshFreshness {
+  exists: boolean
+  mtime?: string
+  cached_seasons?: number[]
+}
+
+export interface RefreshStatus {
+  job: {
+    status: 'idle' | 'running' | 'done' | 'error'
+    started_at?: string
+    finished_at?: string
+    sources: Record<string, RefreshSourceState>
+  }
+  freshness: Record<string, RefreshFreshness>
+}
+
 export const api = {
   draftBoard: (top = 50, season?: number) =>
     get<DraftBoard>(`/draft/board?top=${top}${season ? `&season=${season}` : ''}`),
   draftPrompt: (top = 25, season?: number) =>
     get<{ prompt: string; pick_number: number }>(`/draft/prompt?top=${top}${season ? `&season=${season}` : ''}`),
-  league: () => get('/league/'),
+  league: () => get<LeagueMeta>('/league/'),
+  me: () => get<Me>('/league/me'),
+  refresh: () => post<RefreshStart>('/admin/refresh', {}),
+  refreshStatus: () => get<RefreshStatus>('/admin/refresh/status'),
+  faab: () => get<FaabEntry[]>('/league/faab'),
   rosters: () => get<Roster[]>('/league/rosters'),
   users: () => get<User[]>('/league/users'),
   tradedPicks: () => get<TradedPick[]>('/league/traded-picks'),
@@ -893,6 +1040,8 @@ export const api = {
     return get<{ prompt: string }>(`/draft/prospects/scouting-prompt?${qs.toString()}`)
   },
   pickMarket: () => get<PickMarketSignal[]>('/picks/market'),
+  playerSabermetrics: (playerId: string) =>
+    get<PlayerSabermetrics>(`/players/${encodeURIComponent(playerId)}/sabermetrics`),
   ownerDossier: (rosterId: number, season?: number) =>
     get<OwnerDossier>(`/owners/dossier/${rosterId}${season ? `?season=${season}` : ''}`),
   leagueHistory: () => get<LeagueHistory>('/owners/history'),
@@ -905,6 +1054,8 @@ export const api = {
   tradeOffers: (top = 8) => get<TradeOfferRecommendation[]>(`/trades/offers?top=${top}`),
   offerLog: (sent?: boolean) =>
     get<OfferLogEntry[]>(`/offers${sent !== undefined ? `?sent=${sent}` : ''}`),
+  logOffers: (offers: TradeOfferRecommendation[]) =>
+    post<{ logged: number }>('/offers/log', offers),
   markOfferSent: (offerId: string) =>
     patch<{ offer_id: string; sent: boolean }>(`/offers/${offerId}/sent`),
   recommendationEvals: (top = 8) => get<RecommendationEval>(`/evals/recommendations?top=${top}`),
