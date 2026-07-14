@@ -28,6 +28,7 @@ _FINDINGS_FILE = DATA_DIR / "findings.jsonl"
 
 # In-memory store (one process; re-hydrated from file on startup)
 _store: list[Finding] = []
+_seq: int = 0
 
 
 @dataclass
@@ -56,7 +57,11 @@ def post_finding(kind: str, body: dict[str, Any], prompt_hash: str | None = None
     Returns:
         The saved ``Finding``.
     """
-    finding_id = f"{kind}_{int(time.time() * 1000)}"
+    global _seq
+    _seq += 1
+    # Sequence suffix guarantees uniqueness when several findings of the same kind
+    # are posted in the same millisecond (e.g. the /findings/bulk fan-out).
+    finding_id = f"{kind}_{int(time.time() * 1000)}_{_seq}"
     finding = Finding(
         finding_id=finding_id,
         kind=kind,
