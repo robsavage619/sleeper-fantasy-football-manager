@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 340" width="1280" height="340" role="img" aria-label="Sleeper War Room — AI Dynasty Fantasy Football GM">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#060a12"/>
+      <stop offset="0.55" stop-color="#080f1c"/>
+      <stop offset="1" stop-color="#0a1626"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#00b8cc"/>
+      <stop offset="1" stop-color="#2d7ac0"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#00b8cc"/>
+      <stop offset="1" stop-color="#173a5a"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="340" fill="url(#bg)"/>
+
+  <!-- faint yard-line grid -->
+  <g stroke="#12233b" stroke-width="1" opacity="0.6">
+    <line x1="0" y1="80" x2="1280" y2="80"/>
+    <line x1="0" y1="170" x2="1280" y2="170"/>
+    <line x1="0" y1="260" x2="1280" y2="260"/>
+  </g>
+  <g stroke="#0e1c30" stroke-width="1" opacity="0.5">
+    <line x1="820" y1="0" x2="820" y2="340"/>
+    <line x1="960" y1="0" x2="960" y2="340"/>
+    <line x1="1100" y1="0" x2="1100" y2="340"/>
+  </g>
+
+  <!-- left accent rail -->
+  <rect x="0" y="0" width="6" height="340" fill="url(#accent)"/>
+
+  <!-- LIVE pill -->
+  <g transform="translate(72,74)">
+    <circle cx="6" cy="6" r="5" fill="#1a9b5e"/>
+    <text x="20" y="11" font-family="'Helvetica Neue',Arial,sans-serif" font-size="15" font-weight="700" letter-spacing="6" fill="#1a9b5e">LIVE</text>
+    <text x="120" y="11" font-family="'Helvetica Neue',Arial,sans-serif" font-size="14" letter-spacing="5" fill="#3d5070">DYNASTY · 2026 · 1QB · FULL PPR</text>
+  </g>
+
+  <!-- Title -->
+  <text x="70" y="186" font-family="'Arial Narrow','Helvetica Neue',Arial,sans-serif" font-size="82" font-weight="800" letter-spacing="2" fill="#e8eef6">SLEEPER WAR ROOM</text>
+
+  <!-- accent underline -->
+  <rect x="72" y="208" width="360" height="4" fill="url(#accent)"/>
+
+  <!-- subtitle -->
+  <text x="72" y="256" font-family="'Helvetica Neue',Arial,sans-serif" font-size="22" font-weight="600" letter-spacing="2" fill="#8aa0bc">AI dynasty fantasy football GM — it prices <tspan fill="#00b8cc" font-weight="700">your</tspan> league, not generic PPR.</text>
+
+  <!-- tagline -->
+  <text x="72" y="292" font-family="'Helvetica Neue',Arial,sans-serif" font-size="15" letter-spacing="1" fill="#4a5f7e">Scoring-exact valuation · Monte-Carlo title equity · owner behavioral profiling · Claude Code as the reasoning engine</text>
+
+  <!-- right: title-equity style stat bars -->
+  <g transform="translate(1000,92)">
+    <text x="0" y="-8" font-family="'Helvetica Neue',Arial,sans-serif" font-size="12" letter-spacing="4" fill="#3d5070">TITLE EQUITY</text>
+    <g font-family="'Helvetica Neue',Arial,sans-serif" font-size="12" fill="#6a8098">
+      <rect x="0" y="8"  width="196" height="8" rx="2" fill="#0e1c30"/><rect x="0" y="8"  width="196" height="8" rx="2" fill="url(#bar)"/><text x="206" y="17">35%</text>
+      <rect x="0" y="30" width="196" height="8" rx="2" fill="#0e1c30"/><rect x="0" y="30" width="146" height="8" rx="2" fill="url(#bar)"/><text x="206" y="39">26%</text>
+      <rect x="0" y="52" width="196" height="8" rx="2" fill="#0e1c30"/><rect x="0" y="52" width="90"  height="8" rx="2" fill="url(#bar)"/><text x="206" y="61">16%</text>
+      <rect x="0" y="74" width="196" height="8" rx="2" fill="#0e1c30"/><rect x="0" y="74" width="56"  height="8" rx="2" fill="#00b8cc"/><text x="206" y="83" fill="#00b8cc">10%</text>
+      <rect x="0" y="96" width="196" height="8" rx="2" fill="#0e1c30"/><rect x="0" y="96" width="39"  height="8" rx="2" fill="url(#bar)"/><text x="206" y="105">7%</text>
+    </g>
+  </g>
+</svg>
