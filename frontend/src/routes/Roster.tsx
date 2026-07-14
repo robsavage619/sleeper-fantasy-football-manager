@@ -2,14 +2,8 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { PlayerProfileDrawer } from '@/components/PlayerProfileDrawer'
+import { PlayerHeadshot, POS_COLOR, StackBar } from '@/components/viz'
 import { api, type MyRosterPlayer } from '@/lib/api'
-
-const POS_COLOR: Record<string, string> = {
-  QB: '#e05030',
-  RB: '#24a870',
-  WR: '#3a8cd4',
-  TE: '#c8820a',
-}
 
 const POSITIONS = ['QB', 'RB', 'WR', 'TE'] as const
 type Position = (typeof POSITIONS)[number]
@@ -17,12 +11,15 @@ type Position = (typeof POSITIONS)[number]
 function PlayerRow({
   player,
   index,
+  maxValue,
   onOpen,
 }: {
   player: MyRosterPlayer
   index: number
+  maxValue: number
   onOpen: (playerId: string) => void
 }) {
+  const barPct = maxValue > 0 ? Math.max(0.02, player.dynasty_value / maxValue) : 0
   return (
     <motion.div
       initial={{ opacity: 0, x: -6 }}
@@ -38,6 +35,12 @@ function PlayerRow({
       }}
       onClick={() => onOpen(player.player_id)}
     >
+      <PlayerHeadshot
+        playerId={player.player_id}
+        name={player.name}
+        position={player.position}
+        size={30}
+      />
       <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: '#e8eef6', minWidth: 0 }}>
         {player.name}
       </span>
@@ -56,6 +59,18 @@ function PlayerRow({
       <span style={{ fontSize: 12, color: '#3d5070', width: 36, textAlign: 'center', flexShrink: 0 }}>
         {player.team || 'FA'}
       </span>
+      <div style={{ width: 80, flexShrink: 0 }}>
+        <div style={{ height: 5, background: '#162035', borderRadius: 3, overflow: 'hidden' }}>
+          <div
+            style={{
+              width: `${barPct * 100}%`,
+              height: '100%',
+              background: POS_COLOR[player.position] ?? '#6a8098',
+              borderRadius: 3,
+            }}
+          />
+        </div>
+      </div>
       <span
         style={{
           fontSize: 13,
@@ -128,10 +143,12 @@ function PlayerRow({
 function PositionGroup({
   position,
   players,
+  maxValue,
   onOpen,
 }: {
   position: Position
   players: MyRosterPlayer[]
+  maxValue: number
   onOpen: (playerId: string) => void
 }) {
   const color = POS_COLOR[position]
@@ -184,7 +201,13 @@ function PositionGroup({
         </span>
       </div>
       {sorted.map((player, i) => (
-        <PlayerRow key={player.player_id} player={player} index={i} onOpen={onOpen} />
+        <PlayerRow
+          key={player.player_id}
+          player={player}
+          index={i}
+          maxValue={maxValue}
+          onOpen={onOpen}
+        />
       ))}
     </div>
   )
@@ -203,6 +226,12 @@ export function Roster() {
     const group = byPosition.get(player.position as Position)
     if (group) group.push(player)
   }
+  const maxValue = Math.max(1, ...(data?.players ?? []).map((p) => p.dynasty_value))
+  const posValue = POSITIONS.map((pos) => ({
+    label: pos,
+    value: (byPosition.get(pos) ?? []).reduce((s, p) => s + p.dynasty_value, 0),
+    color: POS_COLOR[pos],
+  }))
 
   return (
     <div>
@@ -242,6 +271,30 @@ export function Roster() {
             </div>
           )}
         </div>
+        {data && (
+          <div style={{ marginTop: 12, maxWidth: 520 }}>
+            <div
+              className="tracking-[0.18em] uppercase"
+              style={{ color: '#3d5070', fontSize: 9, marginBottom: 5 }}
+            >
+              Value by position
+            </div>
+            <StackBar segments={posValue} height={9} />
+            <div className="flex gap-4" style={{ marginTop: 6 }}>
+              {posValue.map((s) => (
+                <span key={s.label} className="flex items-center gap-1.5" style={{ fontSize: 10 }}>
+                  <span
+                    style={{ width: 8, height: 8, background: s.color, borderRadius: 2, display: 'inline-block' }}
+                  />
+                  <span style={{ color: '#8aa0b8' }}>{s.label}</span>
+                  <span style={{ color: '#3d5070', fontFamily: "'DM Mono', monospace" }}>
+                    {s.value.toFixed(0)}
+                  </span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {isLoading && (
@@ -276,6 +329,7 @@ export function Roster() {
               key={pos}
               position={pos}
               players={byPosition.get(pos) ?? []}
+              maxValue={maxValue}
               onOpen={setSelectedPlayerId}
             />
           ))}

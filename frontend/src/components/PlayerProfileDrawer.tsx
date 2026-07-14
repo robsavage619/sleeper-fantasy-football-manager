@@ -2,6 +2,16 @@ import { useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { ReactNode } from 'react'
 import { api, type PlayerProfile } from '@/lib/api'
+import {
+  Donut,
+  INK,
+  MiniBars,
+  PercentileBar,
+  PlayerHeadshot,
+  POS_COLOR,
+  RangeBar,
+  STATUS,
+} from '@/components/viz'
 
 function AnalyticsSection({ playerId }: { playerId: string }) {
   const { data, isLoading, error } = useQuery({
@@ -28,7 +38,17 @@ function AnalyticsSection({ playerId }: { playerId: string }) {
   const c = data.consistency
   const xfp = data.xfp
   const mom = data.market_momentum?.trend_30day
+  const uq = data.usage_quality
   const degraded = data.data_quality !== 'ok'
+
+  // Usage-quality metrics that live naturally on a 0..1 scale → percentile bars.
+  const pct = (n: number): string => `${(n * 100).toFixed(0)}%`
+  const usageBars: { label: string; v: number | null; fmt: (n: number) => string }[] = [
+    { label: 'WOPR', v: uq?.wopr ?? null, fmt: (n: number) => n.toFixed(2) },
+    { label: 'Target Share', v: uq?.target_share ?? null, fmt: pct },
+    { label: 'Air-Yds Share', v: uq?.air_yards_share ?? null, fmt: pct },
+    { label: 'Snap Share', v: uq?.snap_share ?? null, fmt: pct },
+  ].filter((b) => b.v != null)
 
   return (
     <Section title="Analytics">
@@ -42,7 +62,7 @@ function AnalyticsSection({ playerId }: { playerId: string }) {
             padding: '8px 10px',
             fontSize: 11,
             lineHeight: 1.4,
-            marginBottom: 10,
+            marginBottom: 12,
           }}
         >
           {degraded ? `Data quality: ${data.data_quality}` : ''}
@@ -52,21 +72,39 @@ function AnalyticsSection({ playerId }: { playerId: string }) {
       )}
 
       {c && (
-        <>
-          <div className="grid grid-cols-3 gap-2">
-            <Metric label="Floor" value={c.floor.toFixed(1)} sub="10th pct week" />
-            <Metric label="Median" value={c.median.toFixed(1)} sub="typical week" />
-            <Metric label="Ceiling" value={c.ceiling.toFixed(1)} sub="90th pct week" />
+        <div className="flex items-center gap-4" style={{ marginBottom: 14 }}>
+          <div style={{ flex: 1 }}>
+            <div
+              className="tracking-[0.14em] uppercase"
+              style={{ color: INK.muted, fontSize: 9.5, marginBottom: 6 }}
+            >
+              Weekly outcome range
+            </div>
+            <RangeBar
+              floor={c.floor}
+              median={c.median}
+              ceiling={c.ceiling}
+              max={c.ceiling * 1.1}
+            />
+            <div style={{ color: INK.muted, fontSize: 10.5, marginTop: 6, lineHeight: 1.4 }}>
+              Volatility {c.volatility.toFixed(2)} · startable line {c.startable_line.toFixed(1)}
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-2" style={{ marginTop: 8 }}>
-            <Metric label="Boom %" value={`${(c.boom_pct * 100).toFixed(0)}%`} />
-            <Metric label="Bust %" value={`${(c.bust_pct * 100).toFixed(0)}%`} />
-          </div>
-        </>
+          <Donut pct01={c.boom_pct} color={STATUS.good} label="Boom" />
+          <Donut pct01={c.bust_pct} color={STATUS.bad} label="Bust" />
+        </div>
+      )}
+
+      {usageBars.length > 0 && (
+        <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
+          {usageBars.map((b) => (
+            <PercentileBar key={b.label} label={b.label} pct01={b.v as number} value={b.fmt(b.v as number)} />
+          ))}
+        </div>
       )}
 
       {xfp && (
-        <div style={{ marginTop: 12, borderTop: '1px solid #162035', paddingTop: 12 }}>
+        <div style={{ borderTop: '1px solid #162035', paddingTop: 12 }}>
           <div className="grid grid-cols-2 gap-2">
             <Metric
               label="xFP Residual"
@@ -88,13 +126,6 @@ function AnalyticsSection({ playerId }: { playerId: string }) {
       )}
     </Section>
   )
-}
-
-const POS_COLOR: Record<string, string> = {
-  QB: '#e05030',
-  RB: '#24a870',
-  WR: '#3a8cd4',
-  TE: '#c8820a',
 }
 
 function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -144,23 +175,31 @@ function ProfileBody({ profile }: { profile: PlayerProfile }) {
     <>
       <div style={{ padding: '18px', borderBottom: '1px solid #162035' }}>
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="tracking-[0.3em] uppercase" style={{ color, fontSize: 10 }}>
-              {profile.identity.position} · {profile.identity.team || 'FA'} · AGE{' '}
-              {profile.identity.age ? profile.identity.age.toFixed(0) : '—'}
+          <div className="flex items-center gap-3">
+            <PlayerHeadshot
+              playerId={profile.player_id}
+              name={profile.identity.name}
+              position={profile.identity.position}
+              size={58}
+            />
+            <div>
+              <div className="tracking-[0.3em] uppercase" style={{ color, fontSize: 10 }}>
+                {profile.identity.position} · {profile.identity.team || 'FA'} · AGE{' '}
+                {profile.identity.age ? profile.identity.age.toFixed(0) : '—'}
+              </div>
+              <h2
+                className="uppercase leading-none"
+                style={{
+                  color: '#e8eef6',
+                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontSize: 34,
+                  fontWeight: 800,
+                  marginTop: 5,
+                }}
+              >
+                {profile.identity.name}
+              </h2>
             </div>
-            <h2
-              className="uppercase leading-none"
-              style={{
-                color: '#e8eef6',
-                fontFamily: "'Barlow Condensed', sans-serif",
-                fontSize: 38,
-                fontWeight: 800,
-                marginTop: 5,
-              }}
-            >
-              {profile.identity.name}
-            </h2>
           </div>
           <span
             className="tracking-[0.18em] uppercase"
@@ -266,7 +305,33 @@ function ProfileBody({ profile }: { profile: PlayerProfile }) {
         {latestWeeks.length === 0 ? (
           <div style={{ color: '#3d5070', fontSize: 12 }}>No weekly game log.</div>
         ) : (
-          <div style={{ display: 'grid', gap: 1, background: '#162035' }}>
+          <>
+            {(() => {
+              const chrono = profile.weekly.slice(-12)
+              const pts = chrono.map((w) => w.fantasy_points)
+              const sorted = [...pts].sort((a, b) => a - b)
+              const median = sorted[Math.floor(sorted.length / 2)] ?? 0
+              return (
+                <div style={{ marginBottom: 10 }}>
+                  <MiniBars
+                    values={pts}
+                    labels={chrono.map((w) => `${w.season} W${w.week}`)}
+                    boomLine={median * 1.35}
+                    bustLine={median * 0.6}
+                    height={44}
+                  />
+                  <div className="flex justify-between" style={{ marginTop: 4 }}>
+                    <span style={{ color: INK.dim, fontSize: 9 }}>
+                      {chrono[0] ? `${chrono[0].season} W${chrono[0].week}` : ''}
+                    </span>
+                    <span style={{ color: STATUS.good, fontSize: 9 }}>■ boom</span>
+                    <span style={{ color: STATUS.bad, fontSize: 9 }}>■ bust</span>
+                    <span style={{ color: INK.dim, fontSize: 9 }}>latest</span>
+                  </div>
+                </div>
+              )
+            })()}
+            <div style={{ display: 'grid', gap: 1, background: '#162035' }}>
             {latestWeeks.map((week) => (
               <div
                 key={`${week.season}-${week.week}`}
@@ -283,7 +348,8 @@ function ProfileBody({ profile }: { profile: PlayerProfile }) {
                 <span style={{ color: '#6a8098' }}>{week.touchdowns} TD</span>
               </div>
             ))}
-          </div>
+            </div>
+          </>
         )}
       </Section>
 
