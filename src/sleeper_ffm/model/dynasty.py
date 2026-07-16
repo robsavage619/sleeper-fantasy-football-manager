@@ -125,6 +125,29 @@ class RosterAssets:
         return self.player_value + self.pick_value
 
 
+# Years past positional peak before a player is "structurally declining" rather than
+# just having a down year — regression/leverage math assumes stable underlying talent,
+# which stops holding once a player is this deep past peak (e.g. a 41yo QB throwing
+# for fewer yards than expected is aging, not unlucky).
+_AGE_DECLINE_BUFFER: int = 8
+
+
+def is_age_declining(position: str, age: float | None) -> bool:
+    """Whether a player is far enough past positional peak to discount buy-low signals.
+
+    Args:
+        position: Player position.
+        age: Player age in years, or ``None`` if unknown (never flagged).
+
+    Returns:
+        True if ``age`` is at least :data:`_AGE_DECLINE_BUFFER` years past the
+        position's typical peak age.
+    """
+    if age is None:
+        return False
+    return age >= _PEAK_AGE.get(position, 26) + _AGE_DECLINE_BUFFER
+
+
 # ---------------------------------------------------------------------------
 # Core valuation functions
 # ---------------------------------------------------------------------------

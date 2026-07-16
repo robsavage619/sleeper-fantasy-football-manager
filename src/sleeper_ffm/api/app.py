@@ -14,6 +14,7 @@ from sleeper_ffm.api.routers import contention as contention_router
 from sleeper_ffm.api.routers import dossier as dossier_router
 from sleeper_ffm.api.routers import draft as draft_router
 from sleeper_ffm.api.routers import evals as evals_router
+from sleeper_ffm.api.routers import faab_market as faab_market_router
 from sleeper_ffm.api.routers import findings as findings_router
 from sleeper_ffm.api.routers import gameday as gameday_router
 from sleeper_ffm.api.routers import gm_address as gm_address_router
@@ -24,9 +25,11 @@ from sleeper_ffm.api.routers import league as league_router
 from sleeper_ffm.api.routers import mispricing as mispricing_router
 from sleeper_ffm.api.routers import negotiation as negotiation_router
 from sleeper_ffm.api.routers import offers as offers_router
+from sleeper_ffm.api.routers import opponent_adjusted as opponent_adjusted_router
 from sleeper_ffm.api.routers import owners as owners_router
 from sleeper_ffm.api.routers import picks as picks_router
 from sleeper_ffm.api.routers import players as players_router
+from sleeper_ffm.api.routers import price_history as price_history_router
 from sleeper_ffm.api.routers import prospects as prospects_router
 from sleeper_ffm.api.routers import regression as regression_router
 from sleeper_ffm.api.routers import roster as roster_router
@@ -38,6 +41,7 @@ from sleeper_ffm.api.routers import season_sim as season_sim_router
 from sleeper_ffm.api.routers import skill as skill_router
 from sleeper_ffm.api.routers import stadium as stadium_router
 from sleeper_ffm.api.routers import trades as trades_router
+from sleeper_ffm.api.routers import vegas as vegas_router
 from sleeper_ffm.api.routers import wire_watch as wire_watch_router
 from sleeper_ffm.reasoning.findings import load_findings_from_disk
 from sleeper_ffm.schedule.scheduler import start_scheduler, stop_scheduler
@@ -97,6 +101,10 @@ def create_app() -> FastAPI:
     app.include_router(gm_address_router.router)
     app.include_router(wire_watch_router.router)
     app.include_router(gameday_router.router)
+    app.include_router(vegas_router.router)
+    app.include_router(price_history_router.router)
+    app.include_router(faab_market_router.router)
+    app.include_router(opponent_adjusted_router.router)
     return app
 
 

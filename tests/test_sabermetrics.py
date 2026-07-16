@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import math
 
+import polars as pl
+
 from sleeper_ffm.model import sabermetrics as sm
 
 
@@ -80,3 +82,103 @@ def test_expected_fp_linear_combo() -> None:
     coeffs = {"targets": 1.5, "carries": 0.6}
     # 100*1.5 + 50*0.6 = 180
     assert sm.expected_fp(opps, coeffs) == 180.0
+
+
+_SCORING = {"rec": 1.0, "rec_yd": 0.1, "rec_td": 6.0, "rush_yd": 0.1, "rush_td": 6.0}
+
+
+def _pbp_row(
+    receiver: str | None = None,
+    rusher: str | None = None,
+    yardline_100: float = 50.0,
+    yards_gained: float = 5.0,
+    touchdown: float = 0.0,
+    complete_pass: float = 1.0,
+) -> dict:
+    return {
+        "receiver_player_id": receiver,
+        "rusher_player_id": rusher,
+        "yardline_100": yardline_100,
+        "yards_gained": yards_gained,
+        "touchdown": touchdown,
+        "complete_pass": complete_pass,
+    }
+
+
+def _pbp_frame(rows: list[dict]) -> pl.DataFrame:
+    return pl.DataFrame(
+        rows,
+        schema={
+            "receiver_player_id": pl.Utf8,
+            "rusher_player_id": pl.Utf8,
+            "yardline_100": pl.Float64,
+            "yards_gained": pl.Float64,
+            "touchdown": pl.Float64,
+            "complete_pass": pl.Float64,
+        },
+    )
+
+
+def test_pbp_play_value_computes_target_and_carry_fp() -> None:
+    pbp = _pbp_frame(
+        [
+            # Red-zone TD catch: 1 (rec) + 5*0.1 (yards) + 6 (td) = 7.5
+            _pbp_row(receiver="A", yardline_100=5.0, yards_gained=5.0, touchdown=1.0),
+            # Non-red-zone rush, no TD: 8*0.1 = 0.8
+            _pbp_row(rusher="B", yardline_100=60.0, yards_gained=8.0),
+        ]
+    )
+    values = sm.pbp_play_value(pbp, _SCORING)
+    target_row = values.filter(values["kind"] == "target").row(0, named=True)
+    carry_row = values.filter(values["kind"] == "carry").row(0, named=True)
+    assert target_row["player_id"] == "A"
+    assert target_row["is_redzone"] is True
+    assert target_row["fp"] == 7.5
+    assert target_row["touchdown"] == 1.0
+    assert carry_row["player_id"] == "B"
+    assert carry_row["is_redzone"] is False
+    assert carry_row["fp"] == 0.8
+    assert carry_row["touchdown"] == 0.0
+
+
+def test_pbp_play_value_missing_columns_returns_empty() -> None:
+    empty = sm.pbp_play_value(pl.DataFrame({"foo": [1]}), _SCORING)
+    assert empty.is_empty()
+    assert set(empty.columns) == {"player_id", "kind", "is_redzone", "fp", "touchdown"}
+
+
+def test_redzone_usage_coefficients_splits_by_bucket() -> None:
+    # WR "A": one red-zone TD target (7.5 fp) and one non-red-zone incompletion (0 fp).
+    pbp = _pbp_frame(
+        [
+            _pbp_row(receiver="A", yardline_100=5.0, yards_gained=5.0, touchdown=1.0),
+            _pbp_row(receiver="A", yardline_100=60.0, yards_gained=0.0, complete_pass=0.0),
+        ]
+    )
+    values = sm.pbp_play_value(pbp, _SCORING)
+    coeffs = sm.redzone_usage_coefficients(values, {"A": "WR"})
+    assert coeffs["WR"]["rz_targets"] == 7.5
+    assert coeffs["WR"]["targets"] == 0.0
+    # Positions with zero observed plays fall back to the flat defaults.
+    assert coeffs["RB"]["carries"] == 0.55
+
+
+def test_player_redzone_opportunities_counts_by_bucket() -> None:
+    pbp = _pbp_frame(
+        [
+            _pbp_row(receiver="A", yardline_100=5.0, yards_gained=5.0, touchdown=1.0),
+            _pbp_row(receiver="A", yardline_100=60.0, yards_gained=3.0),
+            _pbp_row(rusher="A", yardline_100=2.0, yards_gained=2.0, touchdown=1.0),
+        ]
+    )
+    values = sm.pbp_play_value(pbp, _SCORING)
+    opps = sm.player_redzone_opportunities(values, "A")
+    assert opps == {"rz_targets": 1.0, "targets": 1.0, "rz_carries": 1.0, "carries": 0.0}
+
+
+def test_player_redzone_opportunities_unknown_player_is_zero() -> None:
+    empty = pl.DataFrame(
+        schema={"player_id": pl.Utf8, "kind": pl.Utf8, "is_redzone": pl.Boolean, "fp": pl.Float64}
+    )
+    opps = sm.player_redzone_opportunities(empty, "nobody")
+    assert opps == {"rz_targets": 0.0, "targets": 0.0, "rz_carries": 0.0, "carries": 0.0}

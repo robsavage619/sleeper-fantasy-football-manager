@@ -1,14 +1,22 @@
 """Regression flags — buy-low and sell-high candidates from unsustainable scoring.
 
 Fantasy points are noisy; touchdowns are the noisiest part. A player scoring far more
-TDs than his yardage volume implies is riding variance that tends to correct — a
-sell-high. One scoring far fewer is getting unlucky on the same real usage — a buy-low
-the market hasn't caught up to.
+TDs than expected is riding variance that tends to correct — a sell-high. One scoring
+far fewer is getting unlucky on the same real usage — a buy-low the market hasn't
+caught up to.
 
-The engine computes each player's touchdowns-over-expected (``td_oe``): actual total TDs
-minus what his total yardage would produce at his position's league-average TD-per-yard
-rate. It complements the descriptive TD-dependence figure already in
-:mod:`sleeper_ffm.model.sabermetrics` by turning it into a directional, actionable call.
+Two expected-TD models, picked automatically by data availability (``RegressionBoard.basis``):
+    - **redzone-opportunity** (preferred): each red-zone/other target/carry priced by
+      its own observed touchdown probability (``sabermetrics.redzone_td_rates``, from
+      play-by-play). Backtested out-of-sample — fit on one season, evaluated on the
+      next — expected-TD MAE dropped ~18% vs the yardage baseline: where a look came
+      from predicts touchdowns much better than raw yardage volume does.
+    - **yardage** (fallback): actual TDs minus total yardage x position TD-per-yard
+      rate. Used when play-by-play isn't cached for the season.
+
+Both feed the same ``td_oe`` (actual - expected) and verdict logic — it complements the
+descriptive TD-dependence figure already in :mod:`sleeper_ffm.model.sabermetrics` by
+turning it into a directional, actionable call.
 
 This is a lean, not a projection: usage can be real and sticky, and elite players do
 sustain high TD rates. The flag says "the points ran ahead of / behind the process,"
@@ -49,7 +57,9 @@ class RegressionFlag:
     total_tds: float
     expected_tds: float  # total_yards * position TD-per-yard baseline
     td_oe: float  # actual - expected; +ve = lucky (sell), -ve = unlucky (buy)
-    verdict: str  # "SELL-HIGH" | "BUY-LOW" | "NEUTRAL"
+    verdict: str  # "SELL-HIGH" | "BUY-LOW" | "AGE-DECLINE" | "NEUTRAL"
+    age: float | None = None
+    rosterable: bool = True  # False = not currently on an NFL roster (can't be a real target)
     note: str = ""
 
 
@@ -58,10 +68,50 @@ class RegressionBoard:
     """Ranked regression candidates."""
 
     season: int
-    baselines: dict[str, float]  # position -> TD per yard
+    baselines: dict  # position -> rate table (shape depends on `basis`)
     sell_high: list[RegressionFlag]  # most over-expected first
     buy_low: list[RegressionFlag]  # most under-expected first
+    basis: str = "yardage"  # "redzone-opportunity" | "yardage" (PBP unavailable)
     warnings: list[str] = field(default_factory=list)
+
+
+def _flag_from_expected(r: dict, expected: float) -> RegressionFlag:
+    """Build one player's flag from any expected-TD basis (yardage or red-zone-opportunity)."""
+    from sleeper_ffm.model.dynasty import is_age_declining
+
+    pos = r["position"]
+    age = r.get("age")
+    td_oe = r["total_tds"] - expected
+    if td_oe >= _FLAG_TDS:
+        verdict = "SELL-HIGH"
+        note = f"+{td_oe:.1f} TDs over expected — TD rate likely regresses down"
+    elif td_oe <= -_FLAG_TDS:
+        if is_age_declining(pos, age):
+            verdict = "AGE-DECLINE"
+            note = (
+                f"{td_oe:.1f} TDs below expected, but age {age:.0f} is well past "
+                f"{pos} peak — declining, not unlucky"
+            )
+        else:
+            verdict = "BUY-LOW"
+            note = f"{td_oe:.1f} TDs below expected — same usage, unlucky finish"
+    else:
+        verdict = "NEUTRAL"
+        note = "TD rate roughly matches yardage volume"
+    return RegressionFlag(
+        player_id=r["sid"],
+        name=r["name"],
+        position=pos,
+        team=r["team"],
+        total_yards=round(r["total_yards"], 1),
+        total_tds=round(r["total_tds"], 1),
+        expected_tds=round(expected, 1),
+        td_oe=round(td_oe, 1),
+        verdict=verdict,
+        age=age,
+        rosterable=r.get("rosterable", True),
+        note=note,
+    )
 
 
 def compute_td_regression(
@@ -71,7 +121,9 @@ def compute_td_regression(
     """Compute position TD-per-yard baselines and per-player td_oe. Pure.
 
     Args:
-        rows: ``[{sid, name, position, team, total_yards, total_tds}, ...]``.
+        rows: ``[{sid, name, position, team, total_yards, total_tds, age?, rosterable?}, ...]``.
+            ``age``/``rosterable`` are optional; when omitted no player is ever flagged
+            AGE-DECLINE (matches pre-existing callers/tests).
         min_yards: Minimum yardage before a player is flagged.
 
     Returns:
@@ -87,40 +139,65 @@ def compute_td_regression(
 
     flags: list[RegressionFlag] = []
     for r in rows:
-        pos = r["position"]
-        rate = baselines.get(pos)
+        rate = baselines.get(r["position"])
         if rate is None or r["total_yards"] < min_yards:
             continue
-        expected = r["total_yards"] * rate
-        td_oe = r["total_tds"] - expected
-        if td_oe >= _FLAG_TDS:
-            verdict = "SELL-HIGH"
-            note = f"+{td_oe:.1f} TDs over expected — TD rate likely regresses down"
-        elif td_oe <= -_FLAG_TDS:
-            verdict = "BUY-LOW"
-            note = f"{td_oe:.1f} TDs below expected — same usage, unlucky finish"
-        else:
-            verdict = "NEUTRAL"
-            note = "TD rate roughly matches yardage volume"
-        flags.append(
-            RegressionFlag(
-                player_id=r["sid"],
-                name=r["name"],
-                position=pos,
-                team=r["team"],
-                total_yards=round(r["total_yards"], 1),
-                total_tds=round(r["total_tds"], 1),
-                expected_tds=round(expected, 1),
-                td_oe=round(td_oe, 1),
-                verdict=verdict,
-                note=note,
-            )
-        )
+        flags.append(_flag_from_expected(r, r["total_yards"] * rate))
     return baselines, flags
 
 
-def _aggregate_rows(season: int) -> list[dict]:
-    """Aggregate one season's weekly stats to per-player yardage/TD totals."""
+def compute_redzone_td_regression(
+    rows: list[dict],
+    play_values: pl.DataFrame,
+    position_by_player: dict[str, str],
+    min_yards: int = _MIN_YARDS,
+) -> tuple[dict[str, dict[str, float]], list[RegressionFlag]]:
+    """Red-zone-opportunity-based expected TDs — the calibrated upgrade over yardage.
+
+    Where :func:`compute_td_regression` expects TDs from total yardage at a flat
+    position rate, this prices each red-zone and non-red-zone target/carry by its own
+    observed touchdown probability (:func:`sleeper_ffm.model.sabermetrics.redzone_td_rates`).
+    Backtested out-of-sample (fit on one season, evaluated on the next): expected-TD
+    MAE dropped ~18% vs the yardage baseline — where a look came from predicts
+    touchdowns much better than how many yards a player racked up.
+
+    Args:
+        rows: Same per-player rows as :func:`compute_td_regression`, plus a
+            ``"gsis_id"`` key — play-by-play is keyed by gsis_id, not the sleeper_id
+            used in ``sid``/``RegressionFlag.player_id``.
+        play_values: Output of ``sabermetrics.pbp_play_value``.
+        position_by_player: ``gsis_id -> position`` lookup (from ``load_id_map``).
+        min_yards: Minimum yardage before a player is flagged (same noise guard as v1).
+
+    Returns:
+        ``(rates, flags)`` — the four-bucket TD-rate table by position, and one flag
+        per qualifying row.
+    """
+    from sleeper_ffm.model.sabermetrics import player_redzone_opportunities, redzone_td_rates
+
+    rates = redzone_td_rates(play_values, position_by_player)
+
+    flags: list[RegressionFlag] = []
+    for r in rows:
+        pos = r["position"]
+        pos_rates = rates.get(pos)
+        if pos_rates is None or r["total_yards"] < min_yards or not r.get("gsis_id"):
+            continue
+        opps = player_redzone_opportunities(play_values, r["gsis_id"])
+        expected = sum(opps.get(k, 0.0) * pos_rates.get(k, 0.0) for k in opps)
+        flags.append(_flag_from_expected(r, expected))
+    return rates, flags
+
+
+def _aggregate_rows(season: int, live_status: dict[str, dict] | None = None) -> list[dict]:
+    """Aggregate one season's weekly stats to per-player yardage/TD totals.
+
+    Args:
+        season: NFL season year.
+        live_status: Optional ``{sleeper_id: {"age", "team"}}`` from the live Sleeper
+            player dump, used to attach current age/roster status to each row.
+    """
+    live_status = live_status or {}
     weekly = load_weekly(seasons=[season])
     if weekly.is_empty() or "season_type" not in weekly.columns:
         return []
@@ -161,43 +238,116 @@ def _aggregate_rows(season: int) -> list[dict]:
     for r in agg.iter_rows(named=True):
         total_yards = sum(float(r.get(c) or 0.0) for c in yard_cols)
         total_tds = sum(float(r.get(c) or 0.0) for c in td_cols)
+        sid = r.get("sleeper_id_str") or ""
+        status = live_status.get(sid, {})
         rows.append(
             {
-                "sid": r.get("sleeper_id_str") or "",
+                "sid": sid,
+                "gsis_id": r.get("player_id") or "",
                 "name": r.get("name") or "?",
                 "position": r["position"],
                 "team": r.get("team") or "FA",
                 "total_yards": total_yards,
                 "total_tds": total_tds,
+                "age": status.get("age"),
+                "rosterable": bool(status.get("team")) if live_status else True,
             }
         )
     return rows
 
 
+def _live_player_status() -> dict[str, dict]:
+    """Fetch ``{sleeper_id: {"age", "team"}}`` from the live Sleeper player dump."""
+    try:
+        from sleeper_ffm.sleeper.client import SleeperClient
+
+        with SleeperClient() as client:
+            return {
+                sid: {"age": p.get("age"), "team": p.get("team")}
+                for sid, p in client.players().items()
+            }
+    except Exception as exc:
+        log.warning("regression: live Sleeper status unavailable (%s)", exc)
+        return {}
+
+
+def _redzone_regression_inputs(
+    season: int,
+) -> tuple[pl.DataFrame, dict[str, str]] | None:
+    """Load PBP + position lookup for the red-zone TD model, or None if unavailable."""
+    try:
+        from sleeper_ffm.model.sabermetrics import pbp_play_value
+        from sleeper_ffm.nflverse.loader import load_pbp
+        from sleeper_ffm.scoring.engine import load_scoring
+
+        pbp = load_pbp(seasons=[season])
+        if pbp.is_empty():
+            return None
+        play_values = pbp_play_value(pbp, load_scoring())
+        if play_values.is_empty():
+            return None
+
+        position_by_player = dict(
+            load_id_map()
+            .filter(pl.col("gsis_id").str.starts_with("00-"))
+            .select(["gsis_id", "position"])
+            .drop_nulls()
+            .iter_rows()
+        )
+        return play_values, position_by_player
+    except Exception as exc:
+        log.debug("regression: red-zone PBP inputs unavailable (%s)", exc)
+        return None
+
+
 def build_regression(season: int | None = None, top: int = 15) -> RegressionBoard:
     """Build the regression board for a season.
 
+    Uses the red-zone-opportunity TD model (backtested more accurate than yardage)
+    when play-by-play is available for the season, falling back to the yardage
+    baseline otherwise — see ``RegressionBoard.basis``.
+
     Returns:
-        A :class:`RegressionBoard` with sell-high and buy-low shortlists.
+        A :class:`RegressionBoard` with sell-high and buy-low shortlists. Players not
+        currently on an NFL roster, or far enough past positional peak age that a
+        low TD rate reads as decline rather than bad luck, are excluded from
+        ``buy_low``/``sell_high`` (visible in the raw flags only).
     """
     season = season or DEFAULT_VALUE_SEASON
     warnings: list[str] = []
-    rows = _aggregate_rows(season)
+    live_status = _live_player_status()
+    if not live_status:
+        warnings.append("Live roster status unavailable; buy-low not filtered for age/free agency.")
+    rows = _aggregate_rows(season, live_status)
     if not rows:
         warnings.append(f"No weekly stats available for {season}; regression board empty.")
         return RegressionBoard(
             season=season, baselines={}, sell_high=[], buy_low=[], warnings=warnings
         )
 
-    baselines, flags = compute_td_regression(rows)
+    redzone_inputs = _redzone_regression_inputs(season)
+    if redzone_inputs is not None:
+        play_values, position_by_player = redzone_inputs
+        baselines, flags = compute_redzone_td_regression(rows, play_values, position_by_player)
+        basis = "redzone-opportunity"
+    else:
+        baselines, flags = compute_td_regression(rows)
+        basis = "yardage"
+        warnings.append(f"Play-by-play unavailable for {season}; using the yardage TD baseline.")
+
     sell = sorted(
-        [f for f in flags if f.verdict == "SELL-HIGH"], key=lambda f: f.td_oe, reverse=True
+        [f for f in flags if f.verdict == "SELL-HIGH" and f.rosterable],
+        key=lambda f: f.td_oe,
+        reverse=True,
     )[:top]
-    buy = sorted([f for f in flags if f.verdict == "BUY-LOW"], key=lambda f: f.td_oe)[:top]
+    buy = sorted(
+        [f for f in flags if f.verdict == "BUY-LOW" and f.rosterable], key=lambda f: f.td_oe
+    )[:top]
     return RegressionBoard(
         season=season,
-        baselines={k: round(v, 5) for k, v in baselines.items()},
+        baselines=baselines,
         sell_high=sell,
         buy_low=buy,
+        basis=basis,
         warnings=warnings,
     )

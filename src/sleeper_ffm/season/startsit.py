@@ -15,6 +15,7 @@ import polars as pl
 from sleeper_ffm.config import MY_ROSTER_ID
 from sleeper_ffm.model.dynasty import PlayerAsset, value_player
 from sleeper_ffm.model.valuation import SKILL_POSITIONS, build_player_assets
+from sleeper_ffm.model.vegas import environment_multiplier
 from sleeper_ffm.nflverse.loader import load_id_map, load_weekly
 from sleeper_ffm.scoring.engine import load_scoring, score, stats_from_nflverse
 from sleeper_ffm.sleeper.client import SleeperClient
@@ -155,16 +156,23 @@ def _project_player(
     sleeper_players: dict[str, dict],
     weekly_fp_map: dict[str, dict],
     dynasty_by_id: dict[str, PlayerAsset],
+    season: int,
+    week: int,
 ) -> PlayerProjection:
     """Build a single player's weekly projection.
 
-    Priority: nflverse_avg → dynasty_value_proxy → default 5.0.
+    Priority: nflverse_avg → dynasty_value_proxy → default 5.0. Every path is then
+    lightly scaled by the team's Vegas-implied scoring environment for this game
+    (:func:`environment_multiplier`) — a team implied to score well above league
+    average nudges its players up, one implied well below nudges them down.
 
     Args:
         pid: Sleeper player_id.
         sleeper_players: Full Sleeper player dump.
         weekly_fp_map: Per-player FP stats keyed by sleeper_id.
         dynasty_by_id: PlayerAsset lookup from build_player_assets.
+        season: NFL season year, for the Vegas environment lookup.
+        week: NFL week being projected, for the Vegas environment lookup.
 
     Returns:
         PlayerProjection with best available estimate.
@@ -173,6 +181,8 @@ def _project_player(
     name = meta.get("full_name") or f"Player {pid}"
     position = meta.get("position") or "?"
     team = meta.get("team") or "FA"
+    env_mult = environment_multiplier(season, week, team)
+    env_note = f"; vegas env x{env_mult:.2f}" if env_mult != 1.0 else ""
 
     if pid in weekly_fp_map:
         fp_data = weekly_fp_map[pid]
@@ -182,13 +192,13 @@ def _project_player(
         l4_games = fp_data["last4_games"]
 
         if l4_games >= 4:
-            pts = round(l4_avg, 1)
+            pts = round(l4_avg * env_mult, 1)
             confidence = "HIGH"
-            notes = f"4-wk avg: {l4_avg:.1f}, season avg: {s_avg:.1f}"
+            notes = f"4-wk avg: {l4_avg:.1f}, season avg: {s_avg:.1f}{env_note}"
         else:
-            pts = round(s_avg, 1)
+            pts = round(s_avg * env_mult, 1)
             confidence = "MED"
-            notes = f"season avg ({games} games): {s_avg:.1f}"
+            notes = f"season avg ({games} games): {s_avg:.1f}{env_note}"
 
         return PlayerProjection(
             player_id=pid,
@@ -204,7 +214,7 @@ def _project_player(
     if pid in dynasty_by_id:
         asset = dynasty_by_id[pid]
         dynasty_val = value_player(asset)
-        pts = round(dynasty_val / 10.0, 1)
+        pts = round((dynasty_val / 10.0) * env_mult, 1)
         return PlayerProjection(
             player_id=pid,
             name=name,
@@ -213,7 +223,7 @@ def _project_player(
             projected_pts=max(0.0, pts),
             confidence="LOW",
             source="dynasty_value_proxy",
-            notes=f"dynasty value: {dynasty_val:.1f} (no weekly data)",
+            notes=f"dynasty value: {dynasty_val:.1f} (no weekly data){env_note}",
         )
 
     return PlayerProjection(
@@ -221,10 +231,10 @@ def _project_player(
         name=name,
         position=position,
         team=team,
-        projected_pts=5.0,
+        projected_pts=round(5.0 * env_mult, 1),
         confidence="LOW",
         source="default",
-        notes="no data available",
+        notes=f"no data available{env_note}",
     )
 
 
@@ -333,9 +343,7 @@ def _compute_changes(
         if start.player_id in paired_starts or start.position not in _FLEX_POSITIONS:
             continue
         flex_sits = [
-            s
-            for s in sits
-            if s.player_id not in used_sits and s.position in _FLEX_POSITIONS
+            s for s in sits if s.player_id not in used_sits and s.position in _FLEX_POSITIONS
         ]
         if flex_sits:
             _pair(start, min(flex_sits, key=lambda p: p.projected_pts))
@@ -502,7 +510,8 @@ def build_startsit(week: int, season: int) -> StartSitRecommendation:
 
     # Build projections for all roster players
     projections = [
-        _project_player(pid, sleeper_players, weekly_fp_map, dynasty_by_id) for pid in skill_ids
+        _project_player(pid, sleeper_players, weekly_fp_map, dynasty_by_id, season, week)
+        for pid in skill_ids
     ]
     default_count = sum(1 for p in projections if p.source == "default")
     proxy_count = sum(1 for p in projections if p.source == "dynasty_value_proxy")

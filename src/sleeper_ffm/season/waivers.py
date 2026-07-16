@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from sleeper_ffm.model.faab_market import FaabMarket, predicted_clearing_price
 from sleeper_ffm.model.valuation import SKILL_POSITIONS
 from sleeper_ffm.sleeper.models import TrendingPlayer
 
@@ -49,6 +50,7 @@ def analyze_waivers(
     my_roster_ids: set[str] | None = None,
     protected_ids: set[str] | None = None,
     faab_budget: int = 500,
+    faab_market: FaabMarket | None = None,
 ) -> list[WaiverCandidate]:
     """Score unrostered trending players for waiver priority.
 
@@ -59,7 +61,10 @@ def analyze_waivers(
       - Youth bonus:   age < 24 -> +8, age 24-26 -> +4
       Capped at 100.
 
-    FAAB tiers: >=80 -> 18%, 60-80 -> 10%, 40-60 -> 4%, <40 -> $2 flat.
+    FAAB estimate: when ``faab_market`` has enough historical winning bids for the
+    position, the priority tier is priced against this league's own bid percentiles
+    (:func:`sleeper_ffm.model.faab_market.predicted_clearing_price`) instead of the
+    generic 18%/10%/4%/$2 tiers, which have never seen an actual bid in this league.
 
     Args:
         sleeper_players: Full Sleeper player dump from SleeperClient.players().
@@ -69,6 +74,8 @@ def analyze_waivers(
         my_roster_ids: Rob's rostered player IDs for drop-candidate selection.
         protected_ids: Starters or locked players that should not be suggested as drops.
         faab_budget: Total FAAB budget in dollars (default $500).
+        faab_market: Optional built :class:`FaabMarket` for a league-grounded FAAB
+            estimate; falls back to the generic tiers when omitted or thin on data.
 
     Returns:
         List of WaiverCandidate sorted by add_priority descending.
@@ -102,7 +109,11 @@ def analyze_waivers(
         youth_bonus = 8.0 if age < 24 else (4.0 if age <= 26 else 0.0)
 
         priority = round(min(100.0, trend_score + pos_bump + net_signal + youth_bonus), 1)
-        faab = _faab_estimate(priority, faab_budget)
+        market_price = predicted_clearing_price(pos, priority, faab_market) if faab_market else None
+        faab = (
+            market_price + 1 if market_price is not None else _faab_estimate(priority, faab_budget)
+        )
+        faab = min(faab, faab_budget)
         bid_min, bid_max = _bid_range(faab, priority, faab_budget)
         drop_candidate = _drop_candidate(
             add_position=pos,

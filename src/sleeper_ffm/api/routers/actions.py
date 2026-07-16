@@ -130,6 +130,7 @@ def _trade_actions(limit: int) -> list[WarRoomAction]:
 
 def _waiver_actions(limit: int) -> list[WarRoomAction]:
     """Build waiver actions from scored waiver candidates."""
+    from sleeper_ffm.model.faab_market import build_faab_market
     from sleeper_ffm.season.waivers import analyze_waivers
     from sleeper_ffm.sleeper.client import SleeperClient
 
@@ -148,6 +149,12 @@ def _waiver_actions(limit: int) -> list[WarRoomAction]:
             my_roster_ids.update(roster.players)
             protected_ids.update(roster.starters)
 
+    try:
+        faab_market = build_faab_market()
+    except Exception as exc:
+        log.warning("waiver actions: faab market unavailable: %s", exc)
+        faab_market = None
+
     candidates = analyze_waivers(
         sleeper_players=sleeper_players,
         trending_adds=trending_adds,
@@ -155,6 +162,7 @@ def _waiver_actions(limit: int) -> list[WarRoomAction]:
         rostered_ids=rostered_ids,
         my_roster_ids=my_roster_ids,
         protected_ids=protected_ids,
+        faab_market=faab_market,
     )
 
     actions: list[WarRoomAction] = []

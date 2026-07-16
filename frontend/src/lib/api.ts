@@ -1017,6 +1017,8 @@ export type MispricingEntry = {
   pos_median_leverage: number
   edge_pct: number
   verdict: 'BUY' | 'SELL' | 'FAIR'
+  age: number | null
+  rosterable: boolean
   market_value: number | null
   value_gap: number | null
   note: string
@@ -1079,15 +1081,18 @@ export type RegressionFlag = {
   total_tds: number
   expected_tds: number
   td_oe: number
-  verdict: 'SELL-HIGH' | 'BUY-LOW' | 'NEUTRAL'
+  verdict: 'SELL-HIGH' | 'BUY-LOW' | 'AGE-DECLINE' | 'NEUTRAL'
+  age: number | null
+  rosterable: boolean
   note: string
 }
 
 export type RegressionBoard = {
   season: number
-  baselines: Record<string, number>
+  baselines: Record<string, number | Record<string, number>>
   sell_high: RegressionFlag[]
   buy_low: RegressionFlag[]
+  basis: 'redzone-opportunity' | 'yardage'
   warnings: string[]
 }
 
@@ -1182,6 +1187,99 @@ export type GamedayBrief = {
   lineup_upside: number
   recommended_swaps: Array<{ start: string; sit: string; gain: number }>
   note: string
+  warnings: string[]
+}
+
+export type VegasGame = {
+  season: number
+  week: number
+  team: string
+  opponent: string
+  is_home: boolean
+  implied_total: number | null
+  opponent_implied_total: number | null
+  team_spread: number | null
+  game_total: number | null
+  blowout_risk: number | null
+}
+
+export type VegasEnvironment = {
+  season: number
+  league_avg_implied_total: number | null
+  games: VegasGame[]
+  warnings: string[]
+}
+
+export type PlayoffTeamEnvironment = {
+  team: string
+  season: number
+  weeks_counted: number
+  avg_implied_total: number | null
+  avg_blowout_risk: number | null
+}
+
+export type VegasPlayoffs = { season: number; teams: PlayoffTeamEnvironment[] }
+
+export type PricePoint = { as_of: string; value: number }
+export type PlayerMeta = { name: string; position: string; team: string }
+
+export type PlayerPriceHistory = {
+  sleeper_id: string
+  meta: PlayerMeta | null
+  points: PricePoint[]
+  momentum_pct: number | null
+  zscore: number | null
+  note: string
+}
+
+export type PriceMovers = {
+  snapshot_dates: string[]
+  direction: 'up' | 'down'
+  movers: PlayerPriceHistory[]
+}
+
+export type PriceTrendResponse = PlayerPriceHistory & { snapshot_dates: string[] }
+
+export type PositionBidStats = {
+  position: string
+  n: number
+  p25: number | null
+  p50: number | null
+  p75: number | null
+  p90: number | null
+}
+
+export type OwnerBidProfile = {
+  roster_id: number
+  n_bids: number
+  median_bid: number | null
+  aggressiveness: 'AGGRESSIVE' | 'TYPICAL' | 'CONSERVATIVE' | 'UNKNOWN'
+}
+
+export type FaabMarket = {
+  seasons_covered: string[]
+  n_bids: number
+  by_position: Record<string, PositionBidStats>
+  by_owner: Record<string, OwnerBidProfile>
+  warnings: string[]
+}
+
+export type OpponentAdjustedEntry = {
+  player_id: string
+  name: string
+  position: 'QB' | 'RB' | 'WR' | 'TE'
+  team: string
+  games_played: number
+  raw_fp: number
+  adjusted_fp: number
+  schedule_luck: number
+  note: string
+}
+
+export type OpponentAdjustedBoard = {
+  season: number
+  softest_schedule: OpponentAdjustedEntry[]
+  toughest_schedule: OpponentAdjustedEntry[]
   warnings: string[]
 }
 
@@ -1323,6 +1421,17 @@ export const api = {
   handcuffs: () => get<HandcuffMap>('/handcuffs'),
   wireWatch: (availableOnly = true) => get<WireWatchBoard>(`/wire-watch?available_only=${availableOnly}`),
   gameday: (week = 1) => get<GamedayBrief>(`/gameday?week=${week}`),
+  vegasEnvironment: (week?: number) => get<VegasEnvironment>(`/vegas${week ? `?week=${week}` : ''}`),
+  vegasPlayoffs: () => get<VegasPlayoffs>('/vegas/playoffs'),
+  priceMovers: (direction: 'up' | 'down' = 'up', limit = 15) =>
+    get<PriceMovers>(`/market/price-history/movers?direction=${direction}&limit=${limit}`),
+  playerPriceTrend: (sleeperId: string) =>
+    get<PriceTrendResponse>(`/market/price-history/${encodeURIComponent(sleeperId)}`),
+  faabMarket: () => get<FaabMarket>('/faab-market'),
+  opponentAdjusted: (season?: number, top = 12) =>
+    get<OpponentAdjustedBoard>(
+      `/opponent-adjusted?top=${top}${season ? `&season=${season}` : ''}`,
+    ),
   scoreboard: () => get<Scoreboard>('/scoreboard'),
   gmAddressPrompt: () => get<{ prompt: string; generated_at: string }>('/gm-address'),
 }

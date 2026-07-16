@@ -19,8 +19,9 @@ import logging
 import math
 from dataclasses import dataclass, field
 
-from sleeper_ffm.config import DEFAULT_VALUE_SEASON, MY_ROSTER_ID
+from sleeper_ffm.config import CURRENT_LEAGUE_YEAR, DEFAULT_VALUE_SEASON, MY_ROSTER_ID
 from sleeper_ffm.model.season_sim import _STD_FLOOR, _STD_FRACTION, _lineup_strength
+from sleeper_ffm.model.vegas import environment_multiplier
 
 log = logging.getLogger(__name__)
 
@@ -65,15 +66,27 @@ def win_probability(my_mean: float, opp_mean: float, my_std: float, opp_std: flo
     return round(0.5 * (1.0 + math.erf(z / math.sqrt(2))), 4)
 
 
-def _team_strength(roster, players: dict[str, dict], per_game_fp: dict[str, float]) -> float:
-    """Weekly projected points for a roster's optimal lineup of per-game FP."""
+def _team_strength(
+    roster,
+    players: dict[str, dict],
+    per_game_fp: dict[str, float],
+    season: int,
+    week: int,
+) -> float:
+    """Weekly projected points for a roster's optimal lineup of per-game FP.
+
+    Each player's per-game average is lightly scaled by their team's Vegas-implied
+    scoring environment for this week (:func:`environment_multiplier`).
+    """
     from sleeper_ffm.model.season_sim import _FLEX_POS
 
     pg: dict[str, tuple[str, float]] = {}
     for pid in roster.players or []:
-        pos = players.get(pid, {}).get("position")
+        meta = players.get(pid, {})
+        pos = meta.get("position")
         if pos in _FLEX_POS or pos == "QB":
-            pg[pid] = (pos, per_game_fp.get(pid, 0.0))
+            mult = environment_multiplier(season, week, meta.get("team") or "")
+            pg[pid] = (pos, per_game_fp.get(pid, 0.0) * mult)
     return max(_lineup_strength(pg), _STD_FLOOR)
 
 
@@ -139,8 +152,10 @@ def build_gameday(week: int, my_roster_id: int = MY_ROSTER_ID) -> GamedayBrief:
             warnings=warnings,
         )
 
-    my_mean = _team_strength(roster_by_id[my_roster_id], players, per_game_fp)
-    opp_mean = _team_strength(roster_by_id[opp_id], players, per_game_fp)
+    my_mean = _team_strength(
+        roster_by_id[my_roster_id], players, per_game_fp, CURRENT_LEAGUE_YEAR, week
+    )
+    opp_mean = _team_strength(roster_by_id[opp_id], players, per_game_fp, CURRENT_LEAGUE_YEAR, week)
     my_std = max(_STD_FLOOR, _STD_FRACTION * my_mean)
     opp_std = max(_STD_FLOOR, _STD_FRACTION * opp_mean)
     wp = win_probability(my_mean, opp_mean, my_std, opp_std)

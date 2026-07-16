@@ -24,6 +24,7 @@ import polars as pl
 
 from sleeper_ffm.config import DEFAULT_VALUE_SEASON
 from sleeper_ffm.market.blend import FC_TO_DYNASTY_SCALE, market_anchor
+from sleeper_ffm.model.dynasty import is_age_declining
 from sleeper_ffm.model.valuation import SKILL_POSITIONS, compute_season_totals
 
 log = logging.getLogger(__name__)
@@ -69,6 +70,8 @@ class MispricingEntry:
     pos_median_leverage: float
     edge_pct: float  # (leverage / pos_median - 1) * 100; +ve = market underprices for us
     verdict: str  # "BUY" | "SELL" | "FAIR"
+    age: float | None = None
+    rosterable: bool = True  # False = not currently on an NFL roster (can't be a real target)
     market_value: float | None = None  # dynasty display units, None if unpriced
     value_gap: float | None = None  # market_value * edge_pct/100 (dyn units the market mis-states)
     note: str = ""
@@ -96,6 +99,21 @@ def _verdict(edge_pct: float) -> str:
     return "FAIR"
 
 
+def _live_player_status() -> dict[str, dict]:
+    """Fetch ``{sleeper_id: {"age", "team"}}`` from the live Sleeper player dump."""
+    try:
+        from sleeper_ffm.sleeper.client import SleeperClient
+
+        with SleeperClient() as client:
+            return {
+                sid: {"age": p.get("age"), "team": p.get("team")}
+                for sid, p in client.players().items()
+            }
+    except Exception as exc:
+        log.warning("mispricing: live Sleeper status unavailable (%s)", exc)
+        return {}
+
+
 def build_mispricing(
     seasons: list[int] | None = None,
     min_games: int = _MIN_GAMES,
@@ -117,6 +135,12 @@ def build_mispricing(
     """
     seasons = seasons or [DEFAULT_VALUE_SEASON]
     warnings: list[str] = []
+
+    live_status = _live_player_status()
+    if not live_status:
+        warnings.append(
+            "Live roster status unavailable; buy/sell not filtered for age or free agency."
+        )
 
     ours = compute_season_totals(seasons=seasons)
     generic = compute_season_totals(seasons=seasons, scoring=STANDARD_PPR)
@@ -201,6 +225,26 @@ def build_mispricing(
         if sid and sid in market and market[sid] > 0:
             mkt_val = round(market[sid] * FC_TO_DYNASTY_SCALE, 1)
             value_gap = round(mkt_val * edge_pct / 100.0, 1)
+
+        status = live_status.get(sid or "", {})
+        age = status.get("age")
+        rosterable = bool(status.get("team")) if live_status else True
+
+        verdict = _verdict(edge_pct)
+        note = (
+            f"scores {abs(edge_pct):.0f}% "
+            f"{'above' if edge_pct >= 0 else 'below'} the typical {pos} "
+            "under our rules vs generic PPR"
+        )
+        if verdict == "BUY" and is_age_declining(pos, age):
+            verdict = "FAIR"
+            note = (
+                f"scoring edge is real ({edge_pct:+.0f}%) but age {age:.0f} is well past "
+                f"{pos} peak — not a real buy-low"
+            )
+        if not rosterable:
+            note += "; not currently on an NFL roster"
+
         entries.append(
             MispricingEntry(
                 player_id=sid or "",
@@ -213,22 +257,22 @@ def build_mispricing(
                 leverage=round(row["leverage"], 3),
                 pos_median_leverage=round(median, 3),
                 edge_pct=edge_pct,
-                verdict=_verdict(edge_pct),
+                age=age,
+                rosterable=rosterable,
+                verdict=verdict,
                 market_value=mkt_val,
                 value_gap=value_gap,
-                note=(
-                    f"scores {abs(edge_pct):.0f}% "
-                    f"{'above' if edge_pct >= 0 else 'below'} the typical {pos} "
-                    "under our rules vs generic PPR"
-                ),
+                note=note,
             )
         )
 
     entries.sort(key=lambda e: e.edge_pct, reverse=True)
-    buys = [e for e in entries if e.verdict == "BUY"][:top]
+    # Free agents can't be acquired as a real dynasty target — visible in entries for
+    # transparency, but excluded from the actionable buy/sell shortlists.
+    buys = [e for e in entries if e.verdict == "BUY" and e.rosterable][:top]
     # Sells ranked most-negative first, priced-in players prioritized (market_value desc).
     sells = sorted(
-        [e for e in entries if e.verdict == "SELL"],
+        [e for e in entries if e.verdict == "SELL" and e.rosterable],
         key=lambda e: (e.edge_pct, -(e.market_value or 0.0)),
     )[:top]
 

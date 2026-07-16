@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import datetime
 
+import polars as pl
+
 from sleeper_ffm.model import gm_metrics as gm
 from sleeper_ffm.model import owner_profile as op
 from sleeper_ffm.model.owner_skill import optimal_lineup_points
@@ -70,6 +72,76 @@ def test_trade_ledger_pnl_counts_unresolved() -> None:
     assert out["unresolved"] == 1
     assert out["resolved"] == 0
     assert out["net"] == 0.0
+
+
+# --- realized-production trade ledger (v2) --------------------------------
+
+
+def _weekly(rows: list[tuple[str, int, int, float]]) -> pl.DataFrame:
+    return pl.DataFrame(
+        rows,
+        schema={
+            "player_display_name": pl.Utf8,
+            "season": pl.Int64,
+            "week": pl.Int64,
+            "fp_sffm": pl.Float64,
+        },
+        orient="row",
+    )
+
+
+def test_is_pick_key() -> None:
+    assert gm.is_pick_key("2026 R1")
+    assert not gm.is_pick_key("Derrick Henry")
+
+
+def test_realized_player_production_sums_only_after_trade_date() -> None:
+    weekly = _weekly(
+        [
+            ("A", 2024, 5, 10.0),  # before the trade -> excluded
+            ("A", 2024, 6, 12.0),  # trade week itself -> excluded
+            ("A", 2024, 7, 15.0),  # after -> counted
+            ("A", 2025, 1, 20.0),  # following season -> counted
+        ]
+    )
+    fp = gm.realized_player_production("A", since_season=2024, since_week=6, weekly_scored=weekly)
+    assert fp == 35.0
+
+
+def test_realized_player_production_unresolved_name_is_none() -> None:
+    weekly = _weekly([("A", 2024, 5, 10.0)])
+    assert gm.realized_player_production("Ghost", 2024, 5, weekly) is None
+
+
+def test_realized_player_production_real_zero_after_trade() -> None:
+    # Player is known but never played again after the trade — a real 0, not unresolved.
+    weekly = _weekly([("A", 2024, 5, 10.0)])
+    assert gm.realized_player_production("A", 2024, 5, weekly) == 0.0
+
+
+def test_realized_trade_ledger_pnl_values_players_by_post_trade_production() -> None:
+    weekly = _weekly(
+        [
+            ("A", 2024, 6, 12.0),
+            ("A", 2024, 7, 15.0),  # A produces 15 after the trade
+            ("B", 2024, 7, 5.0),  # B produces 5 after the trade
+        ]
+    )
+    trades = [{"season": "2024", "week": 6, "received": ["A"], "sent": ["B", "2026 R1"]}]
+    out = gm.realized_trade_ledger_pnl(trades, weekly, pick_values={"2026 R1": 80.0})
+    assert out["value_in"] == 15.0
+    assert out["value_out"] == 5.0 + 80.0
+    assert out["net"] == 15.0 - 85.0
+    assert out["resolved"] == 3
+    assert out["unresolved"] == 0
+
+
+def test_realized_trade_ledger_pnl_unresolved_pick_and_unknown_player() -> None:
+    weekly = _weekly([("A", 2024, 6, 12.0)])
+    trades = [{"season": "2024", "week": 6, "received": ["Ghost", "2099 R9"], "sent": []}]
+    out = gm.realized_trade_ledger_pnl(trades, weekly, pick_values={})
+    assert out["unresolved"] == 2
+    assert out["resolved"] == 0
 
 
 # --- fixed optimal lineup respects position eligibility -------------------

@@ -265,13 +265,206 @@ def usage_coefficients(
             + float(pos_df["receiving_yards"].sum() or 0.0) * scoring.get("rec_yd", 0.1)
             + float(pos_df["receiving_tds"].sum() or 0.0) * scoring.get("rec_td", 6.0)
         )
-        rush_fp = float(pos_df["rushing_yards"].sum() or 0.0) * scoring.get(
-            "rush_yd", 0.1
-        ) + float(pos_df["rushing_tds"].sum() or 0.0) * scoring.get("rush_td", 6.0)
+        rush_fp = float(pos_df["rushing_yards"].sum() or 0.0) * scoring.get("rush_yd", 0.1) + float(
+            pos_df["rushing_tds"].sum() or 0.0
+        ) * scoring.get("rush_td", 6.0)
         pt = 1.7 if targets <= 0 else rec_fp / targets
         pc = 0.55 if carries <= 0 else rush_fp / carries
         coeffs[pos] = {"targets": round(pt, 4), "carries": round(pc, 4)}
     return coeffs
+
+
+# ---------------------------------------------------------------------------
+# Red-zone-aware calibration (play-by-play) — the fix for xFP's UNCALIBRATED flag
+# ---------------------------------------------------------------------------
+
+# Standard red-zone threshold: inside the opponent's 20-yard line.
+REDZONE_YARDLINE_100 = 20
+
+
+def pbp_play_value(pbp: pl.DataFrame, scoring: dict[str, float]) -> pl.DataFrame:
+    """Attach a league-scored FP value and red-zone flag to every target/carry.
+
+    ``usage_coefficients`` prices every target and every carry at one flat,
+    season-average rate — a red-zone look and a midfield checkdown are worth the
+    same. This recomputes fantasy points directly at the play level (one row per
+    pass target or rush attempt) so red-zone and non-red-zone opportunities can be
+    priced separately.
+
+    Args:
+        pbp: Raw play-by-play rows (``nflverse.loader.load_pbp`` output).
+        scoring: This league's scoring settings.
+
+    Returns:
+        DataFrame with ``player_id`` (gsis_id), ``kind`` ("target"/"carry"),
+        ``is_redzone``, ``fp``, ``touchdown`` (0/1 — this play only, not season total).
+        Empty (with the right schema) if required PBP columns are missing.
+    """
+    schema = {
+        "player_id": pl.Utf8,
+        "kind": pl.Utf8,
+        "is_redzone": pl.Boolean,
+        "fp": pl.Float64,
+        "touchdown": pl.Float64,
+    }
+    needed = {
+        "receiver_player_id",
+        "rusher_player_id",
+        "yardline_100",
+        "yards_gained",
+        "touchdown",
+        "complete_pass",
+    }
+    if pbp.is_empty() or not needed.issubset(pbp.columns):
+        return pl.DataFrame(schema=schema)
+
+    targets = (
+        pbp.filter(pl.col("receiver_player_id").is_not_null())
+        .with_columns(
+            [
+                pl.col("receiver_player_id").alias("player_id"),
+                pl.lit("target").alias("kind"),
+                (pl.col("yardline_100") <= REDZONE_YARDLINE_100).alias("is_redzone"),
+                (
+                    pl.col("complete_pass").fill_null(0) * scoring.get("rec", 1.0)
+                    + pl.col("yards_gained").fill_null(0) * scoring.get("rec_yd", 0.1)
+                    + pl.col("touchdown").fill_null(0) * scoring.get("rec_td", 6.0)
+                ).alias("fp"),
+            ]
+        )
+        .select(list(schema))
+    )
+    carries = (
+        pbp.filter(pl.col("rusher_player_id").is_not_null())
+        .with_columns(
+            [
+                pl.col("rusher_player_id").alias("player_id"),
+                pl.lit("carry").alias("kind"),
+                (pl.col("yardline_100") <= REDZONE_YARDLINE_100).alias("is_redzone"),
+                (
+                    pl.col("yards_gained").fill_null(0) * scoring.get("rush_yd", 0.1)
+                    + pl.col("touchdown").fill_null(0) * scoring.get("rush_td", 6.0)
+                ).alias("fp"),
+            ]
+        )
+        .select(list(schema))
+    )
+    return pl.concat([targets, carries])
+
+
+def redzone_usage_coefficients(
+    play_values: pl.DataFrame, position_by_player: dict[str, str]
+) -> dict[str, dict[str, float]]:
+    """Four-bucket (red-zone vs other, target vs carry) points-per-opportunity by position.
+
+    Args:
+        play_values: Output of :func:`pbp_play_value`.
+        position_by_player: ``gsis_id -> position`` lookup (from ``load_id_map``).
+
+    Returns:
+        ``{pos: {"rz_targets": x, "targets": x, "rz_carries": x, "carries": x}}``.
+        Falls back to the flat 1.7/0.55 defaults used by ``usage_coefficients`` for
+        buckets with no plays observed.
+    """
+    if play_values.is_empty():
+        return {
+            pos: {"rz_targets": 1.7, "targets": 1.7, "rz_carries": 0.55, "carries": 0.55}
+            for pos in SKILL_POSITIONS
+        }
+
+    with_pos = play_values.with_columns(
+        pl.col("player_id").replace_strict(position_by_player, default=None).alias("position")
+    ).filter(pl.col("position").is_in(list(SKILL_POSITIONS)))
+
+    coeffs: dict[str, dict[str, float]] = {}
+    for pos in SKILL_POSITIONS:
+        pos_df = with_pos.filter(pl.col("position") == pos)
+        bucket_rates: dict[str, float] = {}
+        for kind, key, default in [
+            ("target", "rz_targets", 1.7),
+            ("target", "targets", 1.7),
+            ("carry", "rz_carries", 0.55),
+            ("carry", "carries", 0.55),
+        ]:
+            is_rz = key.startswith("rz_")
+            bucket = pos_df.filter((pl.col("kind") == kind) & (pl.col("is_redzone") == is_rz))
+            n = bucket.height
+            bucket_rates[key] = round(float(bucket["fp"].sum()) / n, 4) if n > 0 else default
+        coeffs[pos] = bucket_rates
+    return coeffs
+
+
+def redzone_td_rates(
+    play_values: pl.DataFrame, position_by_player: dict[str, str]
+) -> dict[str, dict[str, float]]:
+    """Four-bucket touchdown probability per opportunity by position.
+
+    Same bucket structure as :func:`redzone_usage_coefficients` (red-zone vs other,
+    target vs carry) but for touchdown rate rather than fantasy-point rate — the
+    basis for :mod:`sleeper_ffm.model.regression`'s red-zone-opportunity TD model
+    (backtested out-of-sample to cut expected-TD error ~18% vs a yardage baseline).
+
+    Args:
+        play_values: Output of :func:`pbp_play_value`.
+        position_by_player: ``gsis_id -> position`` lookup (from ``load_id_map``).
+
+    Returns:
+        ``{pos: {"rz_targets": p, "targets": p, "rz_carries": p, "carries": p}}``,
+        each a touchdown probability in ``[0, 1]``. ``0.0`` for buckets with no
+        observed plays (no fabricated default — unlike the FP-coefficient version,
+        there is no sane non-zero prior for touchdown rate).
+    """
+    if play_values.is_empty():
+        zero = {"rz_targets": 0.0, "targets": 0.0, "rz_carries": 0.0, "carries": 0.0}
+        return {pos: dict(zero) for pos in SKILL_POSITIONS}
+
+    with_pos = play_values.with_columns(
+        pl.col("player_id").replace_strict(position_by_player, default=None).alias("position")
+    ).filter(pl.col("position").is_in(list(SKILL_POSITIONS)))
+
+    rates: dict[str, dict[str, float]] = {}
+    for pos in SKILL_POSITIONS:
+        pos_df = with_pos.filter(pl.col("position") == pos)
+        bucket_rates: dict[str, float] = {}
+        for kind, key in [
+            ("target", "rz_targets"),
+            ("target", "targets"),
+            ("carry", "rz_carries"),
+            ("carry", "carries"),
+        ]:
+            is_rz = key.startswith("rz_")
+            bucket = pos_df.filter((pl.col("kind") == kind) & (pl.col("is_redzone") == is_rz))
+            n = bucket.height
+            bucket_rates[key] = round(float(bucket["touchdown"].sum()) / n, 4) if n > 0 else 0.0
+        rates[pos] = bucket_rates
+    return rates
+
+
+def player_redzone_opportunities(play_values: pl.DataFrame, player_id: str) -> dict[str, float]:
+    """One player's red-zone vs other target/carry counts, for :func:`expected_fp`.
+
+    Args:
+        play_values: Output of :func:`pbp_play_value`.
+        player_id: gsis_id to filter to.
+
+    Returns:
+        ``{"rz_targets": n, "targets": n, "rz_carries": n, "carries": n}`` — counts
+        by bucket (not totals; "targets"/"carries" here mean non-red-zone only, so
+        they sum cleanly against :func:`redzone_usage_coefficients`).
+    """
+    mine = play_values.filter(pl.col("player_id") == player_id)
+    if mine.is_empty():
+        return {"rz_targets": 0.0, "targets": 0.0, "rz_carries": 0.0, "carries": 0.0}
+
+    def _count(kind: str, is_rz: bool) -> float:
+        return float(mine.filter((pl.col("kind") == kind) & (pl.col("is_redzone") == is_rz)).height)
+
+    return {
+        "rz_targets": _count("target", True),
+        "targets": _count("target", False),
+        "rz_carries": _count("carry", True),
+        "carries": _count("carry", False),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -326,9 +519,7 @@ def _filter_player_weekly(weekly: pl.DataFrame, gsis_ids: set[str], name: str) -
         filters.append(pl.col("player_id").is_in(sorted(gsis_ids)))
     norm = _normalize_name(name)
     if norm:
-        name_col = pl.col("player_display_name").map_elements(
-            _normalize_name, return_dtype=pl.Utf8
-        )
+        name_col = pl.col("player_display_name").map_elements(_normalize_name, return_dtype=pl.Utf8)
         filters.append(name_col.eq(norm))
     if not filters:
         return weekly.head(0)
@@ -452,9 +643,7 @@ def build_player_sabermetrics(
     )
     weekly_fp = [float(v) for v in season_df["fp_sffm"].to_list()]
 
-    consistency = consistency_profile(
-        weekly_fp, thresholds["startable"], thresholds["replacement"]
-    )
+    consistency = consistency_profile(weekly_fp, thresholds["startable"], thresholds["replacement"])
     consistency["startable_line"] = thresholds["startable"]
     consistency["replacement_line"] = thresholds["replacement"]
     consistency["season"] = latest_season
@@ -464,7 +653,7 @@ def build_player_sabermetrics(
     opp_block = _opportunity_block(season_df, name, team, latest_season)
     age_block = _age_curve_block(player_weekly, position, player_age)
     usage = _usage_quality(season_df, position, _snap_series(name, team, latest_season or 0))
-    xfp_block = _xfp_block(season_df, position, weekly, scoring, warnings)
+    xfp_block = _xfp_block(season_df, position, weekly, scoring, warnings, gsis_ids, latest_season)
 
     return PlayerSabermetrics(
         player_id=player_id,
@@ -505,9 +694,7 @@ def _td_block(
     }
 
 
-def _opportunity_block(
-    season_df: pl.DataFrame, name: str, team: str, season: int | None
-) -> dict:
+def _opportunity_block(season_df: pl.DataFrame, name: str, team: str, season: int | None) -> dict:
     target_series = [float(v) for v in season_df["target_share"].to_list() if v is not None]
     carry_series = [float(v) for v in season_df["carries"].to_list() if v is not None]
     snap_series = _snap_series(name, team, season or 0)
@@ -519,9 +706,7 @@ def _opportunity_block(
     }
 
 
-def _age_curve_block(
-    player_weekly: pl.DataFrame, position: str, player_age: float | None
-) -> dict:
+def _age_curve_block(player_weekly: pl.DataFrame, position: str, player_age: float | None) -> dict:
     seasons = sorted(int(s) for s in player_weekly["season"].unique().to_list())
     if len(seasons) < 2:
         return {
@@ -538,9 +723,7 @@ def _age_curve_block(
             "note": "Player age unavailable; cannot place FP on the age arc.",
         }
     prior_year, current_year = seasons[-2], seasons[-1]
-    prior_fp = float(
-        player_weekly.filter(pl.col("season") == prior_year)["fp_sffm"].sum() or 0.0
-    )
+    prior_fp = float(player_weekly.filter(pl.col("season") == prior_year)["fp_sffm"].sum() or 0.0)
     current_fp = float(
         player_weekly.filter(pl.col("season") == current_year)["fp_sffm"].sum() or 0.0
     )
@@ -564,17 +747,25 @@ def _xfp_block(
     weekly: pl.DataFrame,
     scoring: dict[str, float],
     warnings: list[str],
+    gsis_ids: set[str] | None = None,
+    latest_season: int | None = None,
 ) -> dict:
+    games = int(season_df.height)
+    if games == 0:
+        warnings.append("xFP has zero games of evidence.")
+    actual = round(float(season_df["fp_sffm"].sum() or 0.0), 2)
+
+    redzone = _redzone_xfp(position, gsis_ids, latest_season, actual)
+    if redzone is not None:
+        redzone["evidence_count"] = games
+        return redzone
+
     coeffs = usage_coefficients(weekly, scoring).get(position, {"targets": 0.0, "carries": 0.0})
     opps = {
         "targets": float(season_df["targets"].sum() or 0.0),
         "carries": float(season_df["carries"].sum() or 0.0),
     }
     xfp = expected_fp(opps, coeffs)
-    actual = round(float(season_df["fp_sffm"].sum() or 0.0), 2)
-    games = int(season_df.height)
-    if games == 0:
-        warnings.append("xFP has zero games of evidence.")
     return {
         "xfp": xfp,
         "actual_fp": actual,
@@ -583,6 +774,63 @@ def _xfp_block(
         "evidence_count": games,
         "label": "UNCALIBRATED — usage-value coefficients fit from league aggregates only.",
     }
+
+
+def _redzone_xfp(
+    position: str, gsis_ids: set[str] | None, latest_season: int | None, actual_fp: float
+) -> dict | None:
+    """Red-zone-split xFP for one player, or ``None`` if PBP data isn't available.
+
+    Falls back silently (returning ``None``) on any missing data or fetch error so
+    ``_xfp_block`` can drop back to the flat-coefficient model — this is a strictly
+    additive upgrade, never a hard dependency.
+    """
+    if not gsis_ids or latest_season is None:
+        return None
+    try:
+        from sleeper_ffm.nflverse.loader import load_id_map, load_pbp
+
+        pbp = load_pbp(seasons=[latest_season])
+        if pbp.is_empty():
+            return None
+        play_values = pbp_play_value(pbp, load_scoring())
+        if play_values.is_empty():
+            return None
+
+        id_map = load_id_map()
+        position_by_player = dict(
+            id_map.filter(pl.col("gsis_id").str.starts_with("00-"))
+            .select(["gsis_id", "position"])
+            .drop_nulls()
+            .iter_rows()
+        )
+        coeffs = redzone_usage_coefficients(play_values, position_by_player).get(position)
+        if coeffs is None:
+            return None
+
+        opps = {"rz_targets": 0.0, "targets": 0.0, "rz_carries": 0.0, "carries": 0.0}
+        for gsis_id in gsis_ids:
+            player_opps = player_redzone_opportunities(play_values, gsis_id)
+            for k, v in player_opps.items():
+                opps[k] += v
+        if sum(opps.values()) == 0:
+            return None
+
+        xfp = expected_fp(opps, coeffs)
+        return {
+            "xfp": xfp,
+            "actual_fp": actual_fp,
+            "residual": round(actual_fp - xfp, 2),
+            "coeffs": coeffs,
+            "opportunities": opps,
+            "label": (
+                "REDZONE-CALIBRATED — usage-value coefficients split by red-zone vs "
+                "other opportunity from play-by-play, still a single-season fit."
+            ),
+        }
+    except Exception as exc:
+        log.debug("redzone xfp unavailable: %s", exc)
+        return None
 
 
 def _market_momentum(player_id: str) -> dict:

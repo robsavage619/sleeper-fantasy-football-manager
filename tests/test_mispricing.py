@@ -50,6 +50,7 @@ def _run(our_fp: dict[str, float], generic_fp: float, market: dict | None = None
     with (
         patch("sleeper_ffm.model.mispricing.compute_season_totals", side_effect=fake_totals),
         patch("sleeper_ffm.model.mispricing.market_anchor", return_value=market or {}),
+        patch("sleeper_ffm.model.mispricing._live_player_status", return_value={}),
     ):
         return build_mispricing(seasons=[2025], min_games=6)
 
@@ -106,6 +107,7 @@ def test_below_min_games_excluded() -> None:
     with (
         patch("sleeper_ffm.model.mispricing.compute_season_totals", side_effect=fake_totals),
         patch("sleeper_ffm.model.mispricing.market_anchor", return_value={}),
+        patch("sleeper_ffm.model.mispricing._live_player_status", return_value={}),
     ):
         board = build_mispricing(seasons=[2025], min_games=6)
     assert all(e.player_id != "A" for e in board.entries)
@@ -116,6 +118,7 @@ def test_empty_data_returns_empty_board() -> None:
     with (
         patch("sleeper_ffm.model.mispricing.compute_season_totals", return_value=empty),
         patch("sleeper_ffm.model.mispricing.market_anchor", return_value={}),
+        patch("sleeper_ffm.model.mispricing._live_player_status", return_value={}),
     ):
         board = build_mispricing(seasons=[2025])
     assert board.entries == []
@@ -124,3 +127,53 @@ def test_empty_data_returns_empty_board() -> None:
 
 def test_standard_ppr_has_no_bonus_keys() -> None:
     assert not any(k.startswith("bonus_") for k in STANDARD_PPR)
+
+
+def _run_with_status(our_fp: dict[str, float], generic_fp: float, live_status: dict) -> object:
+    our = _totals([_wr(g, g.upper(), fp) for g, fp in our_fp.items()])
+    generic = _totals([_wr(g, g.upper(), generic_fp) for g in our_fp])
+
+    def fake_totals(*_args, **kwargs):
+        return generic if "scoring" in kwargs else our
+
+    with (
+        patch("sleeper_ffm.model.mispricing.compute_season_totals", side_effect=fake_totals),
+        patch("sleeper_ffm.model.mispricing.market_anchor", return_value={}),
+        patch("sleeper_ffm.model.mispricing._live_player_status", return_value=live_status),
+    ):
+        return build_mispricing(seasons=[2025], min_games=6)
+
+
+def test_aging_qb_downgraded_to_fair_not_buy() -> None:
+    # 'A' has a real +20% scoring edge but is a 41yo QB (peak 29 + 8yr buffer = 37).
+    board = _run_with_status(
+        {"a": 240.0, "b": 200.0, "c": 200.0, "d": 200.0},
+        generic_fp=200.0,
+        live_status={"A": {"age": 41, "team": "CIN"}},
+    )
+    a = next(e for e in board.entries if e.player_id == "A")
+    assert a.verdict == "FAIR"
+    assert a.age == 41
+    assert all(e.player_id != "A" for e in board.buys)
+
+
+def test_free_agent_excluded_from_buys_even_with_real_edge() -> None:
+    board = _run_with_status(
+        {"a": 240.0, "b": 200.0, "c": 200.0, "d": 200.0},
+        generic_fp=200.0,
+        live_status={"A": {"age": 30, "team": None}},
+    )
+    a = next(e for e in board.entries if e.player_id == "A")
+    assert a.verdict == "BUY"  # scoring math still says BUY...
+    assert a.rosterable is False
+    assert all(e.player_id != "A" for e in board.buys)  # ...but excluded from the shortlist
+
+
+def test_prime_age_buy_is_unaffected() -> None:
+    board = _run_with_status(
+        {"a": 240.0, "b": 200.0, "c": 200.0, "d": 200.0},
+        generic_fp=200.0,
+        live_status={"A": {"age": 24, "team": "NYJ"}},
+    )
+    assert board.buys[0].player_id == "A"
+    assert board.buys[0].verdict == "BUY"

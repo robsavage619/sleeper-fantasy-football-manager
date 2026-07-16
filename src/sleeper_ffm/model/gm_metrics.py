@@ -7,8 +7,11 @@ Slice A (production-grade):
     - FAAB remaining: league waiver budget minus each roster's ``waiver_budget_used``.
 
 Slice B (labelled, carries evidence_count):
-    - Trade ledger P&L: retrospective FPAR of assets acquired vs surrendered per trade. Picks are
-      valued via ``dynasty.value_pick``; players via current FPAR. Production-based, UNCALIBRATED.
+    - Trade ledger P&L: realized value of assets acquired vs surrendered per trade. Players are
+      valued by league-scored FP actually delivered *after* the trade (not today's snapshot
+      value, which would conflate "the trade was smart" with "the player got better since").
+      Picks still use ``dynasty.value_pick`` (no production exists to sum until they're
+      drafted) — a known, labelled limitation, not a calibration gap.
 
 Metric math lives in pure helpers (unit-tested against a frozen fixture); ``build_gm_metrics`` is
 a thin live-data orchestrator that never fabricates a value to cover missing data.
@@ -20,6 +23,8 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+
+import polars as pl
 
 from sleeper_ffm.config import DATA_DIR, DEFAULT_VALUE_SEASON, LEAGUE_ID
 from sleeper_ffm.model.owner_skill import (
@@ -152,6 +157,104 @@ def trade_ledger_pnl(trades: list[dict], value_by_asset: dict[str, float]) -> di
     }
 
 
+_PICK_KEY_RE = re.compile(r"^\d{4} R\d+$")
+
+
+def is_pick_key(asset_key: str) -> bool:
+    """Whether an asset key is a normalized pick label (``"2026 R1"``), not a player name."""
+    return bool(_PICK_KEY_RE.match(asset_key))
+
+
+def realized_player_production(
+    player_name: str, since_season: int, since_week: int, weekly_scored: pl.DataFrame
+) -> float | None:
+    """Sum a player's league-scored FP from strictly after ``(since_season, since_week)``.
+
+    This is the actual production a traded player delivered *after* the trade — the
+    honest answer to "who won this trade", unlike pricing every asset at its current
+    market/model value (which conflates "the trade was smart" with "the player got
+    better since," regardless of when the trade happened).
+
+    Args:
+        player_name: Display name as stored in trade history.
+        since_season: Season the trade happened in.
+        since_week: Week the trade happened in (weeks in that season up to and
+            including this one are excluded — only production after the trade counts).
+        weekly_scored: League-scored weekly frame (``valuation.score_weekly`` output)
+            spanning at least ``since_season`` through the latest completed season.
+
+    Returns:
+        Summed FP, or ``None`` if the player never appears in ``weekly_scored`` at all
+        (name unresolved — distinct from a real zero for a player who simply never
+        played again after the trade).
+    """
+    mine = weekly_scored.filter(pl.col("player_display_name") == player_name)
+    if mine.is_empty():
+        return None
+    after = mine.filter(
+        (pl.col("season") > since_season)
+        | ((pl.col("season") == since_season) & (pl.col("week") > since_week))
+    )
+    return round(float(after["fp_sffm"].sum() or 0.0), 2)
+
+
+def realized_trade_ledger_pnl(
+    trades: list[dict], weekly_scored: pl.DataFrame, pick_values: dict[str, float]
+) -> dict[str, float]:
+    """Net *realized* value of assets acquired vs surrendered, valued as of the trade date.
+
+    Players are valued by fantasy points actually delivered after the trade
+    (:func:`realized_player_production`); picks — which have no production to sum
+    until they're drafted — still use current model pick value, a known limitation.
+
+    Args:
+        trades: ``[{"season", "week", "received": [...], "sent": [...]}, ...]``, from
+            :func:`_trades_by_current_roster`.
+        weekly_scored: League-scored weekly frame spanning the trade history.
+        pick_values: ``{"<season> R<round>": value}`` current model pick prices.
+
+    Returns:
+        Same shape as :func:`trade_ledger_pnl`.
+    """
+    value_in = 0.0
+    value_out = 0.0
+    resolved = 0
+    unresolved = 0
+    for trade in trades:
+        try:
+            since_season = int(trade["season"])
+            since_week = int(trade["week"])
+        except (KeyError, TypeError, ValueError):
+            unresolved += len(trade.get("received", [])) + len(trade.get("sent", []))
+            continue
+
+        for side, sign in (("received", 1), ("sent", -1)):
+            for asset in trade.get(side, []):
+                if is_pick_key(asset):
+                    value = pick_values.get(asset)
+                else:
+                    value = realized_player_production(
+                        asset, since_season, since_week, weekly_scored
+                    )
+                if value is None:
+                    unresolved += 1
+                    continue
+                resolved += 1
+                if sign > 0:
+                    value_in += value
+                else:
+                    value_out += value
+
+    return {
+        "value_in": round(value_in, 2),
+        "value_out": round(value_out, 2),
+        "net": round(value_in - value_out, 2),
+        "trade_count": len(trades),
+        "resolved": resolved,
+        "unresolved": unresolved,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Response model + orchestrator
 # ---------------------------------------------------------------------------
@@ -228,6 +331,37 @@ def _lineup_efficiency(
     return {rid: (sum(v) / len(v), len(v)) for rid, v in acc.items() if v}
 
 
+def _weekly_scored_for_trades(trades_by_roster: dict[int, list[dict]]) -> pl.DataFrame:
+    """Score every season the trade history actually spans, no wider.
+
+    Scoring every cached season (back to 2014) would price a decade of irrelevant
+    history; this narrows the pull to ``[earliest trade season, latest completed]``.
+    """
+    from sleeper_ffm.model.valuation import score_weekly
+
+    seasons_seen: set[int] = set()
+    for trades in trades_by_roster.values():
+        for trade in trades:
+            try:
+                seasons_seen.add(int(trade["season"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+    if not seasons_seen:
+        # score_weekly(seasons=[]) falls back to the default season (falsy-list quirk),
+        # not truly empty — build an explicitly empty frame instead.
+        return pl.DataFrame(
+            schema={
+                "player_display_name": pl.Utf8,
+                "season": pl.Int64,
+                "week": pl.Int64,
+                "fp_sffm": pl.Float64,
+            }
+        )
+
+    start = min(seasons_seen)
+    return score_weekly(seasons=list(range(start, DEFAULT_VALUE_SEASON + 1)))
+
+
 def build_gm_metrics() -> list[OwnerGMMetrics]:
     """Compute the GM sabermetric suite for every current roster in the league.
 
@@ -262,8 +396,9 @@ def build_gm_metrics() -> list[OwnerGMMetrics]:
         weekly_matchups, skill_roster_owner, player_positions, roster_positions
     )
 
-    value_by_asset, ledger_warnings = _asset_values(sleeper_players)
+    pick_values, ledger_warnings = _pick_values()
     trades_by_roster = _trades_by_current_roster()
+    weekly_scored = _weekly_scored_for_trades(trades_by_roster)
 
     results: list[OwnerGMMetrics] = []
     for r in rosters:
@@ -306,10 +441,11 @@ def build_gm_metrics() -> list[OwnerGMMetrics]:
             warnings.append("waiver_budget_used missing from roster settings.")
 
         roster_trades = trades_by_roster.get(rid, [])
-        ledger: dict = dict(trade_ledger_pnl(roster_trades, value_by_asset))
+        ledger: dict = dict(realized_trade_ledger_pnl(roster_trades, weekly_scored, pick_values))
         ledger["label"] = (
-            "UNCALIBRATED — production-based retrospective; players valued at current FPAR, "
-            "picks at model pick value; historical trade partners resolved by name."
+            "REALIZED-PRODUCTION — players valued by league-scored FP actually delivered "
+            "after the trade; picks still priced at current model value (no production to "
+            "sum until drafted); historical trade partners resolved by name."
         )
         ledger["evidence_count"] = ledger["trade_count"]
         warnings.extend(ledger_warnings)
@@ -333,27 +469,18 @@ def build_gm_metrics() -> list[OwnerGMMetrics]:
     return results
 
 
-def _asset_values(sleeper_players: dict[str, dict]) -> tuple[dict[str, float], list[str]]:
-    """Build a ``{asset_key: value}`` map keyed by player name and "<season> R<round>" pick label.
+def _pick_values() -> tuple[dict[str, float], list[str]]:
+    """Build a ``{"<season> R<round>": value}`` map for future-pick trade assets.
 
-    Player keys are full names (history stores names, not ids). Pick keys match the history
-    format ``"2026 R1"``. Returns the map plus any data-quality warnings.
+    Players are no longer priced here — the live trade ledger values them by realized
+    post-trade production (:func:`realized_player_production`), which needs no static
+    map. Picks still have nothing to sum production from until they're drafted, so
+    they stay on current model pick value — a known limitation, not a calibration.
     """
     from sleeper_ffm.market.blend import pick_market_available
     from sleeper_ffm.model.dynasty import PickAsset, value_pick
-    from sleeper_ffm.model.valuation import build_player_assets
 
-    values: dict[str, float] = {}
     warnings: list[str] = []
-    try:
-        for asset in build_player_assets(
-            seasons=[DEFAULT_VALUE_SEASON], sleeper_players=sleeper_players
-        ):
-            values[asset.name] = asset.current_fpar
-    except Exception as exc:
-        log.warning("trade ledger: player valuation failed (%s)", exc)
-        warnings.append("Player FPAR unavailable; trade ledger resolves picks only.")
-
     if not pick_market_available():
         warnings.append(
             "FantasyCalc pick market unavailable; pick sides of the trade ledger use the "
@@ -362,6 +489,7 @@ def _asset_values(sleeper_players: dict[str, dict]) -> tuple[dict[str, float], l
 
     # Pre-value any pick label appearing in trades is done lazily at lookup; here we seed common
     # season/round combinations so exact-string keys resolve.
+    values: dict[str, float] = {}
     for season in range(DEFAULT_VALUE_SEASON, DEFAULT_VALUE_SEASON + 4):
         for rnd in (1, 2, 3, 4):
             key = f"{season} R{rnd}"
@@ -372,10 +500,11 @@ def _asset_values(sleeper_players: dict[str, dict]) -> tuple[dict[str, float], l
 
 
 def _trades_by_current_roster() -> dict[int, list[dict]]:
-    """Collect each current roster's trades as ``{"received", "sent"}`` asset-key lists.
+    """Collect each current roster's trades as ``{"season", "week", "received", "sent"}`` dicts.
 
     Uses ``build_league_history`` (which already attributes historical trades to the current
-    roster and stores assets as display names / "<season> R<round>" pick labels).
+    roster and stores assets as display names / "<season> R<round>" pick labels). Season/week
+    are kept so a trade's assets can be valued by production *after* the trade, not today.
     """
     from sleeper_ffm.model.owner_history import build_league_history
 
@@ -389,6 +518,8 @@ def _trades_by_current_roster() -> dict[int, list[dict]]:
     for owner in history.owners:
         trades_by_roster[owner.roster_id] = [
             {
+                "season": trade.season,
+                "week": trade.week,
                 "received": [_pick_key(a) for a in trade.received if "FAAB" not in a],
                 "sent": [_pick_key(a) for a in trade.sent if "FAAB" not in a],
             }

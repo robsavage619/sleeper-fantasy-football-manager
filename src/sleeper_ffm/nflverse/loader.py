@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -282,6 +282,62 @@ def load_injuries(
     return pl.concat(frames) if frames else pl.DataFrame()
 
 
+_PBP_COLUMNS = [
+    "season",
+    "week",
+    "game_id",
+    "season_type",
+    "posteam",
+    "defteam",
+    "play_type",
+    "pass",
+    "rush",
+    "complete_pass",
+    "receiver_player_id",
+    "rusher_player_id",
+    "passer_player_id",
+    "yardline_100",
+    "touchdown",
+    "pass_touchdown",
+    "rush_touchdown",
+    "air_yards",
+    "yards_gained",
+    "epa",
+]
+
+
+def load_pbp(
+    seasons: list[int] | None = None,
+    force: bool = False,
+) -> pl.DataFrame:
+    """Load play-by-play data, trimmed to the columns red-zone/xFP calibration needs.
+
+    Full nflverse PBP carries 370+ columns (participation, formations, NGS charting);
+    fetching only :data:`_PBP_COLUMNS` and skipping the participation merge
+    (``include_participation=False``) keeps each season's pull to ~20 columns instead
+    of downloading and caching data nothing here reads.
+    """
+    seasons = seasons or [_CURRENT_SEASON]
+    frames: list[pl.DataFrame] = []
+    for season in seasons:
+        dest = NFLVERSE_DIR / "pbp" / f"{season}.parquet"
+        if dest.exists() and not force:
+            frames.append(pl.read_parquet(dest))
+            continue
+        try:
+            df_raw = nfl.import_pbp_data(
+                [season], columns=_PBP_COLUMNS, include_participation=False, downcast=True
+            )
+            df = cast(pl.DataFrame, pl.from_pandas(df_raw))
+        except (HTTPError, URLError, OSError, ValueError) as exc:
+            log.warning("pbp/%d: unavailable from nflverse: %s", season, exc)
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        df.write_parquet(dest)
+        frames.append(df)
+    return pl.concat(frames) if frames else pl.DataFrame()
+
+
 def load_depth_charts(
     seasons: list[int] | None = None,
     force: bool = False,
@@ -343,34 +399,84 @@ def load_seasonal(
 # ---------------------------------------------------------------------------
 
 
+def _load_season_aware_single_file(
+    dest: Path,
+    seasons: list[int],
+    force: bool,
+    fetch: Any,
+) -> pl.DataFrame:
+    """Load a single-file (not per-season) nflverse dataset, filling missing seasons.
+
+    Unlike ``load_weekly``/``load_injuries`` (one parquet per season), schedules and
+    rosters are cached in one shared file. A naive "return cache if it exists" check
+    silently pins that file to whichever seasons were requested by the first caller
+    — later callers asking for other seasons get nothing for them. This fetches only
+    the seasons missing from the cache and merges them in. Freshness for the current,
+    in-progress season is driven by an explicit ``force=True`` call (the admin refresh
+    job), same convention as ``load_weekly``.
+
+    Args:
+        dest: Shared parquet path.
+        seasons: Seasons the caller wants present.
+        force: Re-download everything, ignoring cache.
+        fetch: ``list[int] -> pandas.DataFrame`` fetch function (e.g. ``nfl.import_schedules``).
+
+    Returns:
+        DataFrame covering at least the requested seasons.
+    """
+    cached = pl.read_parquet(dest) if dest.exists() and not force else None
+    cached_seasons: set[int] = (
+        set(cached["season"].unique().to_list())
+        if cached is not None and "season" in cached.columns
+        else set()
+    )
+
+    missing = sorted(set(seasons) - cached_seasons)
+    if cached is not None and not force and not missing:
+        return cached
+
+    fetch_seasons = sorted(set(seasons)) if force else missing
+    log.info("%s: fetching seasons %s...", dest.stem, fetch_seasons)
+    fresh = cast(pl.DataFrame, pl.from_pandas(fetch(fetch_seasons)))
+
+    if cached is not None and not force:
+        keep = cached.filter(~pl.col("season").is_in(fetch_seasons))
+        merged = pl.concat([keep, fresh], how="diagonal_relaxed") if not keep.is_empty() else fresh
+    else:
+        merged = fresh
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write_parquet(merged, dest)
+    return merged
+
+
 def load_schedules(
     seasons: list[int] | None = None,
     force: bool = False,
 ) -> pl.DataFrame:
-    """Load NFL game schedules."""
+    """Load NFL game schedules (spread/total lines, weather, venue).
+
+    Season-aware: a season missing from the cache is fetched and merged in rather
+    than silently omitted. The current season is always refreshed to pick up
+    updated odds/results as the week progresses.
+    """
     seasons = seasons or list(range(_FIRST_SEASON, _CURRENT_SEASON + 1))
     dest = NFLVERSE_DIR / "schedules.parquet"
-    if dest.exists() and not force:
-        return pl.read_parquet(dest)
-    df = cast(pl.DataFrame, pl.from_pandas(nfl.import_schedules(seasons)))
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    df.write_parquet(dest)
-    return df
+    return _load_season_aware_single_file(dest, seasons, force, nfl.import_schedules)
 
 
 def load_rosters(
     seasons: list[int] | None = None,
     force: bool = False,
 ) -> pl.DataFrame:
-    """Load weekly roster snapshots (depth/injury/team context)."""
+    """Load weekly roster snapshots (depth/injury/team context).
+
+    Season-aware: a season missing from the cache is fetched and merged in rather
+    than silently omitted.
+    """
     seasons = seasons or list(range(_FIRST_SEASON, _CURRENT_SEASON + 1))
     dest = NFLVERSE_DIR / "rosters.parquet"
-    if dest.exists() and not force:
-        return pl.read_parquet(dest)
-    df = cast(pl.DataFrame, pl.from_pandas(nfl.import_weekly_rosters(seasons)))
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    df.write_parquet(dest)
-    return df
+    return _load_season_aware_single_file(dest, seasons, force, nfl.import_weekly_rosters)
 
 
 # ---------------------------------------------------------------------------

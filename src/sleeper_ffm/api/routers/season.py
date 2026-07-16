@@ -10,6 +10,7 @@ import time
 from fastapi import APIRouter, Query
 
 from sleeper_ffm.config import DEFAULT_VALUE_SEASON, MY_ROSTER_ID
+from sleeper_ffm.model.faab_market import build_faab_market
 from sleeper_ffm.model.trends import compute_trends
 from sleeper_ffm.season.startsit import build_startsit
 from sleeper_ffm.season.waivers import analyze_waivers
@@ -50,6 +51,12 @@ def waivers(top: int = Query(default=25)) -> list[dict]:
             my_roster_ids.update(roster.players)
             protected_ids.update(roster.starters)
 
+    try:
+        faab_market = build_faab_market()
+    except Exception as exc:
+        log.warning("waivers: faab market unavailable: %s", exc)
+        faab_market = None
+
     candidates = analyze_waivers(
         sleeper_players=sleeper_players,
         trending_adds=trending_adds,
@@ -57,6 +64,7 @@ def waivers(top: int = Query(default=25)) -> list[dict]:
         rostered_ids=rostered_ids,
         my_roster_ids=my_roster_ids,
         protected_ids=protected_ids,
+        faab_market=faab_market,
     )
 
     return [dataclasses.asdict(c) for c in candidates[:top]]

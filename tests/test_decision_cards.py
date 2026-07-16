@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sleeper_ffm.act.plans import build_transaction_plan
+from sleeper_ffm.model.faab_market import FaabMarket, PositionBidStats
 from sleeper_ffm.season.waivers import analyze_waivers
 from sleeper_ffm.sleeper.models import TrendingPlayer
 
@@ -34,6 +35,31 @@ def test_waiver_candidate_includes_decision_card_fields() -> None:
     assert candidates[0].bid_min <= candidates[0].faab_estimate <= candidates[0].bid_max
     assert candidates[0].urgency in {"LOW", "MED", "HIGH"}
     assert candidates[0].decision
+
+
+def test_waiver_candidate_uses_faab_market_when_available() -> None:
+    players = {
+        "add": {"position": "RB", "age": 22, "full_name": "Upside Back", "team": "FA"},
+    }
+    market = FaabMarket(
+        seasons_covered=["2025"],
+        bids=[],
+        by_position={
+            "RB": PositionBidStats(position="RB", n=10, p25=5.0, p50=15.0, p75=40.0, p90=90.0)
+        },
+        by_owner={},
+    )
+
+    candidates = analyze_waivers(
+        sleeper_players=players,
+        trending_adds=[TrendingPlayer(player_id="add", count=1000)],
+        trending_drops=[],
+        rostered_ids=set(),
+        faab_market=market,
+    )
+
+    # Priority is capped at 100 for this trend volume -> p90 tier -> 90 + 1.
+    assert candidates[0].faab_estimate == 91
 
 
 def test_transaction_plan_is_non_mutating_and_confirm_gated() -> None:
