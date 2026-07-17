@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Run tests
+        run: uv run pytest tests/
+
+      - name: Lint
+        run: uv run ruff check
+
+      - name: Type check
+        run: uv run pyright src/
+
+      - name: Eval smoke run (tier 1, train split)
+        run: uv run sffm eval run --tier 1 --split train
