@@ -13,7 +13,7 @@
   <a href="https://pola.rs/"><img src="https://img.shields.io/badge/data-Polars-cd792c" alt="Polars"/></a>
   <a href="frontend/"><img src="https://img.shields.io/badge/frontend-React%2019-61dafb" alt="React 19"/></a>
   <a href="frontend/"><img src="https://img.shields.io/badge/build-Vite%208-646cff" alt="Vite 8"/></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-275%20passing-success" alt="275 tests"/></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-334%20passing-success" alt="334 tests"/></a>
   <a href="evals/"><img src="https://img.shields.io/badge/eval%20scenarios-121-blueviolet" alt="121 eval scenarios"/></a>
   <a href=".claude/skills/war-room-reason/SKILL.md"><img src="https://img.shields.io/badge/reasoning-Claude%20Code-8a63d2" alt="Claude Code"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-source--available-lightgrey" alt="license"/></a>
@@ -168,7 +168,7 @@ One command refreshes everything that moves in-season — `POST /admin/refresh` 
 
 ## Under the hood
 
-**Backend** — Python 3.12, FastAPI, Polars, `uv`, `ruff`, `pyright`. About 21K lines across **34 model engines** and **36 API routers**, with **275 tests**. The statistical cores are unit-tested without a network. On top of that sits the **121-scenario eval harness** ([Engine evaluation](#engine-evaluation--tuning-the-reasoning-loop-against-ground-truth) above) for the calibration checks unit tests can't cover. A `typer` CLI (`sffm <verb>`) drives ingestion, scoring, evaluation, and the war-room loop.
+**Backend** — Python 3.12, FastAPI, Polars, `uv`, `ruff`, `pyright`. About 21K lines across **34 model engines** and **36 API routers**, with **334 tests**. The statistical cores are unit-tested without a network. On top of that sits the **121-scenario eval harness** ([Engine evaluation](#engine-evaluation--tuning-the-reasoning-loop-against-ground-truth) above) for the calibration checks unit tests can't cover. A `typer` CLI (`sffm <verb>`) drives ingestion, scoring, evaluation, and the war-room loop.
 
 **Frontend** — React 19, TypeScript 6, Vite 8, Tailwind 4, TanStack Query, Zustand, Framer Motion. A single-page dashboard with 12 routes, wired to the live backend.
 
@@ -200,7 +200,7 @@ evals/           # scenario JSON (train/holdout), tier-3 rubric, run ledger
 ```bash
 # Backend
 uv sync
-uv run pytest                 # 275 tests
+uv run pytest                 # 334 tests
 uv run sffm eval run --tier 1 --split train   # 87 deterministic calibration scenarios
 uv run sffm ingest            # seed nflverse parquet (2014–2025) → data/nflverse/
 uv run sffm serve             # FastAPI on http://127.0.0.1:8000
@@ -214,8 +214,13 @@ Quick CLI sanity checks — no server needed:
 
 ```bash
 uv run sffm league                                       # verified live league facts
+uv run sffm history                                      # dynasty season chain (previous_league_id walk)
 uv run sffm score-line --rec 8 --rec-yd 120 --rec-td 1   # a stat line under our rules
-uv run sffm roster                                       # dynasty values for my roster
+uv run sffm roster                                       # league-wide owner behavioral profiles, not roster values
+uv run sffm draft --prompt-only                          # live draft board + Claude Code pick prompt
+uv run sffm trade --give <player_id> --get <player_id>   # Claude Code prompt for a trade offer
+uv run sffm startsit                                     # optimal lineup for the current week + reasoning prompt
+uv run sffm trends --direction rising                    # target-share / FPAR breakout & decline signals
 ```
 
 The AI loop: with the server up, run the `/war-room-reason` skill in Claude Code (it fetches `GET /ai/briefing`, reasons, and posts one verified findings document back), then open the dashboard.
