@@ -25,6 +25,7 @@ def faab_market() -> dict:
             "by_position": {k: dataclasses.asdict(v) for k, v in market.by_position.items()},
             "by_owner": {k: dataclasses.asdict(v) for k, v in market.by_owner.items()},
             "warnings": market.warnings,
+            "data_quality": "DEGRADED" if market.warnings else "FULL",
         }
     except Exception as exc:
         log.exception("faab market failed")

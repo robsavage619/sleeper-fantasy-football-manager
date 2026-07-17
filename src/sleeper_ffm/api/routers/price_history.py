@@ -27,6 +27,8 @@ def movers(direction: str = _DIRECTION_QUERY, limit: int = _LIMIT_QUERY) -> dict
             "snapshot_dates": index.snapshot_dates,
             "direction": direction,
             "movers": [dataclasses.asdict(t) for t in trends],
+            "warnings": index.warnings,
+            "data_quality": "DEGRADED" if index.warnings else "FULL",
         }
     except Exception as exc:
         log.exception("price history movers failed")
@@ -39,7 +41,12 @@ def player_trend(sleeper_id: str) -> dict:
     try:
         index = load_price_history()
         trend = player_price_trend(sleeper_id, index)
-        return {"snapshot_dates": index.snapshot_dates, **dataclasses.asdict(trend)}
+        return {
+            "snapshot_dates": index.snapshot_dates,
+            **dataclasses.asdict(trend),
+            "warnings": index.warnings,
+            "data_quality": "DEGRADED" if index.warnings else "FULL",
+        }
     except Exception as exc:
         log.exception("price history trend failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc

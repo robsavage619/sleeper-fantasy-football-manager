@@ -315,9 +315,21 @@ def load_injuries(
             df = cast(pl.DataFrame, pl.from_pandas(nfl.import_injuries([season])))
         except (HTTPError, URLError, OSError) as exc:
             log.warning("injuries/%d: unavailable from nflverse: %s", season, exc)
+            if dest.exists():
+                mtime = datetime.fromtimestamp(dest.stat().st_mtime, UTC).date().isoformat()
+                _record_stale(
+                    "nflverse_injuries",
+                    f"season {season} fetch failed; serving cache from {mtime}",
+                )
+                frames.append(pl.read_parquet(dest))
+            else:
+                _record_stale(
+                    "nflverse_injuries", f"season {season} fetch failed; no cache available"
+                )
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
         df.write_parquet(dest)
+        _clear_stale("nflverse_injuries")
         frames.append(df)
     return pl.concat(frames) if frames else pl.DataFrame()
 
@@ -371,9 +383,18 @@ def load_pbp(
             df = cast(pl.DataFrame, pl.from_pandas(df_raw))
         except (HTTPError, URLError, OSError, ValueError) as exc:
             log.warning("pbp/%d: unavailable from nflverse: %s", season, exc)
+            if dest.exists():
+                mtime = datetime.fromtimestamp(dest.stat().st_mtime, UTC).date().isoformat()
+                _record_stale(
+                    "nflverse_pbp", f"season {season} fetch failed; serving cache from {mtime}"
+                )
+                frames.append(pl.read_parquet(dest))
+            else:
+                _record_stale("nflverse_pbp", f"season {season} fetch failed; no cache available")
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
         df.write_parquet(dest)
+        _clear_stale("nflverse_pbp")
         frames.append(df)
     return pl.concat(frames) if frames else pl.DataFrame()
 
@@ -394,9 +415,21 @@ def load_depth_charts(
             df = cast(pl.DataFrame, pl.from_pandas(nfl.import_depth_charts([season])))
         except (HTTPError, URLError, OSError) as exc:
             log.warning("depth_charts/%d: unavailable from nflverse: %s", season, exc)
+            if dest.exists():
+                mtime = datetime.fromtimestamp(dest.stat().st_mtime, UTC).date().isoformat()
+                _record_stale(
+                    "nflverse_depth_charts",
+                    f"season {season} fetch failed; serving cache from {mtime}",
+                )
+                frames.append(pl.read_parquet(dest))
+            else:
+                _record_stale(
+                    "nflverse_depth_charts", f"season {season} fetch failed; no cache available"
+                )
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
         df.write_parquet(dest)
+        _clear_stale("nflverse_depth_charts")
         frames.append(df)
     return pl.concat(frames) if frames else pl.DataFrame()
 

@@ -20,7 +20,10 @@ _SIMS_QUERY = Query(default=4000, ge=200, le=50000)
 def season_sim(n_sims: int = _SIMS_QUERY) -> dict:
     """Return per-team playoff/title odds from a Monte-Carlo season simulation."""
     try:
-        return dataclasses.asdict(build_season_sim(n_sims=n_sims))
+        sim = build_season_sim(n_sims=n_sims)
+        result = dataclasses.asdict(sim)
+        result["data_quality"] = "DEGRADED" if sim.warnings else "FULL"
+        return result
     except Exception as exc:
         log.exception("season sim failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc

@@ -21,7 +21,10 @@ _SEASON_QUERY = Query(default=None)
 def opponent_adjusted(season: int | None = _SEASON_QUERY, top: int = _TOP_QUERY) -> dict:
     """Return players whose raw FP was most inflated/deflated by schedule strength."""
     try:
-        return dataclasses.asdict(build_opponent_adjusted(season=season, top=top))
+        board = build_opponent_adjusted(season=season, top=top)
+        result = dataclasses.asdict(board)
+        result["data_quality"] = "DEGRADED" if board.warnings else "FULL"
+        return result
     except Exception as exc:
         log.exception("opponent-adjusted board failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc

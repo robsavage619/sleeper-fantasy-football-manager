@@ -20,7 +20,10 @@ _TOP_QUERY = Query(default=15, ge=1, le=100)
 def regression(top: int = _TOP_QUERY) -> dict:
     """Return TD-over-expected regression candidates (sell-high and buy-low)."""
     try:
-        return dataclasses.asdict(build_regression(top=top))
+        board = build_regression(top=top)
+        result = dataclasses.asdict(board)
+        result["data_quality"] = "DEGRADED" if board.warnings else "FULL"
+        return result
     except Exception as exc:
         log.exception("regression board failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc

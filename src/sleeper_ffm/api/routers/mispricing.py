@@ -27,7 +27,9 @@ def mispricing(
     """Return the scoring-leverage mispricing board (buy/sell vs the generic market)."""
     try:
         board = build_mispricing(seasons=seasons, min_games=min_games, top=top)
-        return dataclasses.asdict(board)
+        result = dataclasses.asdict(board)
+        result["data_quality"] = "DEGRADED" if board.warnings else "FULL"
+        return result
     except Exception as exc:
         log.exception("mispricing board failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc

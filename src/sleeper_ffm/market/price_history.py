@@ -72,6 +72,7 @@ class PriceHistoryIndex:
     series: dict[str, list[PricePoint]]
     meta: dict[str, PlayerMeta]
     snapshot_dates: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 def _archive_files() -> list[tuple[date, Path]]:
@@ -101,11 +102,13 @@ def load_price_history() -> PriceHistoryIndex:
     series: dict[str, list[PricePoint]] = {}
     meta: dict[str, PlayerMeta] = {}
     dates: list[str] = []
+    warnings: list[str] = []
     for d, path in _archive_files():
         try:
             raw = json.loads(path.read_text())
         except (OSError, json.JSONDecodeError) as exc:
             log.warning("price_history: %s unreadable: %s", path.name, exc)
+            warnings.append(f"snapshot {path.name} unreadable: {exc}")
             continue
         dates.append(d.isoformat())
         for entry in raw:
@@ -123,7 +126,7 @@ def load_price_history() -> PriceHistoryIndex:
                     position=player.get("position") or "?",
                     team=player.get("maybeTeam") or "FA",
                 )
-    return PriceHistoryIndex(series=series, meta=meta, snapshot_dates=dates)
+    return PriceHistoryIndex(series=series, meta=meta, snapshot_dates=dates, warnings=warnings)
 
 
 def player_price_trend(

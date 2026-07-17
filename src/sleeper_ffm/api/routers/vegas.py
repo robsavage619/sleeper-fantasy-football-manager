@@ -39,6 +39,7 @@ def vegas_environment(
             "league_avg_implied_total": env.league_avg_implied_total,
             "games": [dataclasses.asdict(g) for g in games],
             "warnings": env.warnings,
+            "data_quality": "DEGRADED" if env.warnings else "FULL",
         }
     except Exception as exc:
         log.exception("vegas environment failed")
@@ -52,7 +53,12 @@ def vegas_playoffs(season: int | None = _SEASON_QUERY) -> dict:
         s = season or CURRENT_LEAGUE_YEAR
         env = build_environment_index(s)
         teams = sorted({g.team for g in env.games})
-        return {"season": s, "teams": [playoff_environment(s, t) for t in teams]}
+        return {
+            "season": s,
+            "teams": [playoff_environment(s, t) for t in teams],
+            "warnings": env.warnings,
+            "data_quality": "DEGRADED" if env.warnings else "FULL",
+        }
     except Exception as exc:
         log.exception("vegas playoffs failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
