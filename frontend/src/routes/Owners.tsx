@@ -11,6 +11,7 @@ import { Circle, Line } from '@visx/shape'
 import { Text } from '@visx/text'
 import {
   api,
+  type FaabEntry,
   type OwnerProfile,
   type OwnerSkillIndex,
   type OwnerDossier,
@@ -21,6 +22,7 @@ import {
   type TransactionValue,
   type DraftProfile,
 } from '@/lib/api'
+import { POS_COLOR } from '@/components/viz'
 
 function useMyRosterId(): number | null {
   const { data } = useQuery({ queryKey: ['me'], queryFn: api.me, staleTime: 5 * 60 * 1000 })
@@ -33,7 +35,6 @@ const C = {
   cyan: '#00b8cc', amber: '#d4860c', green: '#1a9b5e', red: '#c93328',
   text: '#e8eef6', muted: '#6a8098', dim: '#3d5070', faint: '#2a4a60',
 }
-const POS_COLOR: Record<string, string> = { QB: '#e05030', RB: '#24a870', WR: '#3a8cd4', TE: '#c8820a' }
 
 const ARCH_STYLE: Record<OwnerProfile['archetype'], { color: string; bg: string; border: string }> = {
   REBUILDER: { color: '#d4860c', bg: 'rgba(212,134,12,0.1)', border: 'rgba(212,134,12,0.25)' },
@@ -178,8 +179,8 @@ function CardMetricRow({ label, value, barPct, barColor, note }: {
   )
 }
 
-function OwnerCard({ profile, index, skill, history, onClick }: {
-  profile: OwnerProfile; index: number; skill?: OwnerSkillIndex; history?: OwnerHistory; onClick: () => void
+function OwnerCard({ profile, index, skill, history, faab, onClick }: {
+  profile: OwnerProfile; index: number; skill?: OwnerSkillIndex; history?: OwnerHistory; faab?: FaabEntry; onClick: () => void
 }) {
   const [hovered, setHovered] = useState(false)
   const displayName = profile.display_name ?? profile.user_id
@@ -222,6 +223,7 @@ function OwnerCard({ profile, index, skill, history, onClick }: {
         <div style={{ display: 'flex', gap: 10 }}>
           <span style={{ fontFamily: mono, fontSize: 11, color: C.amber }}>{profile.picks_owned} picks</span>
           {history && <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>{history.trade_count} trades</span>}
+          {faab && <span style={{ fontFamily: mono, fontSize: 11, color: C.green }}>${faab.faab_remaining} FAAB</span>}
         </div>
         <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>{profile.player_count}p · {profile.taxi_count} taxi</span>
       </div>
@@ -1507,9 +1509,11 @@ export function Owners() {
   const { data: profiles, isLoading, error } = useQuery({ queryKey: ['ownerProfiles'], queryFn: api.ownerProfiles })
   const { data: skillData } = useQuery({ queryKey: ['ownerSkill'], queryFn: api.ownerSkill })
   const { data: historyData } = useQuery({ queryKey: ['leagueHistory'], queryFn: api.leagueHistory })
+  const { data: faabData } = useQuery({ queryKey: ['league-faab'], queryFn: api.faab, staleTime: 5 * 60 * 1000 })
 
   const skillByRosterId = new Map(skillData?.map(s => [s.roster_id, s]) ?? [])
   const historyByRosterId = new Map(historyData?.owners.map(o => [o.roster_id, o]) ?? [])
+  const faabByRosterId = new Map(faabData?.map(f => [f.roster_id, f]) ?? [])
   const selectedProfile = profiles?.find(p => p.roster_id === selectedRosterId) ?? null
 
   if (isLoading) {
@@ -1555,9 +1559,17 @@ export function Owners() {
         )}
       </div>
 
-      <div className="px-5 pb-5 grid grid-cols-2 gap-4">
+      <div className="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
         {(profiles ?? []).map((profile, i) => (
-          <OwnerCard key={profile.user_id} profile={profile} index={i} skill={skillByRosterId.get(profile.roster_id)} history={historyByRosterId.get(profile.roster_id)} onClick={() => setSelectedRosterId(profile.roster_id)} />
+          <OwnerCard
+            key={profile.user_id}
+            profile={profile}
+            index={i}
+            skill={skillByRosterId.get(profile.roster_id)}
+            history={historyByRosterId.get(profile.roster_id)}
+            faab={faabByRosterId.get(profile.roster_id)}
+            onClick={() => setSelectedRosterId(profile.roster_id)}
+          />
         ))}
       </div>
 

@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { motion } from 'framer-motion'
 import { api } from '@/lib/api'
 import type { ProspectProfile } from '@/lib/api'
 import { ProspectScoutingDrawer } from '@/components/ProspectScoutingDrawer'
-import { InfoTip } from '@/components/viz'
+import { InfoTip, POS_COLOR } from '@/components/viz'
 import { GLOSSARY } from '@/lib/glossary'
 
 const COL_INFO: Record<string, string> = {
@@ -12,17 +13,25 @@ const COL_INFO: Record<string, string> = {
   SCORE: GLOSSARY.prospectScore,
 }
 
-const POS_COLOR: Record<string, string> = {
-  QB: '#e05030',
-  RB: '#24a870',
-  WR: '#3a8cd4',
-  TE: '#c8820a',
-}
-
 const POS_FILTER = ['ALL', 'QB', 'RB', 'WR', 'TE'] as const
 type Filter = (typeof POS_FILTER)[number]
 
-const TABLE_COLS = ['#', 'PLAYER', 'POS', 'COLLEGE', 'AGE', 'USG%', 'YPR', 'RECRUIT', 'SCORE']
+// Flex-grid column widths shared between the header row and each virtualized
+// data row so they stay pixel-aligned without native <table> layout (which
+// @tanstack/react-virtual can't window row-by-row).
+const COLS: Array<{ label: string; width: string }> = [
+  { label: '#', width: '40px' },
+  { label: 'PLAYER', width: '1fr' },
+  { label: 'POS', width: '64px' },
+  { label: 'COLLEGE', width: '140px' },
+  { label: 'AGE', width: '52px' },
+  { label: 'USG%', width: '64px' },
+  { label: 'YPR', width: '64px' },
+  { label: 'RECRUIT', width: '100px' },
+  { label: 'SCORE', width: '120px' },
+]
+const GRID_TEMPLATE = COLS.map((c) => c.width).join(' ')
+const ROW_HEIGHT = 46
 
 function ScoreBar({ value }: { value: number }) {
   const color = value > 80 ? '#c93328' : value >= 60 ? '#d4860c' : '#00b8cc'
@@ -49,50 +58,44 @@ function Stars({ count }: { count: number }) {
 
 function ProspectRow({
   prospect,
-  index,
+  rank,
   onOpen,
 }: {
   prospect: ProspectProfile
-  index: number
+  rank: number
   onOpen: (prospect: ProspectProfile) => void
 }) {
   const posColor = POS_COLOR[prospect.position] ?? '#6a8098'
   const showUsage = prospect.position === 'WR' || prospect.position === 'TE'
 
   return (
-    <motion.tr
-      key={prospect.name}
-      initial={{ opacity: 0, x: -6 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: index * 0.014 }}
+    <div
       onClick={() => onOpen(prospect)}
-      style={{ cursor: 'pointer' }}
+      className="war-table-row"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: GRID_TEMPLATE,
+        alignItems: 'center',
+        height: ROW_HEIGHT,
+        cursor: 'pointer',
+        borderBottom: '1px solid #0e1526',
+      }}
     >
-      <td
-        className="py-2.5 pl-3 pr-2"
-        style={{ color: '#3d5070', fontSize: 12, fontFamily: "'DM Mono', monospace", width: 40 }}
-      >
-        {index + 1}
-      </td>
-      <td className="py-2.5 px-3" style={{ borderLeft: `2px solid ${posColor}` }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 13, color: '#e8eef6', fontWeight: 500 }}>{prospect.name}</span>
-          {prospect.player_id && (
-            <span
-              title="Matched on Sleeper"
-              style={{
-                display: 'inline-block',
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                background: '#00b8cc',
-                flexShrink: 0,
-              }}
-            />
-          )}
+      <span className="pl-3 pr-2" style={{ color: '#3d5070', fontSize: 12, fontFamily: "'DM Mono', monospace" }}>
+        {rank}
+      </span>
+      <span className="px-3" style={{ borderLeft: `2px solid ${posColor}`, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+        <span style={{ fontSize: 13, color: '#e8eef6', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {prospect.name}
         </span>
-      </td>
-      <td className="py-2.5 px-3">
+        {prospect.player_id && (
+          <span
+            title="Matched on Sleeper"
+            style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#00b8cc', flexShrink: 0 }}
+          />
+        )}
+      </span>
+      <span className="px-3">
         <span
           style={{
             fontSize: 11,
@@ -106,39 +109,20 @@ function ProspectRow({
         >
           {prospect.position}
         </span>
-      </td>
-      <td className="py-2.5 px-3" style={{ fontSize: 12, color: '#6a8098', whiteSpace: 'nowrap' }}>
+      </span>
+      <span className="px-3" style={{ fontSize: 12, color: '#6a8098', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {prospect.college || '—'}
-      </td>
-      <td
-        className="py-2.5 px-3 tabular-nums"
-        style={{ fontSize: 13, color: '#6a8098', fontFamily: "'DM Mono', monospace", width: 48 }}
-      >
+      </span>
+      <span className="px-3 tabular-nums" style={{ fontSize: 13, color: '#6a8098', fontFamily: "'DM Mono', monospace" }}>
         {prospect.age != null ? prospect.age.toFixed(1) : '—'}
-      </td>
-      <td
-        className="py-2.5 px-3 tabular-nums"
-        style={{
-          fontSize: 13,
-          fontFamily: "'DM Mono', monospace",
-          width: 60,
-          color: showUsage ? '#1a9b5e' : '#2d4060',
-        }}
-      >
+      </span>
+      <span className="px-3 tabular-nums" style={{ fontSize: 13, fontFamily: "'DM Mono', monospace", color: showUsage ? '#1a9b5e' : '#2d4060' }}>
         {showUsage ? `${(prospect.usage_rate * 100).toFixed(1)}%` : '—'}
-      </td>
-      <td
-        className="py-2.5 px-3 tabular-nums"
-        style={{
-          fontSize: 13,
-          color: '#d4860c',
-          fontFamily: "'DM Mono', monospace",
-          width: 60,
-        }}
-      >
+      </span>
+      <span className="px-3 tabular-nums" style={{ fontSize: 13, color: '#d4860c', fontFamily: "'DM Mono', monospace" }}>
         {showUsage && prospect.yards_per_reception > 0 ? prospect.yards_per_reception.toFixed(1) : '—'}
-      </td>
-      <td className="py-2.5 px-3" style={{ width: 100, whiteSpace: 'nowrap' }}>
+      </span>
+      <span className="px-3" style={{ whiteSpace: 'nowrap' }}>
         {prospect.recruiting_rank != null ? (
           <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <span style={{ fontSize: 12, color: '#6a8098', fontFamily: "'DM Mono', monospace" }}>
@@ -149,16 +133,16 @@ function ProspectRow({
         ) : (
           <span style={{ fontSize: 12, color: '#2d4060' }}>—</span>
         )}
-      </td>
-      <td className="py-2.5 px-3" style={{ width: 120, minWidth: 100 }}>
+      </span>
+      <span className="px-3">
         <div style={{ marginBottom: 4 }}>
           <ScoreBar value={prospect.dynasty_prospect_score} />
         </div>
         <span style={{ fontSize: 11, color: '#3d5070', fontFamily: "'DM Mono', monospace" }}>
           {prospect.dynasty_prospect_score.toFixed(1)}
         </span>
-      </td>
-    </motion.tr>
+      </span>
+    </div>
   )
 }
 
@@ -311,33 +295,29 @@ export function Prospects() {
       )}
 
       <div style={{ overflowX: 'auto' }}>
-        <table className="w-full text-left war-table">
-          <thead>
-            <tr style={{ background: '#09111f', borderBottom: '1px solid #162035' }}>
-              {TABLE_COLS.map((label) => (
-                <th
-                  key={label}
-                  className="py-2 px-3"
-                  style={{
-                    color: '#3d5070',
-                    fontSize: 10,
-                    fontWeight: 600,
-                    letterSpacing: '0.25em',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {label}
-                  {COL_INFO[label] && <InfoTip text={COL_INFO[label]} label={label} />}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {prospects.map((p, i) => (
-              <ProspectRow key={`${p.name}-${p.college}`} prospect={p} index={i} onOpen={setSelected} />
-            ))}
-          </tbody>
-        </table>
+        {/* Header row — a CSS grid mirroring ROW's column widths, not a <table>,
+            so the virtualized rows below stay pixel-aligned with it. */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: GRID_TEMPLATE,
+            background: '#09111f',
+            borderBottom: '1px solid #162035',
+            minWidth: 720,
+          }}
+        >
+          {COLS.map(({ label }) => (
+            <div
+              key={label}
+              className="py-2 px-3"
+              style={{ color: '#3d5070', fontSize: 10, fontWeight: 600, letterSpacing: '0.25em', whiteSpace: 'nowrap' }}
+            >
+              {label}
+              {COL_INFO[label] && <InfoTip text={COL_INFO[label]} label={label} />}
+            </div>
+          ))}
+        </div>
+        <ProspectVirtualList prospects={prospects} onOpen={setSelected} />
         {prospects.length === 0 && !isLoading && (
           <div
             className="py-10 text-center tracking-widest uppercase"
@@ -348,6 +328,46 @@ export function Prospects() {
         )}
       </div>
       <ProspectScoutingDrawer prospect={selected} onClose={() => setSelected(null)} />
+    </div>
+  )
+}
+
+/**
+ * Virtualized row list (up to 200 prospects) — only the rows in the visible
+ * scroll window are mounted. Row markup is a CSS-grid div (see ProspectRow),
+ * not a native <table>, since @tanstack/react-virtual absolutely positions
+ * each row inside the scroll container and native <tr> doesn't support that.
+ */
+function ProspectVirtualList({
+  prospects,
+  onOpen,
+}: {
+  prospects: ProspectProfile[]
+  onOpen: (p: ProspectProfile) => void
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const virtualizer = useVirtualizer({
+    count: prospects.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 12,
+  })
+
+  return (
+    <div ref={scrollRef} style={{ minWidth: 720, maxHeight: '70vh', overflowY: 'auto' }}>
+      <div style={{ position: 'relative', height: virtualizer.getTotalSize() }}>
+        {virtualizer.getVirtualItems().map((row) => {
+          const p = prospects[row.index]
+          return (
+            <div
+              key={`${p.name}-${p.college}`}
+              style={{ position: 'absolute', top: 0, left: 0, right: 0, transform: `translateY(${row.start}px)` }}
+            >
+              <ProspectRow prospect={p} rank={row.index + 1} onOpen={onOpen} />
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

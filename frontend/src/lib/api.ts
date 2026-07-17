@@ -111,6 +111,16 @@ export type TrendingPlayer = {
   team: string
 }
 
+export type SleeperMatchup = {
+  roster_id: number
+  matchup_id: number | null
+  points: number
+  players: string[]
+  starters: string[]
+  players_points: Record<string, number>
+  starters_points?: number[]
+}
+
 export type NFLState = {
   week: number | null
   season: string | null
@@ -1321,6 +1331,49 @@ export type Scoreboard = {
   warnings: string[]
 }
 
+export type PlayerAlert = {
+  player_id: string
+  name: string
+  position: string
+  team: string
+  kind: 'INJURY' | 'DEPTH' | 'OPPORTUNITY'
+  severity: 'WARN' | 'WATCH' | 'INFO'
+  detail: string
+}
+
+export type LeagueMove = {
+  week: number
+  type: string | null
+  roster_ids: number[]
+  adds: string[]
+  drops: string[]
+  involves_me: boolean
+}
+
+export type IntelFeed = {
+  roster_alerts: PlayerAlert[]
+  opportunities: PlayerAlert[]
+  league_moves: LeagueMove[]
+  generated_note: string
+}
+
+export type NegotiationBrief = {
+  target_player: string
+  target_position: string
+  target_value: number
+  owner_name: string
+  owner_archetype: string
+  owner_window: string
+  owner_needs: string[]
+  owner_surplus: string[]
+  opening_value: number
+  fair_value: number
+  walkaway_value: number
+  talking_points: string[]
+  prompt: string
+  warnings: string[]
+}
+
 export const api = {
   draftBoard: (top = 50, season?: number) =>
     get<DraftBoard>(`/draft/board?top=${top}${season ? `&season=${season}` : ''}`),
@@ -1334,7 +1387,7 @@ export const api = {
   rosters: () => get<Roster[]>('/league/rosters'),
   users: () => get<User[]>('/league/users'),
   tradedPicks: () => get<TradedPick[]>('/league/traded-picks'),
-  matchups: (week: number) => get(`/league/matchups/${week}`),
+  matchups: (week: number) => get<SleeperMatchup[]>(`/league/matchups/${week}`),
   nflState: () => get<NFLState>('/league/state'),
   trending: (kind: 'add' | 'drop') => get<TrendingPlayer[]>(`/league/trending/${kind}`),
   findings: (kind?: string) =>
@@ -1455,4 +1508,10 @@ export const api = {
     ),
   scoreboard: () => get<Scoreboard>('/scoreboard'),
   gmAddressPrompt: () => get<{ prompt: string; generated_at: string }>('/gm-address'),
+  // Real-world intelligence + negotiation copilot (previously computed, never wired to the UI)
+  intelFeed: (rosterId?: number) => get<IntelFeed>(`/intel/feed${rosterId ? `?roster_id=${rosterId}` : ''}`),
+  negotiation: (playerId: string, ownerRosterId: number) =>
+    get<NegotiationBrief>(
+      `/negotiation?player_id=${encodeURIComponent(playerId)}&owner_roster_id=${ownerRosterId}`,
+    ),
 }

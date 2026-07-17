@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
@@ -9,7 +10,7 @@ import type {
   TradeAnalysis,
   TradeOfferRecommendation,
 } from '@/lib/api'
-import { InfoTip } from '@/components/viz'
+import { InfoTip, POS_COLOR as POS_COLORS } from '@/components/viz'
 import { GLOSSARY } from '@/lib/glossary'
 
 const C = {
@@ -22,10 +23,6 @@ const C = {
   amber: '#d4860c',
   green: '#1a9b5e',
   red: '#c93328',
-}
-
-const POS_COLORS: Record<string, string> = {
-  QB: '#e05030', RB: '#24a870', WR: '#3a8cd4', TE: '#c8820a',
 }
 
 const ARCHETYPE_COLORS: Record<string, string> = {
@@ -610,10 +607,80 @@ function AssetChips({ assets, color }: { assets: TradeOfferRecommendation['give'
   )
 }
 
+// ── NegotiationPanel ──────────────────────────────────────────────────────────
+
+/** Per-player, per-owner negotiation copilot brief — how to actually pitch this. */
+function NegotiationPanel({ playerId, ownerRosterId }: { playerId: string; ownerRosterId: number }) {
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ['negotiation', playerId, ownerRosterId],
+    queryFn: () => api.negotiation(playerId, ownerRosterId),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  if (isLoading) {
+    return <div style={{ color: C.muted, fontSize: 11, padding: '8px 0', fontStyle: 'italic' }}>Building negotiation brief…</div>
+  }
+  if (isError) {
+    return (
+      <div style={{ color: C.red, fontSize: 11, padding: '8px 0', fontFamily: "'DM Mono', monospace" }}>
+        {error instanceof Error ? error.message : 'Failed to build negotiation brief'}
+      </div>
+    )
+  }
+  if (!data) return null
+
+  return (
+    <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 2, padding: '10px 12px', marginTop: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 13, color: C.cyan, letterSpacing: '0.06em' }}>
+          NEGOTIATION BRIEF
+        </span>
+        <InfoTip text={GLOSSARY.negotiationValueBands} label="value bands" />
+      </div>
+      <div style={{ display: 'flex', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ color: C.muted, fontSize: 9, letterSpacing: '0.08em', fontFamily: "'DM Mono', monospace" }}>OPENING</div>
+          <div style={{ fontFamily: "'DM Mono', monospace", color: C.cyan, fontSize: 14 }}>{data.opening_value.toFixed(0)}</div>
+        </div>
+        <div>
+          <div style={{ color: C.muted, fontSize: 9, letterSpacing: '0.08em', fontFamily: "'DM Mono', monospace" }}>FAIR ANCHOR</div>
+          <div style={{ fontFamily: "'DM Mono', monospace", color: C.text, fontSize: 14 }}>{data.fair_value.toFixed(0)}</div>
+        </div>
+        <div>
+          <div style={{ color: C.muted, fontSize: 9, letterSpacing: '0.08em', fontFamily: "'DM Mono', monospace" }}>WALK-AWAY</div>
+          <div style={{ fontFamily: "'DM Mono', monospace", color: C.red, fontSize: 14 }}>{data.walkaway_value.toFixed(0)}</div>
+        </div>
+      </div>
+      {(data.owner_needs.length > 0 || data.owner_surplus.length > 0) && (
+        <div style={{ display: 'flex', gap: 16, marginBottom: 8, flexWrap: 'wrap', fontSize: 11 }}>
+          {data.owner_needs.length > 0 && (
+            <span style={{ color: C.muted }}>Needs: <span style={{ color: C.amber }}>{data.owner_needs.join(', ')}</span></span>
+          )}
+          {data.owner_surplus.length > 0 && (
+            <span style={{ color: C.muted }}>Surplus: <span style={{ color: C.green }}>{data.owner_surplus.join(', ')}</span></span>
+          )}
+        </div>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {data.talking_points.map((p, i) => (
+          <div key={i} style={{ color: C.muted, fontSize: 11, lineHeight: 1.45, display: 'flex', gap: 6 }}>
+            <span style={{ color: C.amber, flexShrink: 0 }}>·</span>
+            <span>{p}</span>
+          </div>
+        ))}
+      </div>
+      {data.warnings.length > 0 && (
+        <div style={{ color: C.amber, fontSize: 10, marginTop: 6 }}>{data.warnings.join(' · ')}</div>
+      )}
+    </div>
+  )
+}
+
 function TradeTargets() {
   const qc = useQueryClient()
   const [planningId, setPlanningId] = useState<number | null>(null)
   const [planError, setPlanError] = useState<string | null>(null)
+  const [negotiateKey, setNegotiateKey] = useState<string | null>(null)
 
   const { data: offers, isLoading, isError, error } = useQuery({
     queryKey: ['trade-offers'],
@@ -674,6 +741,9 @@ function TradeTargets() {
           {offers.map((offer, index) => {
             const calColor = CALIBRATION_COLOR[offer.calibration] ?? C.muted
             const isPlanning = planningId === offer.partner_roster_id
+            const negotiateTarget = offer.receive.find((a) => a.kind === 'player')
+            const key = negotiateTarget ? `${offer.partner_roster_id}-${negotiateTarget.asset_id}` : null
+            const negotiateOpen = key !== null && negotiateKey === key
             return (
               <motion.div
                 key={`${offer.partner_roster_id}-${index}`}
@@ -709,20 +779,37 @@ function TradeTargets() {
                     </span>
                     <InfoTip text={GLOSSARY.calibration} label="evidence quality" />
                   </div>
-                  <button
-                    onClick={() => planOffer(offer)}
-                    disabled={isPlanning}
-                    style={{
-                      flexShrink: 0, padding: '5px 12px',
-                      background: isPlanning ? C.border : C.amber + '22',
-                      border: `1px solid ${isPlanning ? C.border : C.amber + '66'}`,
-                      borderRadius: 2, cursor: isPlanning ? 'default' : 'pointer',
-                      color: isPlanning ? C.muted : C.amber,
-                      fontSize: 9, letterSpacing: '0.06em', fontFamily: "'DM Mono', monospace",
-                    }}
-                  >
-                    {isPlanning ? 'LOGGING…' : 'PLAN'}
-                  </button>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    {negotiateTarget && (
+                      <button
+                        onClick={() => setNegotiateKey(negotiateOpen ? null : key)}
+                        style={{
+                          padding: '5px 12px',
+                          background: negotiateOpen ? C.cyan + '22' : 'none',
+                          border: `1px solid ${negotiateOpen ? C.cyan : C.border}`,
+                          borderRadius: 2, cursor: 'pointer',
+                          color: negotiateOpen ? C.cyan : C.muted,
+                          fontSize: 9, letterSpacing: '0.06em', fontFamily: "'DM Mono', monospace",
+                        }}
+                      >
+                        {negotiateOpen ? 'HIDE BRIEF' : 'NEGOTIATE'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => planOffer(offer)}
+                      disabled={isPlanning}
+                      style={{
+                        padding: '5px 12px',
+                        background: isPlanning ? C.border : C.amber + '22',
+                        border: `1px solid ${isPlanning ? C.border : C.amber + '66'}`,
+                        borderRadius: 2, cursor: isPlanning ? 'default' : 'pointer',
+                        color: isPlanning ? C.muted : C.amber,
+                        fontSize: 9, letterSpacing: '0.06em', fontFamily: "'DM Mono', monospace",
+                      }}
+                    >
+                      {isPlanning ? 'LOGGING…' : 'PLAN'}
+                    </button>
+                  </div>
                 </div>
 
                 <div style={{ display: 'flex', gap: 16, marginBottom: 6, flexWrap: 'wrap' }}>
@@ -775,6 +862,10 @@ function TradeTargets() {
                       {' '}= {offer.acceptance_breakdown.total}
                     </span>
                   </div>
+                )}
+
+                {negotiateOpen && negotiateTarget && (
+                  <NegotiationPanel playerId={negotiateTarget.asset_id} ownerRosterId={offer.partner_roster_id} />
                 )}
               </motion.div>
             )
@@ -868,6 +959,11 @@ function PickMarketPanel() {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export function Trades() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const targetPlayer = searchParams.get('targetPlayer')
+  const targetName = searchParams.get('targetName')
+  const targetPos = searchParams.get('targetPos')
+
   const [givePlayers, setGivePlayers] = useState<PlayerSlot[]>([])
   const [getPlayers, setGetPlayers] = useState<PlayerSlot[]>([])
   const [givePicks, setGivePicks] = useState<PickSlot[]>([])
@@ -1003,6 +1099,30 @@ export function Trades() {
       <p style={{ color: C.muted, fontSize: 11, margin: '4px 0 20px', letterSpacing: '0.1em' }}>
         DYNASTY-AWARE · PLAYERS + PICKS · PICK-ACCUMULATION ARBITRAGE
       </p>
+
+      {targetPlayer && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14,
+          padding: '10px 14px', background: C.card, border: `1px solid ${C.cyan}44`,
+          boxShadow: `inset 3px 0 0 ${C.cyan}`, borderRadius: 2,
+        }}>
+          <span style={{ color: C.cyan, fontSize: 10, letterSpacing: '0.1em', fontFamily: "'DM Mono', monospace" }}>
+            TARGET FROM MARKET
+          </span>
+          <span style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>
+            {targetName ?? targetPlayer}{targetPos ? ` · ${targetPos}` : ''}
+          </span>
+          <span style={{ color: C.muted, fontSize: 11 }}>
+            — pick a trade partner who owns them below, then add to GET
+          </span>
+          <button
+            onClick={() => setSearchParams({})}
+            style={{ marginLeft: 'auto', background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       <OutgoingOffers />
 

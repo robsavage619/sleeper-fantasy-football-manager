@@ -75,6 +75,8 @@ export const GLOSSARY: Record<string, string> = {
     'Strength of Schedule index — remaining-opponent difficulty relative to 1.0 (league average). Above 1.0 is a harder-than-average schedule; below 1.0 is easier.',
   winProbability: 'Win probability — this week’s modeled chance of winning your matchup, from projected scoring and matchup context.',
   lineupUpside: 'Lineup upside — projected points gained by starting the optimal lineup vs your current start/sit choices.',
+  playoffVegasOutlook:
+    'Playoff Vegas outlook — a team’s average Vegas-implied point total and blowout risk across the fantasy-playoff stretch (weeks 15-17). Higher implied total is a better offensive environment for that team’s players down the stretch.',
 
   // --- Market Signals -----------------------------------------------------------
   blowoutRisk: 'Blowout risk — modeled chance this game’s spread produces a lopsided result, which tends to suppress the losing team’s garbage-time volume.',
@@ -95,6 +97,14 @@ export const GLOSSARY: Record<string, string> = {
   xfpResidual:
     'xFP residual — actual fantasy points minus expected fantasy points from opportunity (targets/carries by depth and location). Positive means outperforming their usage — often a signal for regression.',
   pickEquivalent: 'Pick equivalent — the rookie-pick round this player’s dynasty value roughly matches, for comparing a player offer to a pick offer.',
+
+  // --- Negotiation copilot ----------------------------------------------------
+  negotiationValueBands:
+    'Opening / fair / walk-away — three value points off the dynasty model: a lowball-but-credible opener, the fair anchor, and the most you should send before it’s a bad deal.',
+  negotiationAngles: 'Talking points — tuned to this owner’s archetype and contention window, not generic trade advice.',
+
+  // --- Real-world intel feed --------------------------------------------------
+  intelSeverity: 'WARN = threatens availability now. WATCH = worth monitoring. INFO = opportunity signal, not a risk.',
 }
 
 /** Convenience: pick an ordered [term-label, definition][] list for a Glossary panel. */

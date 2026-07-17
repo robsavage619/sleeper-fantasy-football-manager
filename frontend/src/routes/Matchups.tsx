@@ -1,27 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { api } from '@/lib/api'
-import { InfoTip } from '@/components/viz'
+import { Empty, INK, InfoTip, Loading, PosTag, SectionTitle, STATUS } from '@/components/viz'
 import { GLOSSARY } from '@/lib/glossary'
-
-const POS_COLOR: Record<string, string> = { QB: '#e05030', RB: '#24a870', WR: '#3a8cd4', TE: '#c8820a' }
 
 function pct(n: number): string {
   return `${Math.round(n * 100)}%`
-}
-
-function SectionTitle({ children, sub }: { children: React.ReactNode; sub?: string }) {
-  return (
-    <div className="flex items-baseline gap-3 px-5 pt-6 pb-2">
-      <h2 className="uppercase tracking-wide leading-none" style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 22, fontWeight: 800, color: '#e8eef6' }}>{children}</h2>
-      {sub && <span className="tracking-[0.2em] uppercase" style={{ fontSize: 10, color: '#3d5070' }}>{sub}</span>}
-    </div>
-  )
-}
-
-function PosTag({ position }: { position: string }) {
-  const c = POS_COLOR[position] ?? '#6a8098'
-  return <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', padding: '1px 5px', color: c, background: `${c}18`, borderRadius: 1 }}>{position}</span>
 }
 
 function sosColor(idx: number): string {
@@ -37,9 +21,44 @@ export function Matchups() {
   const sched = useQuery({ queryKey: ['schedule-strength'], queryFn: () => api.scheduleStrength() })
   const wire = useQuery({ queryKey: ['wire-watch'], queryFn: () => api.wireWatch(true) })
   const handcuffs = useQuery({ queryKey: ['handcuffs'], queryFn: api.handcuffs })
+  const me = useQuery({ queryKey: ['me'], queryFn: api.me, staleTime: 5 * 60 * 1000 })
+  const owners = useQuery({ queryKey: ['owner-profiles'], queryFn: api.ownerProfiles, staleTime: 5 * 60 * 1000 })
+  const vegasPlayoffs = useQuery({ queryKey: ['vegas-playoffs'], queryFn: api.vegasPlayoffs })
+
+  const week = gameday.data?.week ?? 1
+  const weekMatchups = useQuery({
+    queryKey: ['matchups', week],
+    queryFn: () => api.matchups(week),
+    enabled: !!gameday.data,
+  })
 
   const myIds = new Set((myRoster.data?.players ?? []).map((p) => p.player_id))
   const myFlagged = (env.data?.flagged ?? []).filter((p) => myIds.has(p.player_id))
+  const myTeamAbbrs = new Set((myRoster.data?.players ?? []).map((p) => p.team).filter(Boolean))
+
+  const nameByRoster = new Map<number, string>()
+  for (const o of owners.data ?? []) nameByRoster.set(o.roster_id, o.display_name || `Roster ${o.roster_id}`)
+
+  // Pair matchup rows by matchup_id, ordering my own game first.
+  const matchupPairs: Array<[import('@/lib/api').SleeperMatchup, import('@/lib/api').SleeperMatchup | undefined]> = []
+  if (weekMatchups.data) {
+    const byMid = new Map<number, import('@/lib/api').SleeperMatchup[]>()
+    for (const m of weekMatchups.data) {
+      if (m.matchup_id == null) continue
+      const arr = byMid.get(m.matchup_id) ?? []
+      arr.push(m)
+      byMid.set(m.matchup_id, arr)
+    }
+    for (const arr of byMid.values()) matchupPairs.push([arr[0], arr[1]])
+    matchupPairs.sort(([a, b]) => {
+      const mine = a.roster_id === me.data?.roster_id || b?.roster_id === me.data?.roster_id
+      return mine ? -1 : 0
+    })
+  }
+
+  const playoffTeams = [...(vegasPlayoffs.data?.teams ?? [])].sort(
+    (a, b) => (b.avg_implied_total ?? 0) - (a.avg_implied_total ?? 0),
+  )
 
   // SoS for my rostered players, keyed by team|pos.
   const sosMap = new Map<string, number>()
@@ -57,7 +76,7 @@ export function Matchups() {
       <div className="px-5 pt-5 pb-4" style={{ borderBottom: '1px solid #162035' }}>
         <div className="flex items-baseline gap-4">
           <h1 className="leading-none uppercase tracking-wide" style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 40, fontWeight: 800, color: '#e8eef6' }}>MATCHUP LAB</h1>
-          <span className="tracking-[0.3em] uppercase" style={{ fontSize: 11, color: '#6a8098' }}>WIN PROBABILITY · WEATHER · SCHEDULE · WIRE</span>
+          <span className="tracking-[0.3em] uppercase" style={{ fontSize: 11, color: '#6a8098' }}>WIN PROBABILITY · MATCHUPS · WEATHER · SCHEDULE · PLAYOFF VEGAS · WIRE</span>
         </div>
       </div>
 
@@ -98,6 +117,45 @@ export function Matchups() {
         {gameday.isLoading && <Loading label="COMPUTING WIN PROBABILITY…" />}
       </div>
 
+      {/* Weekly matchups — every league game this week, not just mine */}
+      <SectionTitle sub={weekMatchups.data ? `week ${week} · ${matchupPairs.length} games` : ''}>
+        This Week's Matchups
+      </SectionTitle>
+      <div className="px-5 pb-2 grid gap-2">
+        {matchupPairs.length === 0 && !weekMatchups.isLoading && <Empty>No matchups posted for this week yet.</Empty>}
+        {matchupPairs.map(([a, b], i) => {
+          const mine = a.roster_id === me.data?.roster_id || b?.roster_id === me.data?.roster_id
+          return (
+            <motion.div
+              key={a.matchup_id ?? i}
+              initial={{ opacity: 0, x: -6 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.02 }}
+              className="flex items-center gap-3 py-1.5 px-3"
+              style={{
+                borderLeft: `2px solid ${mine ? STATUS.info : 'transparent'}`,
+                background: mine ? 'rgba(0,184,204,0.05)' : 'transparent',
+              }}
+            >
+              <span style={{ flex: 1, fontSize: 13, color: mine ? STATUS.info : INK.primary, fontWeight: mine ? 600 : 400 }}>
+                {nameByRoster.get(a.roster_id) ?? `Roster ${a.roster_id}`}
+              </span>
+              <span className="tabular-nums" style={{ fontSize: 13, color: INK.secondary, fontFamily: "'DM Mono', monospace", width: 50, textAlign: 'right' }}>
+                {a.points.toFixed(1)}
+              </span>
+              <span style={{ color: INK.dim, fontSize: 11 }}>vs</span>
+              <span className="tabular-nums" style={{ fontSize: 13, color: INK.secondary, fontFamily: "'DM Mono', monospace", width: 50 }}>
+                {b ? b.points.toFixed(1) : '—'}
+              </span>
+              <span style={{ flex: 1, fontSize: 13, color: b?.roster_id === me.data?.roster_id ? STATUS.info : INK.primary, fontWeight: b?.roster_id === me.data?.roster_id ? 600 : 400, textAlign: 'right' }}>
+                {b ? (nameByRoster.get(b.roster_id) ?? `Roster ${b.roster_id}`) : 'BYE'}
+              </span>
+            </motion.div>
+          )
+        })}
+        {weekMatchups.isLoading && <Loading label="PULLING LIVE MATCHUPS…" />}
+      </div>
+
       {/* Weather / stadium leans */}
       <SectionTitle sub="my roster · historical splits">Stadium &amp; Weather Leans</SectionTitle>
       <div className="px-5 pb-2">
@@ -133,6 +191,48 @@ export function Matchups() {
           </motion.div>
         ))}
         {sched.isLoading && <Loading label="GRADING DEFENSES…" />}
+      </div>
+
+      {/* Playoff Vegas outlook — implied totals across the playoff stretch, by team */}
+      <SectionTitle sub={vegasPlayoffs.data ? `season ${vegasPlayoffs.data.season} · weeks 15-17 avg` : ''}>
+        Playoff Vegas Outlook
+        <InfoTip text={GLOSSARY.playoffVegasOutlook} label="playoff Vegas outlook" />
+      </SectionTitle>
+      <div className="px-5 pb-2" style={{ overflowX: 'auto' }}>
+        {playoffTeams.length === 0 && !vegasPlayoffs.isLoading && <Empty>Playoff odds not posted yet.</Empty>}
+        {playoffTeams.length > 0 && (
+          <table className="w-full text-left war-table">
+            <thead>
+              <tr style={{ background: '#09111f', borderBottom: '1px solid #162035' }}>
+                {['TEAM', 'AVG IMPLIED TOTAL', 'AVG BLOWOUT RISK', 'WEEKS'].map((h) => (
+                  <th key={h} className="py-2 px-3" style={{ color: INK.dim, fontSize: 10, fontWeight: 600, letterSpacing: '0.2em' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {playoffTeams.map((t) => {
+                const mine = myTeamAbbrs.has(t.team)
+                return (
+                  <tr key={t.team} style={{ background: mine ? 'rgba(0,184,204,0.05)' : 'transparent' }}>
+                    <td className="py-2 px-3" style={{ borderLeft: mine ? `2px solid ${STATUS.info}` : 'none', fontSize: 13, color: mine ? STATUS.info : INK.primary, fontWeight: mine ? 600 : 400 }}>
+                      {t.team}
+                    </td>
+                    <td className="py-2 px-3 tabular-nums" style={{ fontSize: 13, color: INK.primary, fontFamily: "'DM Mono', monospace" }}>
+                      {t.avg_implied_total != null ? t.avg_implied_total.toFixed(1) : '—'}
+                    </td>
+                    <td className="py-2 px-3 tabular-nums" style={{ fontSize: 12, color: INK.muted, fontFamily: "'DM Mono', monospace" }}>
+                      {t.avg_blowout_risk != null ? `${Math.round(t.avg_blowout_risk * 100)}%` : '—'}
+                    </td>
+                    <td className="py-2 px-3 tabular-nums" style={{ fontSize: 12, color: INK.dim, fontFamily: "'DM Mono', monospace" }}>
+                      {t.weeks_counted}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+        {vegasPlayoffs.isLoading && <Loading label="PRICING PLAYOFF STRETCH…" />}
       </div>
 
       {/* Wire early-warning + Handcuffs */}
@@ -178,12 +278,4 @@ export function Matchups() {
       <div style={{ height: 24 }} />
     </div>
   )
-}
-
-function Empty({ children }: { children: React.ReactNode }) {
-  return <div style={{ color: '#3d5070', fontSize: 12, padding: '6px 0' }}>{children}</div>
-}
-
-function Loading({ label }: { label: string }) {
-  return <div className="py-4 text-center tracking-widest uppercase" style={{ color: '#3d5070', fontSize: 12 }}>{label}</div>
 }
