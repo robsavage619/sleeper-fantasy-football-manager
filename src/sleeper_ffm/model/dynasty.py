@@ -153,23 +153,29 @@ def is_age_declining(position: str, age: float | None) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def value_player(player: PlayerAsset) -> float:
-    """Compute a player's dynasty value in FPAR units.
+@dataclass
+class ValueBreakdown:
+    """Named components behind a dynasty value, for UI display.
 
-    Projects FPAR forward ``_PROJECTION_HORIZON`` seasons using the position's
-    age curve (pre-peak ascent + post-peak decay) and discounts back to present
-    value.
+    ``value`` is the same number ``value_player`` returns. ``current_fpar`` is
+    what the player produced last season; ``age_curve_adjustment`` is how much
+    the projection added (aging into a young ascent) or subtracted (aging out
+    of a decline) on top of that, before the taxi discount.
+    """
 
-    The model back-solves an implied peak FPAR from current production and career
-    stage, then projects each future season relative to that implied peak. Pre-peak
-    players benefit from growth toward peak; post-peak players see continuous decay.
+    value: float
+    current_fpar: float
+    age_curve_adjustment: float
+    implied_peak_fpar: float
+    career_phase: str  # "ascending" | "at-peak" | "declining"
+    seasons_from_peak: float
 
-    Args:
-        player: A ``PlayerAsset`` with current age and FPAR.
+
+def _project_value(player: PlayerAsset) -> tuple[float, float, str, float]:
+    """Shared projection core for ``value_player`` and ``value_player_breakdown``.
 
     Returns:
-        Dynasty value in FPAR units (higher = more valuable). Zero for
-        replacement-level or below-replacement players.
+        ``(total_before_taxi_discount, implied_peak, career_phase, seasons_from_peak)``.
     """
     pos = player.position
     peak_age = _PEAK_AGE.get(pos, 26)
@@ -178,7 +184,7 @@ def value_player(player: PlayerAsset) -> float:
 
     base_fpar = max(0.0, player.current_fpar)
     if base_fpar == 0.0:
-        return 0.0
+        return 0.0, 0.0, "at-peak", 0.0
 
     # Back-solve implied peak FPAR from current production and career stage.
     # For post-peak: current = peak * decay^seasons_past → peak = current / decay^n
@@ -206,10 +212,63 @@ def value_player(player: PlayerAsset) -> float:
         discount = (1.0 - _DISCOUNT_RATE) ** t
         total += season_fpar * discount
 
+    seasons_from_peak = player.age - peak_age
+    phase = (
+        "ascending" if seasons_from_peak < -0.5 else "declining" if seasons_from_peak > 0.5
+        else "at-peak"
+    )
+    return total, implied_peak, phase, seasons_from_peak
+
+
+def value_player(player: PlayerAsset) -> float:
+    """Compute a player's dynasty value in FPAR units.
+
+    Projects FPAR forward ``_PROJECTION_HORIZON`` seasons using the position's
+    age curve (pre-peak ascent + post-peak decay) and discounts back to present
+    value.
+
+    The model back-solves an implied peak FPAR from current production and career
+    stage, then projects each future season relative to that implied peak. Pre-peak
+    players benefit from growth toward peak; post-peak players see continuous decay.
+
+    Args:
+        player: A ``PlayerAsset`` with current age and FPAR.
+
+    Returns:
+        Dynasty value in FPAR units (higher = more valuable). Zero for
+        replacement-level or below-replacement players.
+    """
+    total, _implied_peak, _phase, _seasons_from_peak = _project_value(player)
     if player.is_taxi:
         total *= 0.80
-
     return round(total, 2)
+
+
+def value_player_breakdown(player: PlayerAsset) -> ValueBreakdown:
+    """Decompose a player's dynasty value into current production vs. age-curve.
+
+    Same projection as ``value_player``, exposed as named components so a UI
+    can show *why* a value is what it is instead of a single opaque float.
+
+    Args:
+        player: A ``PlayerAsset`` with current age and FPAR.
+
+    Returns:
+        A :class:`ValueBreakdown`.
+    """
+    total, implied_peak, phase, seasons_from_peak = _project_value(player)
+    if player.is_taxi:
+        total *= 0.80
+    value = round(total, 2)
+    current_fpar = round(max(0.0, player.current_fpar), 2)
+    return ValueBreakdown(
+        value=value,
+        current_fpar=current_fpar,
+        age_curve_adjustment=round(value - current_fpar, 2),
+        implied_peak_fpar=round(implied_peak, 2),
+        career_phase=phase,
+        seasons_from_peak=round(seasons_from_peak, 1),
+    )
 
 
 # Fallback round-base pick values in dynasty units, calibrated to the 2026 market
@@ -274,16 +333,19 @@ def asset_table(roster: RosterAssets) -> list[dict]:
     """
     rows: list[dict] = []
     for p in roster.players:
+        breakdown = value_player_breakdown(p)
         rows.append(
             {
                 "type": "player",
                 "id": p.player_id,
                 "label": f"{p.name} ({p.position}, age {p.age:.0f})",
-                "value": value_player(p),
+                "value": breakdown.value,
                 "position": p.position,
                 "age": p.age,
                 "current_fpar": p.current_fpar,
                 "is_taxi": p.is_taxi,
+                "age_curve_adjustment": breakdown.age_curve_adjustment,
+                "career_phase": breakdown.career_phase,
             }
         )
     for pk in roster.picks:

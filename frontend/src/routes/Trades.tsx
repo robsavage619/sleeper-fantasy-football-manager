@@ -9,6 +9,8 @@ import type {
   TradeAnalysis,
   TradeOfferRecommendation,
 } from '@/lib/api'
+import { InfoTip } from '@/components/viz'
+import { GLOSSARY } from '@/lib/glossary'
 
 const C = {
   bg: '#060a12',
@@ -32,6 +34,7 @@ const ARCHETYPE_COLORS: Record<string, string> = {
 
 const ORDINALS = ['1st', '2nd', '3rd', '4th']
 const ordinal = (n: number) => ORDINALS[n - 1] ?? `${n}th`
+const fmtSigned = (n: number) => (n >= 0 ? `+${n}` : `${n}`)
 
 const CALIBRATION_COLOR: Record<string, string> = {
   'OWNER-HISTORY': '#1a9b5e',
@@ -164,11 +167,13 @@ function OutgoingOffers() {
                   }}>
                     {offer.confidence}
                   </span>
+                  <InfoTip text={GLOSSARY.acceptanceConfidence} label="confidence" />
                   <span style={{
                     fontFamily: "'DM Mono', monospace", fontSize: 11, color: C.amber,
                   }}>
                     FIT {offer.acceptance_score}
                   </span>
+                  <InfoTip text={GLOSSARY.acceptanceScore} label="FIT score" />
                   {offer.calibration && (
                     <span style={{
                       fontSize: 9, padding: '1px 5px', borderRadius: 1,
@@ -694,6 +699,7 @@ function TradeTargets() {
                     }}>
                       FIT {offer.acceptance_score}
                     </span>
+                    <InfoTip text={GLOSSARY.acceptanceScore} label="FIT score" />
                     <span style={{
                       fontSize: 9, padding: '1px 5px', borderRadius: 1,
                       background: calColor + '22', color: calColor,
@@ -701,6 +707,7 @@ function TradeTargets() {
                     }}>
                       {offer.calibration} · {offer.evidence_count} trades
                     </span>
+                    <InfoTip text={GLOSSARY.calibration} label="evidence quality" />
                   </div>
                   <button
                     onClick={() => planOffer(offer)}
@@ -747,6 +754,26 @@ function TradeTargets() {
                 {offer.rationale && (
                   <div style={{ color: C.muted, fontSize: 11, fontStyle: 'italic', marginTop: 4, lineHeight: 1.4 }}>
                     {offer.rationale}
+                  </div>
+                )}
+
+                {offer.acceptance_breakdown && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
+                    <span style={{ color: C.muted, fontSize: 9, letterSpacing: '0.08em', fontFamily: "'DM Mono', monospace" }}>
+                      FIT WATERFALL
+                    </span>
+                    <InfoTip text={GLOSSARY.acceptanceBreakdown} label="FIT breakdown" />
+                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10.5, color: C.muted }}>
+                      {offer.acceptance_breakdown.base} base
+                      {' '}{fmtSigned(offer.acceptance_breakdown.position_fit)} fit
+                      {' '}{fmtSigned(offer.acceptance_breakdown.margin_score)} margin
+                      {' '}{fmtSigned(offer.acceptance_breakdown.history_score)} history
+                      {' '}{fmtSigned(offer.acceptance_breakdown.window_score)} window
+                      {offer.acceptance_breakdown.sample_penalty !== 0 && (
+                        <>{' '}{fmtSigned(offer.acceptance_breakdown.sample_penalty)} sample</>
+                      )}
+                      {' '}= {offer.acceptance_breakdown.total}
+                    </span>
                   </div>
                 )}
               </motion.div>

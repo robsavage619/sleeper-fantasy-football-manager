@@ -89,7 +89,7 @@ def _trade_acceptance(scenario: Scenario) -> CaseResults:
         give_asset = _trade_asset(case["give_asset"])
         receive_asset = _trade_asset(case["receive_asset"])
         sweetener = _optional_trade_asset(case.get("sweetener"))
-        score, confidence, rationale = _acceptance_score(
+        score, confidence, rationale, _breakdown = _acceptance_score(
             my_dossier, partner, history, give_asset, receive_asset, sweetener
         )
         give_value = give_asset.value + (sweetener.value if sweetener else 0.0)

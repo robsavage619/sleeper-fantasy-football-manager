@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query
 
 from sleeper_ffm.config import DEFAULT_VALUE_SEASON, MY_ROSTER_ID
 from sleeper_ffm.market.blend import MarketBlend, blended_value, build_player_blend
-from sleeper_ffm.model.dynasty import PlayerAsset, value_player
+from sleeper_ffm.model.dynasty import PlayerAsset, value_player_breakdown
 from sleeper_ffm.model.valuation import (
     SKILL_POSITIONS,
     _rookie_fpar,
@@ -82,7 +82,8 @@ def _build_player_rows(
                 is_reserve=is_reserve,
             )
 
-        model_value = value_player(asset)
+        breakdown = value_player_breakdown(asset)
+        model_value = breakdown.value
         market_value: float | None = None
         if blend is not None:
             dynasty_value, market_valued = blended_value(pid, asset.position, model_value, blend)
@@ -107,6 +108,8 @@ def _build_player_rows(
                 "is_starter": is_starter,
                 "is_taxi": is_taxi,
                 "is_reserve": is_reserve,
+                "age_curve_adjustment": breakdown.age_curve_adjustment,
+                "career_phase": breakdown.career_phase,
             }
         )
 

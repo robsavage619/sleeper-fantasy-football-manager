@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { PlayerProfileDrawer } from '@/components/PlayerProfileDrawer'
-import { PlayerHeadshot, POS_COLOR, StackBar } from '@/components/viz'
+import { InfoTip, PlayerHeadshot, POS_COLOR, StackBar } from '@/components/viz'
 import { api, type MyRosterPlayer } from '@/lib/api'
+import { GLOSSARY } from '@/lib/glossary'
 
 const POSITIONS = ['QB', 'RB', 'WR', 'TE'] as const
 type Position = (typeof POSITIONS)[number]
@@ -71,17 +72,30 @@ function PlayerRow({
           />
         </div>
       </div>
-      <span
-        style={{
-          fontSize: 13,
-          color: '#d4860c',
-          fontFamily: "'DM Mono', monospace",
-          width: 52,
-          textAlign: 'right',
-          flexShrink: 0,
-        }}
-      >
-        {player.dynasty_value.toFixed(1)}
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, width: 62, justifyContent: 'flex-end', flexShrink: 0 }}>
+        <span
+          style={{
+            fontSize: 13,
+            color: '#d4860c',
+            fontFamily: "'DM Mono', monospace",
+            textAlign: 'right',
+          }}
+        >
+          {player.dynasty_value.toFixed(1)}
+        </span>
+        <InfoTip
+          text={`${GLOSSARY.dynastyValue} Model side: ${player.fpar.toFixed(0)} current FPAR ${
+            player.age_curve_adjustment != null
+              ? `${player.age_curve_adjustment >= 0 ? '+' : ''}${player.age_curve_adjustment.toFixed(0)} age-curve (${player.career_phase ?? 'n/a'})`
+              : ''
+          } = ${player.model_value != null ? player.model_value.toFixed(0) : player.dynasty_value.toFixed(0)} model value.${
+            player.market_valued
+              ? ` Market anchored the displayed ${player.dynasty_value.toFixed(0)}${player.position === 'QB' ? ' — QB is priced market-only, the model side above is not used for QBs.' : '.'}`
+              : ''
+          }`}
+          label="dynasty value"
+          align="right"
+        />
       </span>
       <div style={{ display: 'flex', gap: 4, width: 120, justifyContent: 'flex-end', flexShrink: 0 }}>
         {player.is_starter && !player.is_taxi && !player.is_reserve && (
@@ -267,6 +281,7 @@ export function Roster() {
                 style={{ fontSize: 11, color: '#6a8098' }}
               >
                 DYNASTY · {data.total_players} PLAYERS
+                <InfoTip text={GLOSSARY.dynastyValue} label="dynasty value" />
               </span>
             </div>
           )}

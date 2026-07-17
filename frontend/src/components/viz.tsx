@@ -5,6 +5,7 @@
  * grid, direct labels, status/position color by role (never by rank).
  */
 import { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 
 // --- design tokens (single source, mirrors index.css) ---------------------
 export const INK = { primary: '#e8eef6', secondary: '#8aa0b8', muted: '#6a8098', dim: '#3d5070' }
@@ -83,6 +84,62 @@ export function InfoTip({ text, label, align = 'left' }: { text: string; label?:
         </span>
       )}
     </span>
+  )
+}
+
+/**
+ * Collapsible "What The Numbers Mean" glossary panel — the term/definition
+ * list a page's InfoTips draw from, laid out for scanning rather than hover.
+ * Same interaction pattern across every page that uses it.
+ */
+export function GlossaryPanel({
+  title = 'What The Numbers Mean',
+  entries,
+  benchmarks,
+}: {
+  title?: string
+  entries: [string, string][]
+  benchmarks?: Record<string, string>
+}) {
+  const [open, setOpen] = useState(false)
+  const barlow = "'Barlow Condensed', sans-serif"
+  const mono = "'DM Mono', monospace"
+  if (entries.length === 0) return null
+  return (
+    <section style={{ borderBottom: `1px solid ${SURFACE.border}`, padding: '0 20px' }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 uppercase"
+        style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer', padding: '11px 0', color: INK.muted, fontFamily: barlow, fontWeight: 700, fontSize: 12, letterSpacing: '0.16em' }}
+      >
+        <span style={{ display: 'inline-flex', width: 14, height: 14, borderRadius: '50%', border: `1px solid ${INK.dim}`, alignItems: 'center', justifyContent: 'center', fontFamily: mono, fontSize: 9, color: INK.muted }}>
+          i
+        </span>
+        {title}
+        <span style={{ marginLeft: 'auto', fontFamily: mono, fontSize: 11, color: INK.dim, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>›</span>
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.22 }} style={{ overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '10px 24px', paddingBottom: 18, paddingTop: 4 }}>
+              {entries.map(([term, def]) => (
+                <div key={term} style={{ borderLeft: `2px solid ${SURFACE.border}`, paddingLeft: 12 }}>
+                  <div className="uppercase" style={{ fontFamily: barlow, fontWeight: 700, fontSize: 13, color: INK.primary, letterSpacing: '0.03em', marginBottom: 2 }}>
+                    {term}
+                  </div>
+                  <div style={{ color: INK.muted, fontSize: 12, lineHeight: 1.5 }}>{def}</div>
+                  {benchmarks?.[term] && (
+                    <div className="uppercase tracking-wide" style={{ color: STATUS.info, fontSize: 9.5, marginTop: 4 }}>
+                      In your league: {benchmarks[term]}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </section>
   )
 }
 
@@ -204,11 +261,13 @@ export function PercentileBar({
   pct01,
   value,
   color,
+  info,
 }: {
   label: string
   pct01: number
   value: string
   color?: string
+  info?: string
 }) {
   const clamped = Math.max(0, Math.min(1, pct01))
   const fill = color ?? tierColor(clamped)
@@ -220,6 +279,7 @@ export function PercentileBar({
           style={{ color: INK.muted, fontSize: 9.5 }}
         >
           {label}
+          {info && <InfoTip text={info} label={label} />}
         </span>
         <span
           style={{

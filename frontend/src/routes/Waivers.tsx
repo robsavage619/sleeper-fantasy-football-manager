@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { PlayerProfileDrawer } from '@/components/PlayerProfileDrawer'
 import { api } from '@/lib/api'
+import { InfoTip } from '@/components/viz'
+import { GLOSSARY } from '@/lib/glossary'
 
 const POS_COLOR: Record<string, string> = {
   QB: '#e05030',
@@ -15,25 +17,43 @@ const POS_FILTER = ['ALL', 'QB', 'RB', 'WR', 'TE'] as const
 type Filter = (typeof POS_FILTER)[number]
 
 const TABLE_COLS = ['#', 'PLAYER', 'POS', 'AGE', 'PRIORITY', 'ADDS', 'BID', 'DROP']
+const COL_INFO: Record<string, string> = {
+  PRIORITY: GLOSSARY.waiverPriority,
+  BID: GLOSSARY.faabBidRange,
+}
 
 function PriorityBar({ value }: { value: number }) {
   const color = value > 80 ? '#c93328' : value >= 60 ? '#d4860c' : '#00b8cc'
   return (
-    <div
-      style={{
-        width: '100%',
-        height: 3,
-        background: '#162035',
-        borderRadius: 1,
-        overflow: 'hidden',
-      }}
-    >
-      <motion.div
-        style={{ height: '100%', background: color, borderRadius: 1 }}
-        initial={{ width: 0 }}
-        animate={{ width: `${Math.min(100, value)}%` }}
-        transition={{ duration: 0.5, ease: 'easeOut' }}
-      />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span
+        style={{
+          fontFamily: "'DM Mono', monospace",
+          fontSize: 12,
+          color,
+          width: 24,
+          flexShrink: 0,
+          textAlign: 'right',
+        }}
+      >
+        {Math.round(value)}
+      </span>
+      <div
+        style={{
+          flex: 1,
+          height: 3,
+          background: '#162035',
+          borderRadius: 1,
+          overflow: 'hidden',
+        }}
+      >
+        <motion.div
+          style={{ height: '100%', background: color, borderRadius: 1 }}
+          initial={{ width: 0 }}
+          animate={{ width: `${Math.min(100, value)}%` }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+        />
+      </div>
     </div>
   )
 }
@@ -216,6 +236,7 @@ export function Waivers() {
                   }}
                 >
                   {label}
+                  {COL_INFO[label] && <InfoTip text={COL_INFO[label]} label={label} />}
                 </th>
               ))}
             </tr>

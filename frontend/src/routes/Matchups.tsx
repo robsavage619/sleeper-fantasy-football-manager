@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { api } from '@/lib/api'
+import { InfoTip } from '@/components/viz'
+import { GLOSSARY } from '@/lib/glossary'
 
 const POS_COLOR: Record<string, string> = { QB: '#e05030', RB: '#24a870', WR: '#3a8cd4', TE: '#c8820a' }
 
@@ -65,7 +67,10 @@ export function Matchups() {
         {g?.has_matchup ? (
           <div className="flex flex-wrap items-center gap-8">
             <div>
-              <div className="tracking-[0.2em] uppercase" style={{ fontSize: 10, color: '#3d5070' }}>WIN PROBABILITY</div>
+              <div className="tracking-[0.2em] uppercase" style={{ fontSize: 10, color: '#3d5070' }}>
+                WIN PROBABILITY
+                <InfoTip text={GLOSSARY.winProbability} label="win probability" />
+              </div>
               <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 48, fontWeight: 800, lineHeight: 1, color: wp >= 0.5 ? '#24a870' : '#c93328' }}>{pct(wp)}</div>
             </div>
             <div style={{ flex: 1, minWidth: 260, maxWidth: 460 }}>
@@ -79,7 +84,10 @@ export function Matchups() {
             </div>
             {g.lineup_upside > 0 && (
               <div>
-                <div className="tracking-[0.2em] uppercase" style={{ fontSize: 10, color: '#d4860c' }}>LINEUP UPSIDE</div>
+                <div className="tracking-[0.2em] uppercase" style={{ fontSize: 10, color: '#d4860c' }}>
+                  LINEUP UPSIDE
+                  <InfoTip text={GLOSSARY.lineupUpside} label="lineup upside" />
+                </div>
                 <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 32, fontWeight: 800, color: '#d4860c', lineHeight: 1 }}>+{g.lineup_upside.toFixed(1)}</div>
               </div>
             )}
@@ -105,7 +113,10 @@ export function Matchups() {
       </div>
 
       {/* Playoff SoS */}
-      <SectionTitle sub={sched.data ? `DvP ${sched.data.dvp_season} → ${sched.data.schedule_season} sched` : 'weeks 15-17'}>Playoff Schedule Outlook</SectionTitle>
+      <SectionTitle sub={sched.data ? `DvP ${sched.data.dvp_season} → ${sched.data.schedule_season} sched` : 'weeks 15-17'}>
+        Playoff Schedule Outlook
+        <InfoTip text={GLOSSARY.sosIndex} label="SoS index" />
+      </SectionTitle>
       <div className="px-5 pb-2">
         {mySos.length === 0 && !sched.isLoading && (
           <Empty>{sched.data?.warnings?.[0] ?? 'Schedule not yet published for the upcoming season.'}</Empty>

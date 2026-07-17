@@ -2,6 +2,20 @@ import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { api } from '@/lib/api'
 import type { MispricingEntry, RegressionFlag } from '@/lib/api'
+import { InfoTip } from '@/components/viz'
+import { GLOSSARY } from '@/lib/glossary'
+
+const EDGE_COL_INFO: Record<string, string> = {
+  EDGE: GLOSSARY.edgePct,
+  'MKT VAL': GLOSSARY.leverage,
+  'VALUE GAP': GLOSSARY.valueGap,
+}
+const REG_COL_INFO: Record<string, string> = {
+  'TD±': GLOSSARY.tdOverExpected,
+}
+const CONTENTION_COL_INFO: Record<string, string> = {
+  PLAYOFF: GLOSSARY.titleOdds,
+}
 
 const POS_COLOR: Record<string, string> = { QB: '#e05030', RB: '#24a870', WR: '#3a8cd4', TE: '#c8820a' }
 const LABEL_COLOR: Record<string, string> = {
@@ -48,7 +62,10 @@ function EdgeTable({ rows, tone }: { rows: MispricingEntry[]; tone: 'buy' | 'sel
       <thead>
         <tr style={{ background: '#09111f', borderBottom: '1px solid #162035' }}>
           {['PLAYER', 'POS', 'TEAM', 'EDGE', 'MKT VAL', 'VALUE GAP'].map((h) => (
-            <th key={h} className="py-2 px-3" style={{ color: '#3d5070', fontSize: 10, fontWeight: 600, letterSpacing: '0.2em', whiteSpace: 'nowrap' }}>{h}</th>
+            <th key={h} className="py-2 px-3" style={{ color: '#3d5070', fontSize: 10, fontWeight: 600, letterSpacing: '0.2em', whiteSpace: 'nowrap' }}>
+              {h}
+              {EDGE_COL_INFO[h] && <InfoTip text={EDGE_COL_INFO[h]} label={h} />}
+            </th>
           ))}
         </tr>
       </thead>
@@ -81,7 +98,10 @@ function RegTable({ rows, tone }: { rows: RegressionFlag[]; tone: 'buy' | 'sell'
       <thead>
         <tr style={{ background: '#09111f', borderBottom: '1px solid #162035' }}>
           {['PLAYER', 'POS', 'TDs', 'xTD', 'TD±'].map((h) => (
-            <th key={h} className="py-2 px-3" style={{ color: '#3d5070', fontSize: 10, fontWeight: 600, letterSpacing: '0.2em' }}>{h}</th>
+            <th key={h} className="py-2 px-3" style={{ color: '#3d5070', fontSize: 10, fontWeight: 600, letterSpacing: '0.2em' }}>
+              {h}
+              {REG_COL_INFO[h] && <InfoTip text={REG_COL_INFO[h]} label={h} />}
+            </th>
           ))}
         </tr>
       </thead>
@@ -131,10 +151,10 @@ export function Edges() {
       <SectionTitle sub={sim.data ? `${sim.data.schedule_source} · ${sim.data.n_sims} sims` : ''}>Title Equity</SectionTitle>
       {me && (
         <div className="px-5 pb-2 flex flex-wrap gap-6">
-          <Stat label="MY TITLE ODDS" value={pct(me.title_odds)} accent="#00b8cc" />
-          <Stat label="MY PLAYOFF ODDS" value={pct(me.playoff_odds)} accent="#24a870" />
+          <Stat label="MY TITLE ODDS" value={pct(me.title_odds)} accent="#00b8cc" info={GLOSSARY.titleOdds} />
+          <Stat label="MY PLAYOFF ODDS" value={pct(me.playoff_odds)} accent="#24a870" info={GLOSSARY.titleOdds} />
           <Stat label="PROJ WINS" value={me.avg_wins.toFixed(1)} accent="#6a8098" />
-          <Stat label="STRENGTH/WK" value={me.strength.toFixed(0)} accent="#6a8098" />
+          <Stat label="STRENGTH/WK" value={me.strength.toFixed(0)} accent="#6a8098" info={GLOSSARY.leverage} />
         </div>
       )}
       <div className="px-5 pb-3">
@@ -159,7 +179,10 @@ export function Edges() {
           <thead>
             <tr style={{ background: '#09111f', borderBottom: '1px solid #162035' }}>
               {['TEAM', 'WINDOW', 'PLAYOFF', 'CORE AGE', 'YOUTH', 'WANTS', 'SHOULD MOVE'].map((h) => (
-                <th key={h} className="py-2 px-3" style={{ color: '#3d5070', fontSize: 10, fontWeight: 600, letterSpacing: '0.2em', whiteSpace: 'nowrap' }}>{h}</th>
+                <th key={h} className="py-2 px-3" style={{ color: '#3d5070', fontSize: 10, fontWeight: 600, letterSpacing: '0.2em', whiteSpace: 'nowrap' }}>
+                  {h}
+                  {CONTENTION_COL_INFO[h] && <InfoTip text={CONTENTION_COL_INFO[h]} label={h} />}
+                </th>
               ))}
             </tr>
           </thead>
@@ -215,10 +238,13 @@ export function Edges() {
   )
 }
 
-function Stat({ label, value, accent }: { label: string; value: string; accent: string }) {
+function Stat({ label, value, accent, info }: { label: string; value: string; accent: string; info?: string }) {
   return (
     <div>
-      <div className="tracking-[0.2em] uppercase" style={{ fontSize: 10, color: '#3d5070' }}>{label}</div>
+      <div className="tracking-[0.2em] uppercase" style={{ fontSize: 10, color: '#3d5070' }}>
+        {label}
+        {info && <InfoTip text={info} label={label} />}
+      </div>
       <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 34, fontWeight: 800, color: accent, lineHeight: 1 }}>{value}</div>
     </div>
   )

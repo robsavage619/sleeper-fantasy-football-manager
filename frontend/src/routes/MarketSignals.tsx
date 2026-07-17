@@ -2,6 +2,16 @@ import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { api } from '@/lib/api'
 import type { OpponentAdjustedEntry, PlayerPriceHistory, PositionBidStats, VegasGame } from '@/lib/api'
+import { InfoTip } from '@/components/viz'
+import { GLOSSARY } from '@/lib/glossary'
+
+const VEGAS_COL_INFO: Record<string, string> = { 'BLOWOUT RISK': GLOSSARY.blowoutRisk }
+const FAAB_COL_INFO: Record<string, string> = {
+  p25: GLOSSARY.faabPercentile,
+  p50: GLOSSARY.faabPercentile,
+  p75: GLOSSARY.faabPercentile,
+  p90: GLOSSARY.faabPercentile,
+}
 
 const POS_COLOR: Record<string, string> = { QB: '#e05030', RB: '#24a870', WR: '#3a8cd4', TE: '#c8820a' }
 const AGGRO_COLOR: Record<string, string> = {
@@ -211,7 +221,10 @@ export function MarketSignals() {
             <thead>
               <tr style={{ background: '#09111f', borderBottom: '1px solid #162035' }}>
                 {['TEAM', 'MATCHUP', 'IMPLIED TOTAL', 'SPREAD', 'GAME TOTAL', 'BLOWOUT RISK'].map((h) => (
-                  <th key={h} className="py-2 px-3" style={{ color: '#3d5070', fontSize: 10, fontWeight: 600, letterSpacing: '0.2em', whiteSpace: 'nowrap' }}>{h}</th>
+                  <th key={h} className="py-2 px-3" style={{ color: '#3d5070', fontSize: 10, fontWeight: 600, letterSpacing: '0.2em', whiteSpace: 'nowrap' }}>
+                    {h}
+                    {VEGAS_COL_INFO[h] && <InfoTip text={VEGAS_COL_INFO[h]} label={h} />}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -228,6 +241,7 @@ export function MarketSignals() {
       {/* Price movers */}
       <SectionTitle sub={risers.data?.snapshot_dates ? `${risers.data.snapshot_dates.length} snapshot(s) collected` : ''}>
         Price Movers
+        <InfoTip text={GLOSSARY.momentum} label="momentum" />
       </SectionTitle>
       {(risers.data?.snapshot_dates.length ?? 0) < 2 && !risers.isLoading ? (
         <Empty>
@@ -264,7 +278,10 @@ export function MarketSignals() {
             <thead>
               <tr style={{ background: '#09111f', borderBottom: '1px solid #162035' }}>
                 {['POS', 'N', 'p25', 'p50', 'p75', 'p90'].map((h) => (
-                  <th key={h} className="py-2 px-3" style={{ color: '#3d5070', fontSize: 10, fontWeight: 600, letterSpacing: '0.2em' }}>{h}</th>
+                  <th key={h} className="py-2 px-3" style={{ color: '#3d5070', fontSize: 10, fontWeight: 600, letterSpacing: '0.2em' }}>
+                    {h}
+                    {FAAB_COL_INFO[h] && <InfoTip text={FAAB_COL_INFO[h]} label={h} />}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -319,6 +336,7 @@ export function MarketSignals() {
       {/* Opponent-adjusted (schedule luck) */}
       <SectionTitle sub={scheduleLuck.data ? `season ${scheduleLuck.data.season} · raw vs DvP-adjusted FP` : ''}>
         Schedule Luck
+        <InfoTip text={GLOSSARY.scheduleLuck} label="schedule luck" />
       </SectionTitle>
       <div className="grid gap-px pb-8" style={{ gridTemplateColumns: '1fr 1fr', background: '#162035' }}>
         <div style={{ background: '#060a12' }}>

@@ -21,12 +21,14 @@ import {
   Radar,
   BumpChart,
   InfoTip,
+  GlossaryPanel,
   tierColor,
   OWNER_HUES,
   type ScatterPoint,
   type RankedItem,
   type BumpSeries,
 } from '@/components/viz'
+import { GLOSSARY as SHARED_GLOSSARY } from '@/lib/glossary'
 
 const C = {
   bg: '#060a12',
@@ -66,30 +68,31 @@ function ordinal(n: number): string {
   return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`
 }
 
-// Plain-English definitions — one source for the inline ⓘ tips and the glossary.
+// Plain-English definitions — sourced from the shared glossary (lib/glossary.ts)
+// so the inline ⓘ tips here and on every other page never drift apart.
 const DIM_INFO: Record<string, string> = {
-  value: "Roster Value — the combined dynasty value of every player on the roster. Higher means more long-term talent on hand.",
-  skill: 'Manager Skill — how well this GM plays regardless of luck: all-play win rate, lineup efficiency, and luck-adjusted results.',
-  track: 'Track Record — historical results: career win % plus championships won.',
-  build: 'Roster Build — positional balance and depth across QB / RB / WR / TE. Rewards depth, penalizes holes at a position.',
-  capital: 'Draft Capital — future draft picks currently stockpiled. More picks = more ammo to build or trade.',
-  activity: 'Activity — how engaged the GM is: trades, waiver adds, and FAAB spent per season.',
+  value: SHARED_GLOSSARY.value,
+  skill: SHARED_GLOSSARY.skill,
+  track: SHARED_GLOSSARY.track,
+  build: SHARED_GLOSSARY.build,
+  capital: SHARED_GLOSSARY.capital,
+  activity: SHARED_GLOSSARY.activity,
 }
 
 const M = {
-  dv: "Dynasty Value (DV) — the model's estimate of a player's long-term worth in a keeper/dynasty league, blending current production with age. A roster's value is the sum across all its players.",
-  allplay: 'All-Play % — your win rate if you played EVERY team every week, not just your scheduled opponent. It strips out schedule luck; 50% is exactly average.',
-  luck: "Luck (wins) — actual wins minus what all-play says you should have won. Positive = you've won more than your scores earned. Directional only (see caveat).",
-  lineup: 'Lineup Efficiency — points your starters scored vs the best legal lineup you could have set that week. 100% = perfect start/sit calls.',
-  ledger: 'Trade Ledger P&L — retrospective value gained vs given up across all trades. UNCALIBRATED: a rough production-based estimate, and some historical assets can’t be matched by name.',
-  hit: 'Draft Hit Rate — the share of a GM’s draft picks that returned real, startable fantasy value.',
-  waiver: 'Waiver Value Added — fantasy points from waiver/free-agent pickups that actually reached the starting lineup.',
-  faab: 'FAAB — Free-Agent Acquisition Budget, the fake money each team bids to claim players off waivers.',
-  curve: 'Graded on the curve — every grade is ranked WITHIN your league (#1 = A+, last = D). It answers “who’s best here,” not an absolute score.',
-  classStrength: 'Draft Class Strength — how loaded an upcoming rookie class is, read live from the pick market (FantasyCalc): what the market pays for that class’s picks vs a neutral, time-discounted baseline. A premium = the crowd treats the class as stacked. This is already baked into every pick’s value and Draft Capital grade — shown here so it’s visible, not applied twice.',
+  dv: SHARED_GLOSSARY.dynastyValue,
+  allplay: SHARED_GLOSSARY.allPlay,
+  luck: SHARED_GLOSSARY.luck,
+  lineup: SHARED_GLOSSARY.lineupEfficiency,
+  ledger: SHARED_GLOSSARY.tradeLedger,
+  hit: SHARED_GLOSSARY.draftHitRate,
+  waiver: SHARED_GLOSSARY.waiverValueAdded,
+  faab: SHARED_GLOSSARY.faab,
+  curve: SHARED_GLOSSARY.gradedOnCurve,
+  classStrength: SHARED_GLOSSARY.draftClassStrength,
 }
 
-const GLOSSARY: [string, string][] = [
+const GLOSSARY_ENTRIES: [string, string][] = [
   ['Graded on the curve', M.curve],
   ['The six grades', 'VALUE · SKILL · TRACK RECORD · ROSTER BUILD · DRAFT CAPITAL · ACTIVITY — each ranked #1–last, then weighted into one overall grade.'],
   ['Dynasty Value (DV)', M.dv],
@@ -218,46 +221,6 @@ function ChartCard({ title, sub, caveat, info, children }: { title: string; sub?
 }
 
 // ── Glossary ────────────────────────────────────────────────────────────────────
-
-function Glossary({ benchmarks }: { benchmarks?: Record<string, string> }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <section style={{ borderBottom: `1px solid ${C.border}`, padding: '0 20px' }}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 uppercase"
-        style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer', padding: '11px 0', color: C.muted, fontFamily: barlow, fontWeight: 700, fontSize: 12, letterSpacing: '0.16em' }}
-      >
-        <span style={{ display: 'inline-flex', width: 14, height: 14, borderRadius: '50%', border: `1px solid ${C.dim}`, alignItems: 'center', justifyContent: 'center', fontFamily: mono, fontSize: 9, color: C.muted }}>
-          i
-        </span>
-        What The Numbers Mean
-        <span style={{ marginLeft: 'auto', fontFamily: mono, fontSize: 11, color: C.dim, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>›</span>
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.22 }} style={{ overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '10px 24px', paddingBottom: 18, paddingTop: 4 }}>
-              {GLOSSARY.map(([term, def]) => (
-                <div key={term} style={{ borderLeft: `2px solid ${C.border}`, paddingLeft: 12 }}>
-                  <div className="uppercase" style={{ fontFamily: barlow, fontWeight: 700, fontSize: 13, color: C.text, letterSpacing: '0.03em', marginBottom: 2 }}>
-                    {term}
-                  </div>
-                  <div style={{ color: C.muted, fontSize: 12, lineHeight: 1.5 }}>{def}</div>
-                  {benchmarks?.[term] && (
-                    <div className="uppercase tracking-wide" style={{ color: C.cyan, fontSize: 9.5, marginTop: 4 }}>
-                      In your league: {benchmarks[term]}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </section>
-  )
-}
 
 // ── Superlative award cards ────────────────────────────────────────────────────
 
@@ -1085,7 +1048,7 @@ export function ReportCard() {
         </div>
       </div>
 
-      {cards.length > 0 && <Glossary benchmarks={glossaryBenchmarks} />}
+      {cards.length > 0 && <GlossaryPanel entries={GLOSSARY_ENTRIES} benchmarks={glossaryBenchmarks} />}
 
       {anyLoading && (
         <div className="p-8 text-center tracking-widest uppercase" style={{ color: C.dim, fontSize: 12 }}>

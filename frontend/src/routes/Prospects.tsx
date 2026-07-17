@@ -4,6 +4,13 @@ import { motion } from 'framer-motion'
 import { api } from '@/lib/api'
 import type { ProspectProfile } from '@/lib/api'
 import { ProspectScoutingDrawer } from '@/components/ProspectScoutingDrawer'
+import { InfoTip } from '@/components/viz'
+import { GLOSSARY } from '@/lib/glossary'
+
+const COL_INFO: Record<string, string> = {
+  'USG%': GLOSSARY.usageRate,
+  SCORE: GLOSSARY.prospectScore,
+}
 
 const POS_COLOR: Record<string, string> = {
   QB: '#e05030',
@@ -320,6 +327,7 @@ export function Prospects() {
                   }}
                 >
                   {label}
+                  {COL_INFO[label] && <InfoTip text={COL_INFO[label]} label={label} />}
                 </th>
               ))}
             </tr>

@@ -207,9 +207,14 @@ export type MyRosterPlayer = {
   team: string
   fpar: number
   dynasty_value: number
+  model_value?: number
+  market_value?: number | null
+  market_valued?: boolean
   is_starter: boolean
   is_taxi: boolean
   is_reserve: boolean
+  age_curve_adjustment?: number
+  career_phase?: 'ascending' | 'at-peak' | 'declining'
 }
 
 export type MyRoster = {
@@ -255,6 +260,8 @@ export type PlayerProfile = {
   value: {
     current_fpar: number
     dynasty_value: number
+    age_curve_adjustment?: number
+    career_phase?: 'ascending' | 'at-peak' | 'declining'
     pick_equivalent: string
     age_curve: string
     valuation_season: number
@@ -675,6 +682,20 @@ export type TradeOfferRecommendation = {
   evidence_count: number
   calibration: 'OWNER-HISTORY' | 'LIMITED-HISTORY' | 'LOW-SAMPLE' | 'UNCALIBRATED'
   calibration_notes: string
+  impact_score?: number
+  impact_label?: 'LOW' | 'MED' | 'HIGH'
+  acceptance_breakdown?: AcceptanceBreakdown | null
+}
+
+export type AcceptanceBreakdown = {
+  base: number
+  position_fit: number
+  margin_score: number
+  history_score: number
+  window_score: number
+  sample_penalty: number
+  total: number
+  confidence: 'LOW' | 'MED' | 'HIGH'
 }
 
 export type RecommendationEval = {

@@ -5,6 +5,7 @@ import { api, type PlayerProfile } from '@/lib/api'
 import {
   Donut,
   INK,
+  InfoTip,
   MiniBars,
   PercentileBar,
   PlayerHeadshot,
@@ -12,6 +13,13 @@ import {
   RangeBar,
   STATUS,
 } from '@/components/viz'
+import { GLOSSARY } from '@/lib/glossary'
+
+const USAGE_INFO: Record<string, string> = {
+  WOPR: GLOSSARY.wopr,
+  'Target Share': GLOSSARY.targetShare,
+  'Air-Yds Share': GLOSSARY.airYardsShare,
+}
 
 function AnalyticsSection({ playerId }: { playerId: string }) {
   const { data, isLoading, error } = useQuery({
@@ -98,7 +106,13 @@ function AnalyticsSection({ playerId }: { playerId: string }) {
       {usageBars.length > 0 && (
         <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
           {usageBars.map((b) => (
-            <PercentileBar key={b.label} label={b.label} pct01={b.v as number} value={b.fmt(b.v as number)} />
+            <PercentileBar
+              key={b.label}
+              label={b.label}
+              pct01={b.v as number}
+              value={b.fmt(b.v as number)}
+              info={USAGE_INFO[b.label]}
+            />
           ))}
         </div>
       )}
@@ -110,6 +124,7 @@ function AnalyticsSection({ playerId }: { playerId: string }) {
               label="xFP Residual"
               value={`${xfp.residual >= 0 ? '+' : ''}${xfp.residual.toFixed(1)}`}
               sub={`${xfp.actual_fp.toFixed(0)} actual vs ${xfp.xfp.toFixed(0)} expected`}
+              info={GLOSSARY.xfpResidual}
             />
             <Metric
               label="30-Day Market"
@@ -128,11 +143,12 @@ function AnalyticsSection({ playerId }: { playerId: string }) {
   )
 }
 
-function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Metric({ label, value, sub, info }: { label: string; value: string; sub?: string; info?: string }) {
   return (
     <div style={{ border: '1px solid #162035', background: '#09111f', padding: '10px 12px' }}>
       <div className="tracking-[0.24em] uppercase" style={{ color: '#3d5070', fontSize: 9 }}>
         {label}
+        {info && <InfoTip text={info} label={label} />}
       </div>
       <div
         style={{
@@ -237,11 +253,13 @@ function ProfileBody({ profile }: { profile: PlayerProfile }) {
             label="Dynasty"
             value={profile.value.dynasty_value.toFixed(1)}
             sub={`${profile.value.pick_equivalent} equivalent`}
+            info={GLOSSARY.dynastyValue}
           />
           <Metric
             label="FPAR"
             value={profile.value.current_fpar.toFixed(1)}
             sub={`season ${profile.value.valuation_season}`}
+            info={GLOSSARY.currentFpar}
           />
           <Metric
             label="PPG"
@@ -252,6 +270,13 @@ function ProfileBody({ profile }: { profile: PlayerProfile }) {
         <div style={{ color: '#8aa0b8', fontSize: 12, marginTop: 10 }}>
           {profile.value.age_curve}
         </div>
+        {profile.value.age_curve_adjustment != null && (
+          <div className="flex items-center gap-1" style={{ color: '#6a8098', fontSize: 11, marginTop: 4 }}>
+            {profile.value.career_phase ?? 'n/a'}: {profile.value.age_curve_adjustment >= 0 ? '+' : ''}
+            {profile.value.age_curve_adjustment.toFixed(0)} age-curve adjustment on top of {profile.value.current_fpar.toFixed(0)} current FPAR
+            <InfoTip text={GLOSSARY.ageCurveAdjustment} label="age-curve adjustment" />
+          </div>
+        )}
       </Section>
 
       <Section title="Trajectory">

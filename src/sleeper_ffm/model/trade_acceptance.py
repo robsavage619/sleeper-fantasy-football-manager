@@ -119,6 +119,25 @@ class TradeAsset:
 
 
 @dataclass
+class AcceptanceBreakdown:
+    """Named components behind an acceptance score, for UI display.
+
+    ``confidence`` is a label on the score's *magnitude* (a score band), not a
+    calibrated statistical confidence — the formula has never been validated
+    against real accepted/rejected offers. UI should present it as such.
+    """
+
+    base: int
+    position_fit: int
+    margin_score: int
+    history_score: int
+    window_score: int
+    sample_penalty: int
+    total: int
+    confidence: str
+
+
+@dataclass
 class TradeOfferRecommendation:
     """A concrete outgoing offer with partner-specific acceptance context."""
 
@@ -141,6 +160,7 @@ class TradeOfferRecommendation:
     calibration_notes: str
     impact_score: float = 0.0
     impact_label: str = "LOW"
+    acceptance_breakdown: AcceptanceBreakdown | None = None
 
 
 def _rank_map(dossier: OwnerDossier) -> dict[str, int]:
@@ -374,6 +394,9 @@ def _window_bonus(
     return 0
 
 
+_ACCEPTANCE_BASE: int = 42
+
+
 def _acceptance_score(
     my_dossier: OwnerDossier,
     partner: OwnerDossier,
@@ -381,8 +404,8 @@ def _acceptance_score(
     give_asset: TradeAsset,
     receive_asset: TradeAsset,
     sweetener: TradeAsset | None,
-) -> tuple[int, str, str]:
-    """Return acceptance score plus a compact rationale."""
+) -> tuple[int, str, str, AcceptanceBreakdown]:
+    """Return acceptance score, confidence, rationale, and the component breakdown."""
     give_value = give_asset.value + (sweetener.value if sweetener else 0.0)
     margin_for_partner = give_value - receive_asset.value
     position_fit = _score_position_fit(
@@ -396,7 +419,8 @@ def _acceptance_score(
     window_score = _window_bonus(partner, give_asset, sweetener)
     sample_penalty = 0 if history and history.trade_count >= 3 else -4
 
-    raw = 42 + position_fit + margin_score + history_score + window_score + sample_penalty
+    raw = _ACCEPTANCE_BASE + position_fit + margin_score + history_score + window_score
+    raw += sample_penalty
     score = max(5, min(98, round(raw)))
     confidence = "HIGH" if score >= 74 else "MED" if score >= 54 else "LOW"
     rationale = (
@@ -404,7 +428,17 @@ def _acceptance_score(
         f"{history.approachability if history else 'UNKNOWN'} approachability, "
         f"{partner.contention.label.lower()} window"
     )
-    return score, confidence, rationale
+    breakdown = AcceptanceBreakdown(
+        base=_ACCEPTANCE_BASE,
+        position_fit=position_fit,
+        margin_score=margin_score,
+        history_score=history_score,
+        window_score=window_score,
+        sample_penalty=sample_penalty,
+        total=score,
+        confidence=confidence,
+    )
+    return score, confidence, rationale, breakdown
 
 
 def _command(give: list[TradeAsset], receive: TradeAsset, partner: OwnerDossier) -> str:
@@ -466,7 +500,7 @@ def _offer_for_partner(
                 continue
             value_delta = round(receive_value - give_value, 1)  # negative = I pay the premium
 
-            acceptance, confidence, rationale = _acceptance_score(
+            acceptance, confidence, rationale, breakdown = _acceptance_score(
                 my_dossier,
                 partner,
                 history,
@@ -528,6 +562,7 @@ def _offer_for_partner(
                 calibration_notes=calibration_notes,
                 impact_score=impact_score,
                 impact_label=impact_label,
+                acceptance_breakdown=breakdown,
             )
             if best is None or offer.impact_score > best.impact_score:
                 best = offer

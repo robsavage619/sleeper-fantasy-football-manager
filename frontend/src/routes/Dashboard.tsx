@@ -3,6 +3,8 @@ import { motion } from 'framer-motion'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { api, leagueFormatLabel, type StartSitRec, type TransactionPlan, type WarRoomAction } from '@/lib/api'
+import { InfoTip } from '@/components/viz'
+import { GLOSSARY } from '@/lib/glossary'
 
 function Panel({
   label,
@@ -297,16 +299,19 @@ function ActionQueue({
                   </span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     {action.acceptance_score != null && (
-                      <span style={{
-                        fontSize: 9,
-                        fontWeight: 800,
-                        letterSpacing: '0.12em',
-                        padding: '2px 6px',
-                        color: '#060a12',
-                        background: color,
-                        borderRadius: 1,
-                      }}>
-                        {action.acceptance_score} FIT
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                        <span style={{
+                          fontSize: 9,
+                          fontWeight: 800,
+                          letterSpacing: '0.12em',
+                          padding: '2px 6px',
+                          color: '#060a12',
+                          background: color,
+                          borderRadius: 1,
+                        }}>
+                          {action.acceptance_score} FIT
+                        </span>
+                        <InfoTip text={GLOSSARY.acceptanceScore} label="FIT score" align="right" />
                       </span>
                     )}
                     <span style={{

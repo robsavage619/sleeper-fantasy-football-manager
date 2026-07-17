@@ -10,7 +10,7 @@ from numbers import Real
 import polars as pl
 
 from sleeper_ffm.config import DEFAULT_VALUE_SEASON, cached_weekly_seasons
-from sleeper_ffm.model.dynasty import PlayerAsset, value_pick, value_player
+from sleeper_ffm.model.dynasty import PlayerAsset, value_pick, value_player_breakdown
 from sleeper_ffm.model.valuation import (
     _normalize_name,
     _rookie_fpar,
@@ -265,10 +265,13 @@ def _value_snapshot(
             is_taxi=True,
         )
 
-    dynasty_value = value_player(asset)
+    breakdown = value_player_breakdown(asset)
+    dynasty_value = breakdown.value
     return {
         "current_fpar": asset.current_fpar,
         "dynasty_value": dynasty_value,
+        "age_curve_adjustment": breakdown.age_curve_adjustment,
+        "career_phase": breakdown.career_phase,
         "pick_equivalent": _pick_equivalent(dynasty_value),
         "age_curve": _age_curve_note(asset),
         "valuation_season": DEFAULT_VALUE_SEASON,
