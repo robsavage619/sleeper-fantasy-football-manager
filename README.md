@@ -15,6 +15,7 @@
   <a href="frontend/"><img src="https://img.shields.io/badge/build-Vite%208-646cff" alt="Vite 8"/></a>
   <a href="tests/"><img src="https://img.shields.io/badge/tests-334%20passing-success" alt="334 tests"/></a>
   <a href="evals/"><img src="https://img.shields.io/badge/eval%20scenarios-121-blueviolet" alt="121 eval scenarios"/></a>
+  <a href=".github/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-pytest%20%C2%B7%20ruff%20%C2%B7%20pyright%20%C2%B7%20eval-2ea44f" alt="CI"/></a>
   <a href=".claude/skills/war-room-reason/SKILL.md"><img src="https://img.shields.io/badge/reasoning-Claude%20Code-8a63d2" alt="Claude Code"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-source--available-lightgrey" alt="license"/></a>
 </p>
@@ -47,20 +48,21 @@ The War Room opens on the franchise at a glance: league format, traded-pick inve
 
 ---
 
-## Market Edges
+## Market
 
 > *The trade brain: title equity, who's buying and selling, and where the market is wrong for this team.*
 
 <p align="center">
-  <img src="docs/screenshots/market-edges.png" alt="Market Edges — title equity, contention windows, scoring-leverage mispricing, and TD regression" width="100%"/>
+  <img src="docs/screenshots/market-edges.png" alt="Market — mispricing tab: title equity, contention windows, scoring-leverage mispricing, and TD regression" width="100%"/>
 </p>
 
-Four engines on one page:
+One page, five tabs, instead of the two arbitrarily-split pages this used to be (nobody could predict which page held what). Mispricing, Regression, and Title & Contention are shown above; Vegas & Movers and FAAB & Schedule share the same page as additional tabs, not a separate route.
 
 - **Title equity.** A Monte-Carlo season simulation ([`season_sim.py`](src/sleeper_ffm/model/season_sim.py)) ranks every roster by championship probability, so "contend or rebuild" is a number instead of a guess.
 - **Contention windows.** Each rival is classified `WIN-NOW` / `SUSTAIN` / `RETOOL` / `REBUILD` from odds, core age, and youth share, along with what they want and what they should move. Aim trades at the fit.
-- **League-specific mispricing.** Each player is scored twice — under our rules and under generic PPR — and the gap, normalized against his position, is the edge the national market doesn't price. On the board above, the BUY column skews to QBs and workhorse backs, which is what our passing and yardage bonuses reward more than standard PPR does: Joe Flacco +11.3%, Derrick Henry +11.1%, James Cook +10.1%.
+- **League-specific mispricing.** Each player is scored twice — under our rules and under generic PPR — and the gap, normalized against his position, is the edge the national market doesn't price. On the board above, the BUY column skews to QBs and workhorse backs, which is what our passing and yardage bonuses reward more than standard PPR does: Joe Flacco +11.3%, Derrick Henry +11.1%, James Cook +10.1%. Every edge % and value-gap number carries an inline explainer, and a BUY/SELL row links straight into Trades with that player already targeted.
 - **Regression watch.** Touchdowns over expected flags sell-highs (Davante Adams was +9.1 TDs above his yardage) and buy-lows (Bijan Robinson, −5.1) before the market catches up.
+- **Vegas & Movers, FAAB & Schedule.** Implied team totals and blowout risk from the spread, dynasty price-history risers/fallers with a per-player trend sparkline, this league's own historical FAAB clearing prices by position, and opponent-adjusted schedule luck.
 
 ---
 
@@ -87,22 +89,23 @@ Five things before lineups lock. **Win probability** for the week's matchup, wit
   </tr>
 </table>
 
-Every owner is profiled from the league's real transaction history: an archetype (pick hoarder, win-now star collector, and so on), an approachability read, trade-partner tendencies, and positional needs. That profile feeds the acceptance model behind every proposed offer and the **negotiation copilot**, which tailors a pitch to how that owner values assets. Twelve surfaces in all:
+Every owner is profiled from the league's real transaction history: an archetype (pick hoarder, win-now star collector, and so on), an approachability read, trade-partner tendencies, and positional needs. That profile feeds the acceptance model behind every proposed offer and the **negotiation copilot** — a per-owner opening/fair/walk-away brief with talking points, expandable straight from a Trade Targets card — which tailors a pitch to how that owner values assets. Eleven surfaces in all, grouped by the decision they serve rather than by which engine built them (This Week / Market / Franchise / League / Draft):
 
 | Route | View |
 |---|---|
-| `/` | **War Room** — command center + AI intel findings |
-| `/edges` | **Market Edges** — mispricing, title equity, contention, regression |
-| `/matchups` | **Matchup Lab** — win probability, weather, SoS, wire, handcuffs |
-| `/draft` | **Draft Board** — live board, value-based recs, standings-projected slot |
-| `/roster` | **Roster** — dynasty values, age curve, lineup |
-| `/trades` | **Trades** — acceptance-model offers with two-sided value accounting |
+| `/` | **War Room** — command center, weekly-routine strip, AI intel findings |
+| `/matchups` | **Matchup Lab** — win probability, weather, SoS, wire, handcuffs, playoff Vegas outlook |
 | `/waivers` | **Waivers** — claim cards, bid ranges, drop candidates, downside |
-| `/owners` | **GM Profiles** — owner behavioral profiling |
+| `/trades` | **Trades** — acceptance-model offers, FIT-score breakdown, negotiation copilot |
+| `/market` | **Market** — mispricing, title equity, contention, regression, Vegas, price momentum, FAAB (5 tabs, one page) |
+| `/roster` | **Roster** — dynasty values, age-curve breakdown, lineup |
+| `/owners` | **GM Profiles** — owner behavioral profiling, per-owner FAAB |
 | `/report-card` | **Report Card** — manager grades across seasons + the AI's own graded track record |
-| `/prospects` | **Prospects** — rookie scouting (CFBD college + combine + market) |
-| `/narrative` | **War Room Brief** — the single-prompt GM update |
-| `/market-signals` | **Market Signals** — dynasty price-history trends and top risers/fallers |
+| `/draft` | **Draft Board** — live board, value-based recs, standings-projected slot |
+| `/prospects` | **Prospects** — rookie scouting (CFBD college + combine + market), virtualized |
+| `/narrative` | **AI Briefing** — the manual single-prompt fallback; the real loop is the `war-room-reason` skill below |
+
+Every scored metric on every page — FIT score, edge %, SoS index, dynasty value, prospect score — carries an inline plain-English explainer from a shared glossary; nothing ships as a bare number anymore.
 
 ---
 
@@ -168,9 +171,9 @@ One command refreshes everything that moves in-season — `POST /admin/refresh` 
 
 ## Under the hood
 
-**Backend** — Python 3.12, FastAPI, Polars, `uv`, `ruff`, `pyright`. About 21K lines across **34 model engines** and **36 API routers**, with **334 tests**. The statistical cores are unit-tested without a network. On top of that sits the **121-scenario eval harness** ([Engine evaluation](#engine-evaluation--tuning-the-reasoning-loop-against-ground-truth) above) for the calibration checks unit tests can't cover. A `typer` CLI (`sffm <verb>`) drives ingestion, scoring, evaluation, and the war-room loop.
+**Backend** — Python 3.12, FastAPI, Polars, `uv`, `ruff`, `pyright`. About 22K lines across **34 model engines** and **36 API routers**, with **334 tests**. The statistical cores are unit-tested without a network. On top of that sits the **121-scenario eval harness** ([Engine evaluation](#engine-evaluation--tuning-the-reasoning-loop-against-ground-truth) above) for the calibration checks unit tests can't cover. A `typer` CLI (`sffm <verb>`) drives ingestion, scoring, evaluation, and the war-room loop. CI (`.github/workflows/ci.yml`) runs pytest, ruff, pyright, and a tier-1 eval smoke test on every push.
 
-**Frontend** — React 19, TypeScript 6, Vite 8, Tailwind 4, TanStack Query, Zustand, Framer Motion. A single-page dashboard with 12 routes, wired to the live backend.
+**Frontend** — React 19, TypeScript 6, Vite 8, Tailwind 4, TanStack Query, Zustand, Framer Motion. A single-page dashboard with 11 routes organized around the decision each one serves, not the engine behind it, wired to the live backend.
 
 ```
 src/sleeper_ffm/
@@ -188,7 +191,7 @@ src/sleeper_ffm/
 ├── season/ draft/ act/ schedule/   # start-sit, waivers, draft assistant, plans, scheduler
 ├── evals/       # sffm eval harness: 121 scenarios (Tier 1) + prompt-grading fixtures (Tier 3)
 └── api/         # FastAPI app + 36 routers
-frontend/        # React 19 / Vite 8 / Tailwind 4 dashboard (12 routes)
+frontend/        # React 19 / Vite 8 / Tailwind 4 dashboard (11 routes)
 evals/           # scenario JSON (train/holdout), tier-3 rubric, run ledger
 .claude/         # the war-room-reason + engine-eval skills + launch config — the agent loop
 ```
@@ -233,7 +236,7 @@ This is a personal project — an end-to-end build of scoring-aware valuation, s
 
 - **10 min** — this README. The screenshots are live output, and [The edge](#the-edge--league-exact-scoring) is the thesis in three paragraphs.
 - **30 min** — read [`scoring/engine.py`](src/sleeper_ffm/scoring/engine.py) and [`model/mispricing.py`](src/sleeper_ffm/model/mispricing.py), then [`prompts/master.py`](src/sleeper_ffm/prompts/master.py) and [`.claude/skills/war-room-reason/SKILL.md`](.claude/skills/war-room-reason/SKILL.md) for the agent loop.
-- **An afternoon** — `uv sync && uv run sffm ingest && uv run sffm serve`, start the frontend, and open `/edges` and `/matchups`. Every board is backed by an engine with tests. Then run `uv run sffm eval run --tier 1 --split train` and read [`.claude/skills/engine-eval/SKILL.md`](.claude/skills/engine-eval/SKILL.md), the harness that keeps those engines and the reasoning loop calibrated against ground truth.
+- **An afternoon** — `uv sync && uv run sffm ingest && uv run sffm serve`, start the frontend, and open `/market` and `/matchups`. Every board is backed by an engine with tests. Then run `uv run sffm eval run --tier 1 --split train` and read [`.claude/skills/engine-eval/SKILL.md`](.claude/skills/engine-eval/SKILL.md), the harness that keeps those engines and the reasoning loop calibrated against ground truth.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for the build history.
 

@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ---
 
-## [Unreleased] — Edge analytics, market-anchored valuation, and engine evaluation
+## [Unreleased] — Edge analytics, market-anchored valuation, engine evaluation, and the decision-first UI
 
 The layer that turns the scoring core into a decision engine: sixteen deterministic
 edge engines, each with an API router and tests, all wired into the single master
@@ -137,6 +137,109 @@ just its code.
   reached the API un-validated before. `faab_bid` is now a strict integer (a
   malformed string 422s); `send`/`receive` accept the list shape real output
   legitimately produces.
+
+### A self-audit, then the decision-first pass it called for
+
+A second product audit (`docs/product-audit-2026-07-16.md`) found the engine had
+outgrown the interface: ~70 endpoints of opinionated numbers with almost none
+explained, twelve pages organized by which engine produced them rather than which
+decision they served, and two fully-built backend features (intel feed,
+negotiation copilot) with no way to reach them. This entry is the fix, in the
+order the audit prescribed — explain what's already computed, then restructure
+the IA, then add visuals where decisions happen, then wire in the orphaned
+backend, then the deeper reliability work.
+
+**Explanation layer.**
+- The acceptance-score and dynasty-value engines now return their component
+  breakdowns instead of a single opaque number: `TradeOfferRecommendation`
+  carries an `acceptance_breakdown` (base + roster-fit + value-margin + owner-
+  history + contention-window + sample-size penalty), and `value_player_breakdown`
+  splits dynasty value into current FPAR vs. age-curve adjustment vs. career
+  phase.
+- A shared `frontend/src/lib/glossary.ts` promotes the plain-English metric
+  definitions that used to live only on the Report Card, and `InfoTip` — a
+  reusable hover/tap popover, previously used on exactly one of twelve pages —
+  is now attached to every scored metric across the whole app: FIT scores, waiver
+  priority, edge %, strength-of-schedule index, blowout risk, FAAB percentiles,
+  dynasty value, prospect score, WOPR/target-share/xFP residual.
+
+**Decision-first information architecture.**
+- Navigation regrouped by workflow instead of by engine: **This Week** (War
+  Room, Matchup Lab, Waivers, Trades), **Market**, **Franchise** (Roster),
+  **League** (GM Profiles, Report Card), **Draft** (Draft Board, Prospects).
+- **Market Edges** and **Market Signals** merged into one tabbed **Market**
+  page (Mispricing / Regression / Title & Contention / Vegas & Movers / FAAB &
+  Schedule) — the split between them was arbitrary and nobody could predict
+  which page held what. The old routes redirect.
+- "War Room Brief" renamed to **AI Briefing** (it collided with "War Room" in
+  the sidebar), and its copy now says plainly that it's a manual fallback —
+  the real reasoning loop is the `war-room-reason` Claude Code skill, and its
+  output shows up in the War Room's findings feed.
+- Cross-page links where there were none: a Market BUY/SELL row now opens
+  Trades with that player prefilled; a Waivers row links to its price trend;
+  Dashboard action-queue cards deep-link to the page that explains them.
+- A weekly-routine strip on the War Room (refresh → run the AI GM → read the
+  queue → decide) and a "last refreshed Xh ago" indicator in the OpsBar, both
+  using freshness data the app was already fetching and never displaying. Plus
+  a 404 route — an unknown path used to render a blank pane.
+
+**Visuals where the weekly decisions happen.** Price-history sparklines
+(the endpoint existed, nothing called it), a FAAB percentile range chart and a
+TD-regression diverging-bar chart on the Market page, the Prospects table
+virtualized with `@tanstack/react-virtual` (Draft Board deliberately left
+un-virtualized — its 60-row cap and sort-animation didn't justify the
+rewrite), and a first responsive pass (collapsible mobile sidebar,
+breakpoint-aware grids) on an app that had zero media queries.
+
+**The orphaned backend, wired in.** Two fully-built endpoints had no frontend
+path at all: `/intel/feed` now backs an Intel panel on the War Room, and
+`/negotiation` now backs an expandable negotiation brief (opening / fair /
+walk-away anchors, talking points) on every Trade Targets card. Per-owner FAAB
+now shows on GM Profiles, playoff Vegas outlook and weekly matchups now show
+on Matchup Lab, and per-player environment splits now show in the player
+drawer — all five were already fetchable and simply never called.
+
+### Reliability and debt
+
+- **Injury / play-by-play / depth-chart fetch failures now register as
+  stale**, not silently-empty. `load_injuries`, `load_pbp`, and
+  `load_depth_charts` previously caught a fetch error and returned an empty
+  frame with only a log line; they now register in the same
+  `_STALE_FALLBACKS` mechanism every other loader in the module already uses,
+  so a real outage is distinguishable from "no injuries this week." The eight
+  routers backing Market Edges and Market Signals gained a `data_quality`
+  field for the same reason.
+- **`owner_dossier.py` and `owner_history.py` are now tested.** Both had zero
+  coverage despite being the backbone of every trade recommendation; so did
+  `market/dynastyprocess.py`, the sole fallback when FantasyCalc is down.
+- **The out-of-sample backtest pattern — fit on one season, score on the
+  next — is extended to the dynasty age curves.** The projected age-curve
+  shape beats a naive flat-carry baseline by ~8% MAE with a 63% directional
+  hit rate on real 2024→2025 data. The trade-acceptance formula and
+  season-sim odds were evaluated for the same treatment; the honest finding is
+  that no ground-truth dataset exists to validate acceptance against (the
+  offer log tracks `sent`, not accepted/rejected/countered), so that gap is
+  documented rather than papered over with a fabricated number.
+- **CI**, for the first time: `.github/workflows/ci.yml` runs pytest, ruff,
+  pyright, and a tier-1 eval smoke test on every push.
+- **Six divergent name-normalization implementations** (`valuation.py`,
+  `rec_scoreboard.py`, `trade_acceptance.py`, `nflverse/combine.py`,
+  `cfbd/loader.py`, `college/cfb_box.py` each had their own) unified into one
+  `src/sleeper_ffm/names.py`, which also fixed a latent asymmetric-join bug in
+  `college/cfb_box.py` where the query side was normalized and the data side
+  wasn't.
+- **~10 of the ~15 unused frontend dependencies removed** (`recharts`, all of
+  `@radix-ui/*`, `@dnd-kit/*`, `@tanstack/react-table`, `cmdk`) — installed,
+  imported nowhere, while the team hand-rolled the tables, modals, and
+  tooltips those packages exist to solve. `@tanstack/react-virtual` stayed;
+  it's now actually used.
+- Duplicated palette and component code (`POS_COLOR`, `SectionTitle`,
+  `PosTag`, `Loading`/`Empty`) consolidated from ~10 route files into the
+  shared `viz.tsx`.
+- README's `sffm roster` description fixed (it described roster dynasty
+  values; the command actually prints league-wide owner behavioral profiles),
+  and the five previously-undocumented CLI commands (`history`, `draft`,
+  `trade`, `startsit`, `trends`) are now documented.
 
 ---
 
