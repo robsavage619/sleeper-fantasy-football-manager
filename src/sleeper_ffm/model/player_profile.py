@@ -12,11 +12,11 @@ import polars as pl
 from sleeper_ffm.config import DEFAULT_VALUE_SEASON, cached_weekly_seasons
 from sleeper_ffm.model.dynasty import PlayerAsset, value_pick, value_player_breakdown
 from sleeper_ffm.model.valuation import (
-    _normalize_name,
     _rookie_fpar,
     build_player_assets,
     score_weekly,
 )
+from sleeper_ffm.names import normalize_name
 from sleeper_ffm.nflverse.loader import load_depth_charts, load_id_map, load_injuries, load_snaps
 from sleeper_ffm.scoring.engine import load_scoring
 from sleeper_ffm.sleeper.client import SleeperClient
@@ -128,11 +128,11 @@ def _filter_player_weekly(weekly: pl.DataFrame, gsis_ids: set[str], identity: di
     filters = []
     if gsis_ids:
         filters.append(pl.col("player_id").is_in(sorted(gsis_ids)))
-    name = _normalize_name(str(identity["name"]))
+    name = normalize_name(str(identity["name"]))
     if name:
         filters.append(
             pl.col("player_display_name")
-            .map_elements(_normalize_name, return_dtype=pl.Utf8)
+            .map_elements(normalize_name, return_dtype=pl.Utf8)
             .eq(name)
         )
     if not filters:
@@ -311,10 +311,10 @@ def _usage_snapshot(
 def _filter_snap_rows(snaps: pl.DataFrame, identity: dict) -> pl.DataFrame:
     if snaps.is_empty() or "player" not in snaps.columns:
         return snaps
-    name = _normalize_name(str(identity["name"]))
+    name = normalize_name(str(identity["name"]))
     team = str(identity["team"])
     rows = snaps.filter(
-        pl.col("player").map_elements(_normalize_name, return_dtype=pl.Utf8).eq(name)
+        pl.col("player").map_elements(normalize_name, return_dtype=pl.Utf8).eq(name)
     )
     if team and team != "FA" and "team" in rows.columns:
         team_rows = rows.filter(pl.col("team") == team)
@@ -402,9 +402,9 @@ def _filter_gsis_or_name(
     if gsis_ids and "gsis_id" in frame.columns:
         filters.append(pl.col("gsis_id").is_in(sorted(gsis_ids)))
     if name_col in frame.columns:
-        name = _normalize_name(str(identity["name"]))
+        name = normalize_name(str(identity["name"]))
         filters.append(
-            pl.col(name_col).map_elements(_normalize_name, return_dtype=pl.Utf8).eq(name)
+            pl.col(name_col).map_elements(normalize_name, return_dtype=pl.Utf8).eq(name)
         )
     if not filters:
         return frame.head(0)

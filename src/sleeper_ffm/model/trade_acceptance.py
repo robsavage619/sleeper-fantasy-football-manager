@@ -13,6 +13,7 @@ from sleeper_ffm.market.blend import pick_market_available
 from sleeper_ffm.model.dynasty import PickAsset, value_pick
 from sleeper_ffm.model.owner_dossier import OwnerDossier, build_dossier
 from sleeper_ffm.model.owner_history import OwnerHistory, build_league_history
+from sleeper_ffm.names import normalize_name
 from sleeper_ffm.sleeper.client import SleeperClient
 
 log = logging.getLogger(__name__)
@@ -23,7 +24,6 @@ _POSITIONS: tuple[str, ...] = ("QB", "RB", "WR", "TE")
 # shopped to the whole league in the queue.
 _MAX_OFFERS_PER_GIVE_PLAYER: int = 2
 
-_NAME_RE = re.compile(r"[^a-z ]")
 _PICK_LEG_RE = re.compile(r"^20\d\d R\d")
 # Fallback demand shares when this league has no trade history yet.
 _DEFAULT_LIQUIDITY: dict[str, float] = {"RB": 0.40, "WR": 0.32, "TE": 0.16, "QB": 0.12}
@@ -43,7 +43,7 @@ def _leg_position(leg: str, name_to_pos: dict[str, str]) -> str | None:
         return None
     if _PICK_LEG_RE.match(leg):
         return "PICK"
-    return name_to_pos.get(_NAME_RE.sub("", leg.lower()).strip())
+    return name_to_pos.get(normalize_name(leg))
 
 
 @ttl_cache()
@@ -61,7 +61,7 @@ def league_trade_intel() -> dict:
         full_name = p.get("full_name")
         pos = p.get("position")
         if full_name and pos in _POSITIONS:
-            name_to_pos[_NAME_RE.sub("", full_name.lower()).strip()] = pos
+            name_to_pos[normalize_name(full_name)] = pos
 
     seen: set[tuple] = set()
     pos_legs: dict[str, int] = dict.fromkeys(_POSITIONS, 0)

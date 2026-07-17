@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from numbers import Real
 from typing import TYPE_CHECKING
 
@@ -27,6 +26,7 @@ from sleeper_ffm.cache import ttl_cache
 from sleeper_ffm.config import DATA_DIR, DEFAULT_VALUE_SEASON
 from sleeper_ffm.market.blend import FC_TO_FPAR_SCALE
 from sleeper_ffm.model.dynasty import PlayerAsset
+from sleeper_ffm.names import normalize_name
 from sleeper_ffm.nflverse.loader import load_id_map, load_weekly
 from sleeper_ffm.scoring.engine import load_scoring, score, stats_from_nflverse
 
@@ -34,17 +34,6 @@ if TYPE_CHECKING:
     pass
 
 log = logging.getLogger(__name__)
-
-_SUFFIX_RE = re.compile(r"\s+(jr\.?|sr\.?|ii|iii|iv|v)$", re.IGNORECASE)
-_PUNCT_RE = re.compile(r"[^a-z\s]")
-
-
-def _normalize_name(name: str) -> str:
-    """Lowercase, strip name suffixes (Jr./Sr./II/III/IV) and punctuation, collapse whitespace."""
-    name = name.lower().strip()
-    name = _SUFFIX_RE.sub("", name)
-    name = _PUNCT_RE.sub("", name)
-    return " ".join(name.split())
 
 
 # Fallback replacement ranks (used if league_settings.json is missing or malformed).
@@ -461,7 +450,7 @@ def build_player_assets(
 
         pos = p.get("position", "")
         if pos in SKILL_POSITIONS:
-            norm = _normalize_name(p.get("full_name") or "")
+            norm = normalize_name(p.get("full_name") or "")
             if norm:
                 key = (norm, pos)
                 if key in sleeper_by_name_pos:
@@ -490,7 +479,7 @@ def build_player_assets(
                 sgsis_hits += 1
             else:
                 # Fallback 2: name + position (skip if ambiguous)
-                norm = _normalize_name(row.get("name") or "")
+                norm = normalize_name(row.get("name") or "")
                 candidate = sleeper_by_name_pos.get((norm, pos), "")
                 if candidate:
                     sid = candidate

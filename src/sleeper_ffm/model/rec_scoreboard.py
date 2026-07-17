@@ -25,10 +25,10 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-import re
-import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
+
+from sleeper_ffm.names import normalize_name
 
 log = logging.getLogger(__name__)
 
@@ -140,24 +140,6 @@ def summarize(recs: list[TrackedRec]) -> tuple[list[ScoreboardKind], float | Non
         )
     overall = round(total_correct / total_graded, 3) if total_graded else None
     return by_kind, overall, total_graded, pending
-
-
-def _strip_annotation(name: str) -> str:
-    """Drop a trailing ``(WR TEN)``-style position/team annotation the model often appends."""
-    return re.sub(r"\s*\([^)]*\)\s*$", "", name).strip()
-
-
-def normalize_name(name: str) -> str:
-    """Fold a player name to a match key: ascii, lowercase, no punctuation/suffix.
-
-    Handles the annotations the model appends (``"Bijan Robinson (RB ATL)"``) and common
-    generational suffixes so a rec name lines up with an nflverse ``player_display_name``.
-    """
-    base = _strip_annotation(name)
-    base = unicodedata.normalize("NFKD", base).encode("ascii", "ignore").decode()
-    base = re.sub(r"[^a-z0-9 ]", "", base.lower())
-    tokens = [t for t in base.split() if t not in {"jr", "sr", "ii", "iii", "iv", "v"}]
-    return " ".join(tokens)
 
 
 # ---------------------------------------------------------------------------

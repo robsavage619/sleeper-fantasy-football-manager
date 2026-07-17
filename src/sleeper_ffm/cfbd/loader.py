@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 from dataclasses import dataclass
 
 import httpx
 
+from sleeper_ffm.names import normalize_name
+
 log = logging.getLogger(__name__)
 
 CFBD_BASE = "https://api.collegefootballdata.com"
-_SUFFIX_RE = re.compile(r"\s+(jr\.?|sr\.?|ii|iii|iv)$", re.IGNORECASE)
 _SKILL_POSITIONS = {"QB", "RB", "WR", "TE"}
 
 # CFBD position labels → normalised
@@ -48,11 +48,6 @@ class ProspectProfile:
     stars: int | None
     dynasty_prospect_score: float
     rationale: str
-
-
-def _normalise_name(name: str) -> str:
-    """Lowercase, strip suffixes, collapse whitespace."""
-    return _SUFFIX_RE.sub("", name.lower().strip())
 
 
 def _cfbd_headers() -> dict[str, str]:
@@ -148,7 +143,7 @@ def _fetch_recruiting(year: int, client: httpx.Client) -> dict[str, dict]:
     except httpx.HTTPError as exc:
         log.warning("CFBD /recruiting/players request failed: %s", exc)
         return {}
-    return {_normalise_name(r.get("name", "")): r for r in recruits if r.get("name")}
+    return {normalize_name(r.get("name", "")): r for r in recruits if r.get("name")}
 
 
 def _fetch_player_season_stats(
@@ -190,7 +185,7 @@ def _fetch_player_season_stats(
             value = float(raw_stat)
         except (TypeError, ValueError):
             continue
-        key = _normalise_name(name)
+        key = normalize_name(name)
         pivoted.setdefault(key, {}).setdefault(category, {})[stat_type] = value
     return pivoted
 
@@ -201,7 +196,7 @@ def _build_sleeper_index(players_dump: dict[str, dict]) -> dict[str, str]:
     for pid, p in players_dump.items():
         fn = p.get("full_name") or p.get("search_full_name")
         if fn:
-            index[_normalise_name(fn)] = pid
+            index[normalize_name(fn)] = pid
     return index
 
 
@@ -299,9 +294,9 @@ def fetch_bio(name: str) -> dict | None:
             log.warning("CFBD /player/search request failed: %s", exc)
             return None
 
-    norm_name = _normalise_name(name)
+    norm_name = normalize_name(name)
     match = next(
-        (m for m in matches if _normalise_name(m.get("name", "")) == norm_name),
+        (m for m in matches if normalize_name(m.get("name", "")) == norm_name),
         matches[0] if matches else None,
     )
     if match is None:
@@ -359,7 +354,7 @@ def fetch_season_history(
     except ValueError:
         return []
 
-    norm_name = _normalise_name(name)
+    norm_name = normalize_name(name)
     history: list[dict] = []
     with httpx.Client(timeout=20) as client:
         for offset in range(lookback, -1, -1):
@@ -369,7 +364,7 @@ def fetch_season_history(
                 (
                     u
                     for u in usage_list
-                    if _normalise_name(u.get("player") or u.get("name") or "") == norm_name
+                    if normalize_name(u.get("player") or u.get("name") or "") == norm_name
                 ),
                 None,
             )
@@ -438,7 +433,7 @@ def load_prospects(year: int = 2025, top: int = 200) -> list[ProspectProfile]:
             continue
 
         college = entry.get("team") or entry.get("school") or ""
-        norm_name = _normalise_name(name)
+        norm_name = normalize_name(name)
 
         player_id = sleeper_index.get(norm_name)
         recruit = recruiting_map.get(norm_name, {})

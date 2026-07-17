@@ -12,11 +12,11 @@ cfbfastR / sportsdataverse.
 from __future__ import annotations
 
 import logging
-import re
 
 import polars as pl
 
 from sleeper_ffm.config import CACHE_DIR
+from sleeper_ffm.names import normalize_name
 
 log = logging.getLogger(__name__)
 
@@ -24,14 +24,9 @@ _URL = (
     "https://github.com/sportsdataverse/sportsdataverse-data/releases/download/"
     "espn_cfb_player_box/player_box_{season}.parquet"
 )
-_SUFFIX_RE = re.compile(r"\s+(jr\.?|sr\.?|ii|iii|iv)$", re.IGNORECASE)
 
 # In-process cache of loaded season frames (keyed by season year).
 _SEASON_FRAMES: dict[int, pl.DataFrame | None] = {}
-
-
-def _normalise_name(name: str) -> str:
-    return _SUFFIX_RE.sub("", (name or "").lower().strip())
 
 
 def _load_season(season: int) -> pl.DataFrame | None:
@@ -139,14 +134,20 @@ def college_history(name: str, draft_year: int, lookback: int = 3) -> list[dict]
     prospect's final seasons), aggregates each, and keeps only seasons with
     real production. Returns an empty list if no keyless data is available.
     """
-    norm = _normalise_name(name)
+    norm = normalize_name(name)
     history: list[dict] = []
     for season in range(draft_year - lookback, draft_year):
         frame = _load_season(season)
         if frame is None or "athlete_name" not in frame.columns:
             continue
+        # Normalize both sides identically -- comparing a fully-normalized query name
+        # against a merely lowercased/stripped column would silently miss any player
+        # whose name has a suffix, punctuation, or an accented character.
         sub = frame.filter(
-            pl.col("athlete_name").cast(pl.Utf8).str.to_lowercase().str.strip_chars() == norm
+            pl.col("athlete_name")
+            .cast(pl.Utf8)
+            .map_elements(normalize_name, return_dtype=pl.Utf8)
+            .eq(norm)
         )
         if not sub.height:
             continue

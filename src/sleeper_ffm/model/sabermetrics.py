@@ -27,7 +27,8 @@ import polars as pl
 
 from sleeper_ffm.config import CURRENT_LEAGUE_YEAR, DEFAULT_VALUE_SEASON, cached_weekly_seasons
 from sleeper_ffm.model.dynasty import _ASCENT_RATE, _DECAY_RATE, _PEAK_AGE
-from sleeper_ffm.model.valuation import _normalize_name, score_weekly
+from sleeper_ffm.model.valuation import score_weekly
+from sleeper_ffm.names import normalize_name
 from sleeper_ffm.nflverse.loader import load_id_map, load_snaps
 from sleeper_ffm.scoring.engine import load_scoring
 from sleeper_ffm.sleeper.client import SleeperClient
@@ -518,9 +519,9 @@ def _filter_player_weekly(weekly: pl.DataFrame, gsis_ids: set[str], name: str) -
     filters = []
     if gsis_ids:
         filters.append(pl.col("player_id").is_in(sorted(gsis_ids)))
-    norm = _normalize_name(name)
+    norm = normalize_name(name)
     if norm:
-        name_col = pl.col("player_display_name").map_elements(_normalize_name, return_dtype=pl.Utf8)
+        name_col = pl.col("player_display_name").map_elements(normalize_name, return_dtype=pl.Utf8)
         filters.append(name_col.eq(norm))
     if not filters:
         return weekly.head(0)
@@ -545,10 +546,10 @@ def _snap_series(name: str, team: str, season: int) -> list[float]:
         return []
     if snaps.is_empty() or "player" not in snaps.columns:
         return []
-    norm = _normalize_name(name)
+    norm = normalize_name(name)
     rows = snaps.filter(
         (pl.col("season") == season)
-        & (pl.col("player").map_elements(_normalize_name, return_dtype=pl.Utf8).eq(norm))
+        & (pl.col("player").map_elements(normalize_name, return_dtype=pl.Utf8).eq(norm))
     )
     if team and team != "FA" and "team" in rows.columns:
         team_rows = rows.filter(pl.col("team") == team)

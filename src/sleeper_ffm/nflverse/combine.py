@@ -15,10 +15,9 @@ import re
 from typing import Any
 
 from sleeper_ffm.config import NFLVERSE_DIR
+from sleeper_ffm.names import normalize_name
 
 log = logging.getLogger(__name__)
-
-_SUFFIX_RE = re.compile(r"\s+(jr\.?|sr\.?|ii|iii|iv)$", re.IGNORECASE)
 
 # Forty-yard thresholds for a coarse, position-aware athletic grade. These are
 # scouting rules of thumb, not a percentile model — the grade is labelled
@@ -28,10 +27,6 @@ _FORTY_THRESHOLDS: dict[str, tuple[float, float, float]] = {
     "SKILL": (4.40, 4.50, 4.60),  # WR / RB
     "BIG": (4.60, 4.75, 4.90),  # TE
 }
-
-
-def _normalise_name(name: str) -> str:
-    return _SUFFIX_RE.sub("", (name or "").lower().strip())
 
 
 def _height_to_inches(raw: Any) -> int | None:
@@ -101,7 +96,7 @@ def _build_index(year: int) -> dict[str, dict]:
         name = row.get("player_name")
         if not name:
             continue
-        index[_normalise_name(name)] = {
+        index[normalize_name(name)] = {
             "height_in": _height_to_inches(row.get("ht")),
             "weight": _int_or_none(row.get("wt")),
             "forty": _float_or_none(row.get("forty")),
@@ -154,7 +149,7 @@ def combine_for(name: str, position: str, year: int) -> dict | None:
     ``athletic_grade`` when the underlying numbers are present.
     """
     index = load_combine_index(year)
-    record = index.get(_normalise_name(name))
+    record = index.get(normalize_name(name))
     if record is None:
         return None
     enriched = dict(record)
