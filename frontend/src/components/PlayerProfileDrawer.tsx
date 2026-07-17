@@ -159,8 +159,14 @@ function AnalyticsSection({ playerId }: { playerId: string }) {
     )
   }
 
+  // Backend returns {} (not null) when a player has no matched nflverse rows
+  // (e.g. an unrostered rookie prospect) — check for the fields these blocks
+  // actually read, not just object truthiness, or `{}.volatility.toFixed()`
+  // throws with no error boundary above this component.
   const c = data.consistency
+  const hasConsistency = c?.volatility != null && c?.floor != null && c?.ceiling != null
   const xfp = data.xfp
+  const hasXfp = xfp?.residual != null && xfp?.actual_fp != null && xfp?.xfp != null
   const mom = data.market_momentum?.trend_30day
   const uq = data.usage_quality
   const degraded = data.data_quality !== 'ok'
@@ -195,7 +201,7 @@ function AnalyticsSection({ playerId }: { playerId: string }) {
         </div>
       )}
 
-      {c && (
+      {hasConsistency && c && (
         <div className="flex items-center gap-4" style={{ marginBottom: 14 }}>
           <div style={{ flex: 1 }}>
             <div
@@ -233,7 +239,7 @@ function AnalyticsSection({ playerId }: { playerId: string }) {
         </div>
       )}
 
-      {xfp && (
+      {hasXfp && xfp && (
         <div style={{ borderTop: '1px solid #162035', paddingTop: 12 }}>
           <div className="grid grid-cols-2 gap-2">
             <Metric
