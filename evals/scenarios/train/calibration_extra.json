@@ -1,0 +1,713 @@
+{
+  "scenarios": [
+    {
+      "id": "calibration.market_rank_corr_qb_perfect",
+      "tier": 1,
+      "engine": "calibration_rank_corr",
+      "rationale": "Perfect model/market agreement (QB) \u2014 rank_corr should be ~1.0.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "players": [
+              {
+                "player": {
+                  "player_id": "QB0",
+                  "name": "QB0",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 10,
+                  "is_taxi": false
+                },
+                "market_value": 10
+              },
+              {
+                "player": {
+                  "player_id": "QB1",
+                  "name": "QB1",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 20,
+                  "is_taxi": false
+                },
+                "market_value": 20
+              },
+              {
+                "player": {
+                  "player_id": "QB2",
+                  "name": "QB2",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 30,
+                  "is_taxi": false
+                },
+                "market_value": 30
+              },
+              {
+                "player": {
+                  "player_id": "QB3",
+                  "name": "QB3",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 40,
+                  "is_taxi": false
+                },
+                "market_value": 40
+              },
+              {
+                "player": {
+                  "player_id": "QB4",
+                  "name": "QB4",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 50,
+                  "is_taxi": false
+                },
+                "market_value": 50
+              },
+              {
+                "player": {
+                  "player_id": "QB5",
+                  "name": "QB5",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 60,
+                  "is_taxi": false
+                },
+                "market_value": 60
+              },
+              {
+                "player": {
+                  "player_id": "QB6",
+                  "name": "QB6",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 70,
+                  "is_taxi": false
+                },
+                "market_value": 70
+              },
+              {
+                "player": {
+                  "player_id": "QB7",
+                  "name": "QB7",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 80,
+                  "is_taxi": false
+                },
+                "market_value": 80
+              },
+              {
+                "player": {
+                  "player_id": "QB8",
+                  "name": "QB8",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 90,
+                  "is_taxi": false
+                },
+                "market_value": 90
+              },
+              {
+                "player": {
+                  "player_id": "QB9",
+                  "name": "QB9",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 100,
+                  "is_taxi": false
+                },
+                "market_value": 100
+              },
+              {
+                "player": {
+                  "player_id": "QB10",
+                  "name": "QB10",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 110,
+                  "is_taxi": false
+                },
+                "market_value": 110
+              },
+              {
+                "player": {
+                  "player_id": "QB11",
+                  "name": "QB11",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 120,
+                  "is_taxi": false
+                },
+                "market_value": 120
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "rank_corr",
+          "case": "base",
+          "field_a": "model_values",
+          "field_b": "market_values",
+          "min": 0.85
+        }
+      ]
+    },
+    {
+      "id": "calibration.market_rank_corr_te_one_swap",
+      "tier": 1,
+      "engine": "calibration_rank_corr",
+      "rationale": "One adjacent swap (TE) still clears a 0.85 threshold.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "players": [
+              {
+                "player": {
+                  "player_id": "TE0",
+                  "name": "TE0",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 10,
+                  "is_taxi": false
+                },
+                "market_value": 10
+              },
+              {
+                "player": {
+                  "player_id": "TE1",
+                  "name": "TE1",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 20,
+                  "is_taxi": false
+                },
+                "market_value": 20
+              },
+              {
+                "player": {
+                  "player_id": "TE2",
+                  "name": "TE2",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 30,
+                  "is_taxi": false
+                },
+                "market_value": 30
+              },
+              {
+                "player": {
+                  "player_id": "TE3",
+                  "name": "TE3",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 40,
+                  "is_taxi": false
+                },
+                "market_value": 50
+              },
+              {
+                "player": {
+                  "player_id": "TE4",
+                  "name": "TE4",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 50,
+                  "is_taxi": false
+                },
+                "market_value": 40
+              },
+              {
+                "player": {
+                  "player_id": "TE5",
+                  "name": "TE5",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 60,
+                  "is_taxi": false
+                },
+                "market_value": 60
+              },
+              {
+                "player": {
+                  "player_id": "TE6",
+                  "name": "TE6",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 70,
+                  "is_taxi": false
+                },
+                "market_value": 70
+              },
+              {
+                "player": {
+                  "player_id": "TE7",
+                  "name": "TE7",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 80,
+                  "is_taxi": false
+                },
+                "market_value": 80
+              },
+              {
+                "player": {
+                  "player_id": "TE8",
+                  "name": "TE8",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 90,
+                  "is_taxi": false
+                },
+                "market_value": 90
+              },
+              {
+                "player": {
+                  "player_id": "TE9",
+                  "name": "TE9",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 100,
+                  "is_taxi": false
+                },
+                "market_value": 100
+              },
+              {
+                "player": {
+                  "player_id": "TE10",
+                  "name": "TE10",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 110,
+                  "is_taxi": false
+                },
+                "market_value": 110
+              },
+              {
+                "player": {
+                  "player_id": "TE11",
+                  "name": "TE11",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 120,
+                  "is_taxi": false
+                },
+                "market_value": 120
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "rank_corr",
+          "case": "base",
+          "field_a": "model_values",
+          "field_b": "market_values",
+          "min": 0.84
+        }
+      ]
+    },
+    {
+      "id": "calibration.market_rank_corr_wr_two_swaps",
+      "tier": 1,
+      "engine": "calibration_rank_corr",
+      "rationale": "Two independent swaps (WR) still clears a relaxed 0.7 threshold.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "players": [
+              {
+                "player": {
+                  "player_id": "WR0",
+                  "name": "WR0",
+                  "position": "WR",
+                  "age": 27,
+                  "current_fpar": 10,
+                  "is_taxi": false
+                },
+                "market_value": 10
+              },
+              {
+                "player": {
+                  "player_id": "WR1",
+                  "name": "WR1",
+                  "position": "WR",
+                  "age": 27,
+                  "current_fpar": 20,
+                  "is_taxi": false
+                },
+                "market_value": 30
+              },
+              {
+                "player": {
+                  "player_id": "WR2",
+                  "name": "WR2",
+                  "position": "WR",
+                  "age": 27,
+                  "current_fpar": 30,
+                  "is_taxi": false
+                },
+                "market_value": 20
+              },
+              {
+                "player": {
+                  "player_id": "WR3",
+                  "name": "WR3",
+                  "position": "WR",
+                  "age": 27,
+                  "current_fpar": 40,
+                  "is_taxi": false
+                },
+                "market_value": 40
+              },
+              {
+                "player": {
+                  "player_id": "WR4",
+                  "name": "WR4",
+                  "position": "WR",
+                  "age": 27,
+                  "current_fpar": 50,
+                  "is_taxi": false
+                },
+                "market_value": 50
+              },
+              {
+                "player": {
+                  "player_id": "WR5",
+                  "name": "WR5",
+                  "position": "WR",
+                  "age": 27,
+                  "current_fpar": 60,
+                  "is_taxi": false
+                },
+                "market_value": 60
+              },
+              {
+                "player": {
+                  "player_id": "WR6",
+                  "name": "WR6",
+                  "position": "WR",
+                  "age": 27,
+                  "current_fpar": 70,
+                  "is_taxi": false
+                },
+                "market_value": 70
+              },
+              {
+                "player": {
+                  "player_id": "WR7",
+                  "name": "WR7",
+                  "position": "WR",
+                  "age": 27,
+                  "current_fpar": 80,
+                  "is_taxi": false
+                },
+                "market_value": 90
+              },
+              {
+                "player": {
+                  "player_id": "WR8",
+                  "name": "WR8",
+                  "position": "WR",
+                  "age": 27,
+                  "current_fpar": 90,
+                  "is_taxi": false
+                },
+                "market_value": 80
+              },
+              {
+                "player": {
+                  "player_id": "WR9",
+                  "name": "WR9",
+                  "position": "WR",
+                  "age": 27,
+                  "current_fpar": 100,
+                  "is_taxi": false
+                },
+                "market_value": 100
+              },
+              {
+                "player": {
+                  "player_id": "WR10",
+                  "name": "WR10",
+                  "position": "WR",
+                  "age": 27,
+                  "current_fpar": 110,
+                  "is_taxi": false
+                },
+                "market_value": 110
+              },
+              {
+                "player": {
+                  "player_id": "WR11",
+                  "name": "WR11",
+                  "position": "WR",
+                  "age": 27,
+                  "current_fpar": 120,
+                  "is_taxi": false
+                },
+                "market_value": 120
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "rank_corr",
+          "case": "base",
+          "field_a": "model_values",
+          "field_b": "market_values",
+          "min": 0.84
+        }
+      ]
+    },
+    {
+      "id": "calibration.market_rank_corr_te_small_n",
+      "tier": 1,
+      "engine": "calibration_rank_corr",
+      "rationale": "A small 6-player pool (TE) still holds a high rank correlation with one swap.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "players": [
+              {
+                "player": {
+                  "player_id": "t0",
+                  "name": "t0",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 20,
+                  "is_taxi": false
+                },
+                "market_value": 20
+              },
+              {
+                "player": {
+                  "player_id": "t1",
+                  "name": "t1",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 40,
+                  "is_taxi": false
+                },
+                "market_value": 60
+              },
+              {
+                "player": {
+                  "player_id": "t2",
+                  "name": "t2",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 60,
+                  "is_taxi": false
+                },
+                "market_value": 40
+              },
+              {
+                "player": {
+                  "player_id": "t3",
+                  "name": "t3",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 80,
+                  "is_taxi": false
+                },
+                "market_value": 80
+              },
+              {
+                "player": {
+                  "player_id": "t4",
+                  "name": "t4",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 100,
+                  "is_taxi": false
+                },
+                "market_value": 100
+              },
+              {
+                "player": {
+                  "player_id": "t5",
+                  "name": "t5",
+                  "position": "TE",
+                  "age": 26,
+                  "current_fpar": 120,
+                  "is_taxi": false
+                },
+                "market_value": 120
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "rank_corr",
+          "case": "base",
+          "field_a": "model_values",
+          "field_b": "market_values",
+          "min": 0.79
+        }
+      ]
+    },
+    {
+      "id": "calibration.market_rank_corr_qb_moderate_noise",
+      "tier": 1,
+      "engine": "calibration_rank_corr",
+      "rationale": "A QB pool with moderate two-swap noise still clears a relaxed 0.7 threshold.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "players": [
+              {
+                "player": {
+                  "player_id": "QB0",
+                  "name": "QB0",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 15,
+                  "is_taxi": false
+                },
+                "market_value": 15
+              },
+              {
+                "player": {
+                  "player_id": "QB1",
+                  "name": "QB1",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 30,
+                  "is_taxi": false
+                },
+                "market_value": 30
+              },
+              {
+                "player": {
+                  "player_id": "QB2",
+                  "name": "QB2",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 45,
+                  "is_taxi": false
+                },
+                "market_value": 60
+              },
+              {
+                "player": {
+                  "player_id": "QB3",
+                  "name": "QB3",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 60,
+                  "is_taxi": false
+                },
+                "market_value": 45
+              },
+              {
+                "player": {
+                  "player_id": "QB4",
+                  "name": "QB4",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 75,
+                  "is_taxi": false
+                },
+                "market_value": 75
+              },
+              {
+                "player": {
+                  "player_id": "QB5",
+                  "name": "QB5",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 90,
+                  "is_taxi": false
+                },
+                "market_value": 90
+              },
+              {
+                "player": {
+                  "player_id": "QB6",
+                  "name": "QB6",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 105,
+                  "is_taxi": false
+                },
+                "market_value": 105
+              },
+              {
+                "player": {
+                  "player_id": "QB7",
+                  "name": "QB7",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 120,
+                  "is_taxi": false
+                },
+                "market_value": 120
+              },
+              {
+                "player": {
+                  "player_id": "QB8",
+                  "name": "QB8",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 135,
+                  "is_taxi": false
+                },
+                "market_value": 150
+              },
+              {
+                "player": {
+                  "player_id": "QB9",
+                  "name": "QB9",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 150,
+                  "is_taxi": false
+                },
+                "market_value": 135
+              },
+              {
+                "player": {
+                  "player_id": "QB10",
+                  "name": "QB10",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 165,
+                  "is_taxi": false
+                },
+                "market_value": 165
+              },
+              {
+                "player": {
+                  "player_id": "QB11",
+                  "name": "QB11",
+                  "position": "QB",
+                  "age": 29,
+                  "current_fpar": 180,
+                  "is_taxi": false
+                },
+                "market_value": 180
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "rank_corr",
+          "case": "base",
+          "field_a": "model_values",
+          "field_b": "market_values",
+          "min": 0.84
+        }
+      ]
+    }
+  ]
+}

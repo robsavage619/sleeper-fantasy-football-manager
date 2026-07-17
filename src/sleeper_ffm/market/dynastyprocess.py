@@ -19,13 +19,12 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from sleeper_ffm.config import DATA_DIR
+from sleeper_ffm.net import retry_call
 
 log = logging.getLogger(__name__)
 
 # DynastyProcess values CSV — weekly update cadence.
-_DP_URL = (
-    "https://raw.githubusercontent.com/dynastyprocess/data/master/files/values-players.csv"
-)
+_DP_URL = "https://raw.githubusercontent.com/dynastyprocess/data/master/files/values-players.csv"
 _CACHE_DIR = DATA_DIR / "market"
 _CACHE_TTL_SECONDS = 7 * 86_400  # 1 week (DP updates ~weekly)
 
@@ -47,8 +46,12 @@ def _is_stale(path: Path) -> bool:
 
 def _fetch_fresh() -> str:
     log.info("dynastyprocess: fetching %s", _DP_URL)
-    with urlopen(_DP_URL, timeout=15) as resp:
-        text = resp.read().decode("utf-8")
+
+    def _do() -> str:
+        with urlopen(_DP_URL, timeout=15) as resp:
+            return resp.read().decode("utf-8")
+
+    text = retry_call(_do, exceptions=(OSError,), label="dynastyprocess")
     log.info("dynastyprocess: %d bytes received", len(text))
     return text
 

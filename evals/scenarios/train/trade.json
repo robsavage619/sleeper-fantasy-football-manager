@@ -1,0 +1,77 @@
+{
+  "scenarios": [
+    {
+      "id": "trade.fleece_low_acceptance",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "A -190 FPAR margin for the partner must land in the LOW bucket.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {"roster_id": 1, "league_size": 10},
+            "partner": {"roster_id": 2, "league_size": 10, "contention_label": "OPEN"},
+            "history": null,
+            "give_asset": {"asset_id": "p1", "kind": "player", "label": "Scrub RB", "position": "RB", "value": 60},
+            "receive_asset": {"asset_id": "p2", "kind": "player", "label": "Stud RB", "position": "RB", "value": 250},
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {"type": "range", "case": "base", "field": "score", "min": 5, "max": 53},
+        {"type": "exact", "case": "base", "field": "confidence", "value": "LOW"},
+        {"type": "approx", "case": "base", "field": "margin", "value": -190.0, "tol": 5.0}
+      ]
+    },
+    {
+      "id": "trade.fair_swap_mid",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "An even-value swap into a real need should land in the MED/HIGH band, not LOW.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {"roster_id": 1, "league_size": 10},
+            "partner": {"roster_id": 2, "league_size": 10, "contention_label": "ASCENDING"},
+            "history": {"roster_id": 2, "trade_count": 5, "approachability": "SELECTIVE"},
+            "give_asset": {"asset_id": "p3", "kind": "player", "label": "Fair RB", "position": "RB", "value": 130},
+            "receive_asset": {"asset_id": "p4", "kind": "player", "label": "Fair WR", "position": "WR", "value": 130},
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {"type": "range", "case": "base", "field": "score", "min": 54, "max": 85}
+      ]
+    },
+    {
+      "id": "trade.sweetener_monotonic",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "Adding a pick sweetener to an identical offer must never lower the acceptance score.",
+      "inputs": {
+        "cases": {
+          "without_sweetener": {
+            "my_dossier": {"roster_id": 1, "league_size": 10},
+            "partner": {"roster_id": 2, "league_size": 10, "contention_label": "OPENING"},
+            "history": {"roster_id": 2, "trade_count": 5, "approachability": "TYPICAL"},
+            "give_asset": {"asset_id": "p5", "kind": "player", "label": "Give RB", "position": "RB", "value": 100},
+            "receive_asset": {"asset_id": "p6", "kind": "player", "label": "Target WR", "position": "WR", "value": 95},
+            "sweetener": null
+          },
+          "with_sweetener": {
+            "my_dossier": {"roster_id": 1, "league_size": 10},
+            "partner": {"roster_id": 2, "league_size": 10, "contention_label": "OPENING"},
+            "history": {"roster_id": 2, "trade_count": 5, "approachability": "TYPICAL"},
+            "give_asset": {"asset_id": "p5", "kind": "player", "label": "Give RB", "position": "RB", "value": 100},
+            "receive_asset": {"asset_id": "p6", "kind": "player", "label": "Target WR", "position": "WR", "value": 95},
+            "sweetener": {"asset_id": "2027_R3", "kind": "pick", "label": "2027 R3", "position": null, "value": 15}
+          }
+        }
+      },
+      "checks": [
+        {"type": "compare", "left": "with_sweetener.score", "op": ">", "right": "without_sweetener.score"}
+      ]
+    }
+  ]
+}

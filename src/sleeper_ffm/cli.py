@@ -9,12 +9,14 @@ import logging
 import typer
 
 from sleeper_ffm.config import DEFAULT_VALUE_SEASON
+from sleeper_ffm.evals.cli import eval_app
 from sleeper_ffm.nflverse.loader import ingest as nflverse_ingest
 from sleeper_ffm.reasoning.findings import load_findings_from_disk, post_finding
 from sleeper_ffm.scoring import load_scoring, score
 from sleeper_ffm.sleeper import SleeperClient
 
 app = typer.Typer(help="sleeper-ffm — AI dynasty fantasy football GM.", no_args_is_help=True)
+app.add_typer(eval_app, name="eval")
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -70,10 +72,14 @@ def ingest(
     force: bool = typer.Option(False, "--force", help="Re-fetch even if cached."),
     skip_snaps: bool = typer.Option(False, "--skip-snaps", help="Skip snap-count download."),
     skip_rosters: bool = typer.Option(False, "--skip-rosters", help="Skip roster snapshots."),
+    skip_status: bool = typer.Option(
+        False, "--skip-status", help="Skip injury / depth-chart / play-by-play feeds."
+    ),
 ) -> None:
     """Ingest nflverse NFL stats to parquet cache.
 
     Default: incremental (current season only). Use --full for first-time backfill.
+    Injuries, depth charts, and play-by-play are pulled too (--skip-status to omit).
     """
     from sleeper_ffm.nflverse.loader import _CURRENT_SEASON, _FIRST_SEASON
 
@@ -85,7 +91,13 @@ def ingest(
         seasons = [_CURRENT_SEASON]
 
     typer.echo(f"Ingesting seasons: {seasons}")
-    nflverse_ingest(seasons=seasons, force=force, skip_snaps=skip_snaps, skip_rosters=skip_rosters)
+    nflverse_ingest(
+        seasons=seasons,
+        force=force,
+        skip_snaps=skip_snaps,
+        skip_rosters=skip_rosters,
+        skip_status=skip_status,
+    )
     typer.echo("Done.")
 
 

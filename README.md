@@ -13,8 +13,8 @@
   <a href="https://pola.rs/"><img src="https://img.shields.io/badge/data-Polars-cd792c" alt="Polars"/></a>
   <a href="frontend/"><img src="https://img.shields.io/badge/frontend-React%2019-61dafb" alt="React 19"/></a>
   <a href="frontend/"><img src="https://img.shields.io/badge/build-Vite%208-646cff" alt="Vite 8"/></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/tests-265%20passing-success" alt="265 tests"/></a>
-  <a href="evals/"><img src="https://img.shields.io/badge/eval%20scenarios-120-blueviolet" alt="120 eval scenarios"/></a>
+  <a href="tests/"><img src="https://img.shields.io/badge/tests-275%20passing-success" alt="275 tests"/></a>
+  <a href="evals/"><img src="https://img.shields.io/badge/eval%20scenarios-121-blueviolet" alt="121 eval scenarios"/></a>
   <a href=".claude/skills/war-room-reason/SKILL.md"><img src="https://img.shields.io/badge/reasoning-Claude%20Code-8a63d2" alt="Claude Code"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-source--available-lightgrey" alt="license"/></a>
 </p>
@@ -99,7 +99,7 @@ Every owner is profiled from the league's real transaction history: an archetype
 | `/trades` | **Trades** — acceptance-model offers with two-sided value accounting |
 | `/waivers` | **Waivers** — claim cards, bid ranges, drop candidates, downside |
 | `/owners` | **GM Profiles** — owner behavioral profiling |
-| `/report-card` | **Report Card** — historical manager grades across seasons |
+| `/report-card` | **Report Card** — manager grades across seasons + the AI's own graded track record |
 | `/prospects` | **Prospects** — rookie scouting (CFBD college + combine + market) |
 | `/narrative` | **War Room Brief** — the single-prompt GM update |
 | `/market-signals` | **Market Signals** — dynasty price-history trends and top risers/fallers |
@@ -128,6 +128,8 @@ The LLM stays out of the backend. The loop is three steps:
 
 The same pattern runs the [negotiation copilot](src/sleeper_ffm/prompts/negotiation.py) and the [GM's weekly address](src/sleeper_ffm/prompts/gm_address.py). It's retrieve-before-generate, structured output, and a self-critiquing agent, with grounding enforced at the file boundary instead of trusted to the model.
 
+The loop also closes on itself. The [recommendation scoreboard](src/sleeper_ffm/model/rec_scoreboard.py) reads the findings the model has posted over time and grades the ones with a ground truth — a start-over-sit call against the two players' actual weekly scores, a waiver add against whether it ever cleared a startable line — with the week inferred from the schedule and names matched to nflverse box scores scored under league rules. That hit-rate feeds back into the briefing as a **GM Track Record** section, so the model sees how its own past calls graded out and calibrates its confidence accordingly. Calls that can't yet be scored are surfaced as pending, never guessed.
+
 ---
 
 ## Engine evaluation — tuning the reasoning loop against ground truth
@@ -136,7 +138,7 @@ The same pattern runs the [negotiation copilot](src/sleeper_ffm/prompts/negotiat
 
 Two things a unit test can't check. Is a value-balanced trade offer good dynasty strategy for this team's timeline? And does the reasoning layer flag it when it isn't? The [`sffm eval`](src/sleeper_ffm/evals/) harness and its [Claude Code skill](.claude/skills/engine-eval/SKILL.md) answer both, and re-answer them every time an engine or the master-briefing prompt changes.
 
-- **Tier 1 — 120 deterministic scenarios** (86 train / 34 holdout) across all seven tunable engines. Every scenario calls the real production function, not a reimplementation, with hand-built dependency-injected inputs. Every expected value came from running the actual engine, not from working it out by hand.
+- **Tier 1 — 121 deterministic scenarios** (87 train / 34 holdout) across all seven tunable engines. Every scenario calls the real production function, not a reimplementation, with hand-built dependency-injected inputs. Every expected value came from running the actual engine, not from working it out by hand. One of them is a true out-of-sample backtest: the red-zone-opportunity expected-TD model is fit on 2024 and scored on 2025 from cached play-by-play, and the scenario asserts its error beats the yardage baseline. That's what turned a docstring's unverified "~18%" into a measured, reproducible 19.3% — the claim now has code behind it or it doesn't ship.
 - **Tier 3 — six briefing fixtures with planted traps**, rendered through the real `build_master_briefing` template: a hallucinated trade partner, a stale-data acknowledgment, a closed player universe, and three cases where the math checks out but the strategy doesn't — a rebuild-window team trading a future pick for short-term production, a waiver priority score that ignores a real roster hole, a start/sit call that ignores a stated blowout risk. Schema validity, grounding, and FAAB bounds are scripted. A fresh, independent critic subagent judges whether a recommendation reconciles the math against the team's context, and I verified adversarially that the critic actually discriminates sound reasoning from unsound rather than rubber-stamping.
 
 Running it against the real reasoning loop is how the trade-acceptance and waiver-priority fixes below turned up: the raw math balanced, the model flagged that it shouldn't have, and the engines didn't yet know why. Now they do.
@@ -160,11 +162,13 @@ Everything comes from public APIs and is cached to local parquet. Nothing here i
 
 The scoring engine ingests two weekly formats — the archived `player_stats` era (≤2023) and the current `stats_player` era (2024+) — and reconciles them on load, including a `diagonal_relaxed` concat so multi-season reads span the schema boundary cleanly.
 
+One command refreshes everything that moves in-season — `POST /admin/refresh` (or `sffm ingest`) pulls box scores, snaps, injuries, depth charts, play-by-play, schedules, and the market anchor, each source isolated so one failure doesn't abort the rest. Every outbound fetch retries with backoff, `/admin/refresh/status` reports each source's freshness, and a fetch that has to fall back to a stale cache is recorded and surfaced — to the status API and to the briefing's data-freshness section — rather than served silently.
+
 ---
 
 ## Under the hood
 
-**Backend** — Python 3.12, FastAPI, Polars, `uv`, `ruff`, `pyright`. About 21K lines across **34 model engines** and **36 API routers**, with **265 tests**. The statistical cores are unit-tested without a network. On top of that sits the **120-scenario eval harness** ([Engine evaluation](#engine-evaluation--tuning-the-reasoning-loop-against-ground-truth) above) for the calibration checks unit tests can't cover. A `typer` CLI (`sffm <verb>`) drives ingestion, scoring, evaluation, and the war-room loop.
+**Backend** — Python 3.12, FastAPI, Polars, `uv`, `ruff`, `pyright`. About 21K lines across **34 model engines** and **36 API routers**, with **275 tests**. The statistical cores are unit-tested without a network. On top of that sits the **121-scenario eval harness** ([Engine evaluation](#engine-evaluation--tuning-the-reasoning-loop-against-ground-truth) above) for the calibration checks unit tests can't cover. A `typer` CLI (`sffm <verb>`) drives ingestion, scoring, evaluation, and the war-room loop.
 
 **Frontend** — React 19, TypeScript 6, Vite 8, Tailwind 4, TanStack Query, Zustand, Framer Motion. A single-page dashboard with 12 routes, wired to the live backend.
 
@@ -182,7 +186,7 @@ src/sleeper_ffm/
 ├── prompts/     # deterministic prompt-builders (master briefing, negotiation, address)
 ├── reasoning/   # the findings store Claude Code writes back to
 ├── season/ draft/ act/ schedule/   # start-sit, waivers, draft assistant, plans, scheduler
-├── evals/       # sffm eval harness: 120 scenarios (Tier 1) + prompt-grading fixtures (Tier 3)
+├── evals/       # sffm eval harness: 121 scenarios (Tier 1) + prompt-grading fixtures (Tier 3)
 └── api/         # FastAPI app + 36 routers
 frontend/        # React 19 / Vite 8 / Tailwind 4 dashboard (12 routes)
 evals/           # scenario JSON (train/holdout), tier-3 rubric, run ledger
@@ -196,8 +200,8 @@ evals/           # scenario JSON (train/holdout), tier-3 rubric, run ledger
 ```bash
 # Backend
 uv sync
-uv run pytest                 # 265 tests
-uv run sffm eval run --tier 1 --split train   # 86 deterministic calibration scenarios
+uv run pytest                 # 275 tests
+uv run sffm eval run --tier 1 --split train   # 87 deterministic calibration scenarios
 uv run sffm ingest            # seed nflverse parquet (2014–2025) → data/nflverse/
 uv run sffm serve             # FastAPI on http://127.0.0.1:8000
 

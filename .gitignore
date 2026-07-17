@@ -227,6 +227,10 @@ data/findings.jsonl
 data/offers.jsonl
 data/market/
 
+# Eval harness run artifacts (keep the ledger, ignore per-run result dumps)
+evals/runs/*.jsonl
+!evals/runs/ledger.jsonl
+
 # Frontend
 node_modules/
 frontend/dist/

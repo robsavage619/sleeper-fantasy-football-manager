@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 from urllib.error import HTTPError, URLError
@@ -31,8 +32,35 @@ import nfl_data_py as nfl
 import polars as pl
 
 from sleeper_ffm.config import NFLVERSE_DIR
+from sleeper_ffm.net import retry_call
 
 log = logging.getLogger(__name__)
+
+# Stale-fallback registry: when a fresh fetch fails and we serve cached parquet instead,
+# the affected source is recorded here so the freshness API and the briefing can surface
+# it loudly (a silent stale read is the failure mode this exists to prevent). A successful
+# refresh of the same source clears its entry.
+_STALE_FALLBACKS: dict[str, str] = {}
+
+
+def stale_fallbacks() -> dict[str, str]:
+    """Return ``{source: reason}`` for every dataset currently served from a stale cache."""
+    return dict(_STALE_FALLBACKS)
+
+
+def clear_stale_fallbacks() -> None:
+    """Reset the stale-fallback registry (e.g. at the start of a full refresh)."""
+    _STALE_FALLBACKS.clear()
+
+
+def _record_stale(source: str, detail: str) -> None:
+    _STALE_FALLBACKS[source] = detail
+    log.warning("stale fallback: %s — %s", source, detail)
+
+
+def _clear_stale(source: str) -> None:
+    _STALE_FALLBACKS.pop(source, None)
+
 
 # Seasons available in nflverse. 2025 is the latest completed NFL season as of 2026-07.
 _FIRST_SEASON = 2014
@@ -138,13 +166,17 @@ def load_weekly(
         yr_df = _fetch_weekly_season(yr)
         if yr_df is None:
             if dest.exists():
-                log.warning("weekly/%d: fetch failed; falling back to cached parquet", yr)
+                mtime = datetime.fromtimestamp(dest.stat().st_mtime, UTC).date().isoformat()
+                _record_stale(
+                    "nflverse_weekly", f"season {yr} fetch failed; serving cache from {mtime}"
+                )
                 frames.append(pl.read_parquet(dest))
             else:
                 log.error("weekly/%d: fetch failed and no cache available; season dropped", yr)
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write_parquet(yr_df, dest)
+        _clear_stale("nflverse_weekly")
         log.info("weekly/%d: %d rows written", yr, len(yr_df))
         frames.append(yr_df)
 
@@ -177,7 +209,11 @@ def _fetch_weekly_season(year: int) -> pl.DataFrame | None:
         url = _WEEKLY_URL_NEW.format(season=year)
         try:
             log.info("weekly/%d: fetching from stats_player release...", year)
-            df = pl.read_parquet(url)
+            df = retry_call(
+                lambda u=url: pl.read_parquet(u),
+                exceptions=(Exception,),
+                label=f"weekly/{year} stats_player",
+            )
             df = _normalize_stats_player(df)
             log.info("weekly/%d: %d rows (new format)", year, len(df))
             return df
@@ -186,7 +222,11 @@ def _fetch_weekly_season(year: int) -> pl.DataFrame | None:
 
     try:
         log.info("weekly/%d: fetching via nfl_data_py...", year)
-        df_raw = nfl.import_weekly_data([year])
+        df_raw = retry_call(
+            lambda: nfl.import_weekly_data([year]),
+            exceptions=(Exception,),
+            label=f"weekly/{year} legacy",
+        )
         df = cast(pl.DataFrame, pl.from_pandas(df_raw))
         log.info("weekly/%d: %d rows (legacy format)", year, len(df))
         return df
@@ -489,16 +529,20 @@ def ingest(
     force: bool = False,
     skip_snaps: bool = False,
     skip_rosters: bool = False,
+    skip_status: bool = False,
 ) -> None:
     """Run the full nflverse ingestion pipeline.
 
-    Order: id_map → weekly → seasonal → [snaps] → [schedules + rosters].
+    Order: id_map → weekly → seasonal → [snaps] → schedules → [rosters] → [status feeds].
 
     Args:
         seasons: Seasons to ingest (default: full historical range).
         force: Re-fetch everything, ignoring cached parquet.
         skip_snaps: Skip snap-count download (saves ~30s, optional signal).
         skip_rosters: Skip roster snapshot download (saves ~60s).
+        skip_status: Skip the in-season status feeds — injuries, depth charts, and
+            play-by-play. These previously loaded lazily on first model access and were
+            never force-refreshed by ingest; pulling them here closes that coverage hole.
     """
     log.info("=== nflverse ingest start ===")
     load_id_map(force=force)
@@ -509,4 +553,20 @@ def ingest(
     load_schedules(seasons=seasons, force=force)
     if not skip_rosters:
         load_rosters(seasons=seasons, force=force)
+    if not skip_status:
+        status_seasons = _status_seasons(seasons)
+        load_injuries(seasons=status_seasons, force=force)
+        load_depth_charts(seasons=status_seasons, force=force)
+        load_pbp(seasons=status_seasons, force=force)
     log.info("=== nflverse ingest complete ===")
+
+
+def _status_seasons(seasons: list[int] | None) -> list[int]:
+    """Seasons to pull status feeds for — injuries/depth/PBP only publish from 2024 on.
+
+    Restricts a broad ``--full`` request (2014-2025) to the range these feeds actually
+    cover, so a backfill doesn't spend retries on seasons nflverse never served them for.
+    """
+    requested = seasons or [_CURRENT_SEASON]
+    covered = [s for s in requested if s >= _NEW_FORMAT_FIRST_SEASON]
+    return covered or [_CURRENT_SEASON]

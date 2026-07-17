@@ -1,0 +1,293 @@
+{
+  "scenarios": [
+    {
+      "id": "startsit.tie_break_stable_rb",
+      "tier": 1,
+      "engine": "startsit_solver",
+      "rationale": "Two RBs tied at the same projection resolve via stable sort (input order preserved).",
+      "inputs": {
+        "cases": {
+          "base": {
+            "players": [
+              {
+                "player_id": "Q1",
+                "name": "Q1",
+                "position": "QB",
+                "team": "AAA",
+                "projected_pts": 20,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R1",
+                "name": "R1",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 10,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R2",
+                "name": "R2",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 10,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R3",
+                "name": "R3",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 10,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R4",
+                "name": "R4",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 10,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W1",
+                "name": "W1",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 16,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W2",
+                "name": "W2",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 11,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W3",
+                "name": "W3",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 7,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "T1",
+                "name": "T1",
+                "position": "TE",
+                "team": "AAA",
+                "projected_pts": 8,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "starter_ids",
+          "value": [
+            "Q1",
+            "R1",
+            "R2",
+            "R3",
+            "W1",
+            "W2",
+            "W3",
+            "T1",
+            "R4"
+          ]
+        },
+        {
+          "type": "approx",
+          "case": "base",
+          "field": "total_pts",
+          "value": 102,
+          "tol": 0.1
+        }
+      ]
+    },
+    {
+      "id": "startsit.dense_roster_total_pts",
+      "tier": 1,
+      "engine": "startsit_solver",
+      "rationale": "Total optimal-lineup points on a 12-player roster matches the sum of the selected starters.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "players": [
+              {
+                "player_id": "Q1",
+                "name": "Q1",
+                "position": "QB",
+                "team": "AAA",
+                "projected_pts": 24,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "Q2",
+                "name": "Q2",
+                "position": "QB",
+                "team": "AAA",
+                "projected_pts": 18,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R1",
+                "name": "R1",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 20,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R2",
+                "name": "R2",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 16,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R3",
+                "name": "R3",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 11,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R4",
+                "name": "R4",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 8,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W1",
+                "name": "W1",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 19,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W2",
+                "name": "W2",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 13,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W3",
+                "name": "W3",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 9,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W4",
+                "name": "W4",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 6,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "T1",
+                "name": "T1",
+                "position": "TE",
+                "team": "AAA",
+                "projected_pts": 10,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "T2",
+                "name": "T2",
+                "position": "TE",
+                "team": "AAA",
+                "projected_pts": 5,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "starter_ids",
+          "value": [
+            "Q1",
+            "R1",
+            "R2",
+            "R3",
+            "W1",
+            "W2",
+            "W3",
+            "T1",
+            "R4",
+            "W4"
+          ]
+        },
+        {
+          "type": "approx",
+          "case": "base",
+          "field": "total_pts",
+          "value": 136,
+          "tol": 0.1
+        }
+      ]
+    }
+  ]
+}

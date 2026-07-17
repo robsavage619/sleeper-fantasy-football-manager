@@ -1,0 +1,88 @@
+"""`sffm eval` — deterministic scenario suites + tier-3 prompt grading."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import typer
+
+from sleeper_ffm.evals.harness import run_suite
+from sleeper_ffm.evals.scenarios import RUNS_DIR
+
+eval_app = typer.Typer(help="Engine calibration + prompt fine-tuning eval harness.")
+
+
+@eval_app.command("run")
+def run_cmd(
+    split: str = typer.Option("train", "--split", help="train | holdout"),
+    tier: int = typer.Option(1, "--tier", help="Scenario tier to run."),
+    scenario_id: str | None = typer.Option(None, "--id", help="Run a single scenario by id."),
+    change_kind: str = typer.Option(
+        "engine", "--change-kind", help="engine | scenario | prompt | baseline"
+    ),
+    change_note: str = typer.Option("", "--change-note", help="Ledger note for this run."),
+) -> None:
+    """Run tier-1 scenarios and write graded results + a ledger entry."""
+    result = run_suite(
+        split=split,
+        tier=tier,
+        scenario_id=scenario_id,
+        change_kind=change_kind,
+        change_note=change_note,
+    )
+    typer.echo(f"run {result['run_id']}: {result['passed']}/{result['scenarios_run']} passed")
+    for r in result["results"]:
+        if not r.passed:
+            typer.echo(f"  FAIL {r.scenario_id} ({r.engine}){f': {r.error}' if r.error else ''}")
+            for check in r.checks:
+                if not check["passed"]:
+                    typer.echo(
+                        f"    - {check['type']} {check['target']}: "
+                        f"expected {check['expected']}, got {check['actual']}"
+                    )
+
+
+@eval_app.command("report")
+def report_cmd(
+    last: int = typer.Option(10, "--last", help="How many ledger entries to show."),
+) -> None:
+    """Show the pass-rate trajectory from the ledger."""
+    ledger_path = RUNS_DIR / "ledger.jsonl"
+    if not ledger_path.exists():
+        typer.echo("No runs yet.")
+        return
+    lines = ledger_path.read_text().strip().splitlines()
+    for line in lines[-last:]:
+        entry = json.loads(line)
+        typer.echo(
+            f"{entry['timestamp']} [{entry['git_sha'][:8]}] {entry['split']} "
+            f"tier={entry['tier']} {entry['passed']}/{entry['scenarios_run']} passed "
+            f"({entry['change_kind']}: {entry['change_note']})"
+        )
+
+
+@eval_app.command("render-briefing")
+def render_briefing_cmd(fixture: str = typer.Argument(help="Tier-3 fixture name.")) -> None:
+    """Print the rendered tier-3 briefing for a fixture."""
+    from sleeper_ffm.evals.briefings import render_briefing
+
+    typer.echo(render_briefing(fixture))
+
+
+@eval_app.command("grade-doc")
+def grade_doc_cmd(
+    fixture: str = typer.Argument(help="Tier-3 fixture name."),
+    doc_path: Path = typer.Argument(help="Path to a candidate MasterDocument JSON file."),
+) -> None:
+    """Scripted-grade a candidate MasterDocument against a fixture's planted facts."""
+    from sleeper_ffm.evals.grade_doc import grade_doc
+
+    doc_dict = json.loads(doc_path.read_text())
+    result = grade_doc(fixture, doc_dict)
+    typer.echo(f"schema_ok={result.schema_ok}")
+    if result.taxonomy:
+        for code, detail in zip(result.taxonomy, result.details, strict=True):
+            typer.echo(f"  {code}: {detail}")
+    else:
+        typer.echo("  no scripted issues found")

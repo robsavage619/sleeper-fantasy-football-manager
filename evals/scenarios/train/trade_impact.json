@@ -1,0 +1,33 @@
+{
+  "scenarios": [
+    {
+      "id": "trade.timeline_mismatch_penalizes_impact",
+      "tier": 1,
+      "engine": "trade_impact",
+      "rationale": "A timeline-mismatched acquisition (sell-window roster paying a pick for non-ascending production) must score lower impact than the identical fair-value offer without that flag.",
+      "inputs": {
+        "cases": {
+          "fair": {
+            "receive_asset": {"asset_id": "p1", "kind": "player", "label": "Vet WR", "position": "WR", "value": 180.0},
+            "give_value": 185.0,
+            "receive_value": 180.0,
+            "my_needs": ["WR"],
+            "timeline_mismatch": false
+          },
+          "mismatched": {
+            "receive_asset": {"asset_id": "p1", "kind": "player", "label": "Vet WR", "position": "WR", "value": 180.0},
+            "give_value": 185.0,
+            "receive_value": 180.0,
+            "my_needs": ["WR"],
+            "timeline_mismatch": true
+          }
+        }
+      },
+      "checks": [
+        {"type": "compare", "left": "fair.impact", "op": ">", "right": "mismatched.impact"},
+        {"type": "approx", "case": "fair", "field": "impact", "value": 176.5, "tol": 0.1},
+        {"type": "approx", "case": "mismatched", "field": "impact", "value": 151.5, "tol": 0.1}
+      ]
+    }
+  ]
+}

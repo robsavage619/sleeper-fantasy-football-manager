@@ -1,0 +1,26 @@
+{
+  "scenarios": [
+    {
+      "id": "mispricing.verdict_direction",
+      "tier": 1,
+      "engine": "mispricing",
+      "rationale": "A player scoring well above the position median under our rules must verdict BUY; well below must verdict SELL.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "season": 2025,
+            "players": [
+              {"sid": "A1", "position": "WR", "our_fp": 280.0, "generic_fp": 200.0},
+              {"sid": "B1", "position": "WR", "our_fp": 140.0, "generic_fp": 200.0},
+              {"sid": "C1", "position": "WR", "our_fp": 200.0, "generic_fp": 200.0}
+            ]
+          }
+        }
+      },
+      "checks": [
+        {"type": "exact", "case": "base", "field": "top_buy_sid", "value": "A1"},
+        {"type": "exact", "case": "base", "field": "top_sell_sid", "value": "B1"}
+      ]
+    }
+  ]
+}

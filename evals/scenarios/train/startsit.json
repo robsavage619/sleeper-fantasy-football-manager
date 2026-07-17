@@ -1,0 +1,32 @@
+{
+  "scenarios": [
+    {
+      "id": "startsit.solver_exact",
+      "tier": 1,
+      "engine": "startsit_solver",
+      "rationale": "On a constructed 10-player roster with known projections, the optimal lineup (including FLEX resolution) is exactly determined.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "players": [
+              {"player_id": "Q1", "name": "QB One", "position": "QB", "team": "AAA", "projected_pts": 20.0, "confidence": "HIGH", "source": "test", "notes": ""},
+              {"player_id": "R1", "name": "RB One", "position": "RB", "team": "AAA", "projected_pts": 18.0, "confidence": "HIGH", "source": "test", "notes": ""},
+              {"player_id": "R2", "name": "RB Two", "position": "RB", "team": "AAA", "projected_pts": 14.0, "confidence": "HIGH", "source": "test", "notes": ""},
+              {"player_id": "R3", "name": "RB Three", "position": "RB", "team": "AAA", "projected_pts": 9.0, "confidence": "HIGH", "source": "test", "notes": ""},
+              {"player_id": "R4", "name": "RB Four", "position": "RB", "team": "AAA", "projected_pts": 12.0, "confidence": "HIGH", "source": "test", "notes": ""},
+              {"player_id": "W1", "name": "WR One", "position": "WR", "team": "AAA", "projected_pts": 16.0, "confidence": "HIGH", "source": "test", "notes": ""},
+              {"player_id": "W2", "name": "WR Two", "position": "WR", "team": "AAA", "projected_pts": 11.0, "confidence": "HIGH", "source": "test", "notes": ""},
+              {"player_id": "W3", "name": "WR Three", "position": "WR", "team": "AAA", "projected_pts": 7.0, "confidence": "HIGH", "source": "test", "notes": ""},
+              {"player_id": "W4", "name": "WR Four", "position": "WR", "team": "AAA", "projected_pts": 10.0, "confidence": "HIGH", "source": "test", "notes": ""},
+              {"player_id": "T1", "name": "TE One", "position": "TE", "team": "AAA", "projected_pts": 8.0, "confidence": "HIGH", "source": "test", "notes": ""}
+            ]
+          }
+        }
+      },
+      "checks": [
+        {"type": "exact", "case": "base", "field": "starter_ids", "value": ["Q1", "R1", "R2", "R4", "W1", "W2", "W4", "T1", "R3", "W3"]},
+        {"type": "approx", "case": "base", "field": "total_pts", "value": 125.0, "tol": 0.1}
+      ]
+    }
+  ]
+}

@@ -19,6 +19,39 @@ _POSITION_BUMP: dict[str, float] = {
     "RB": 5.0,
 }
 
+# Priority adjustment for how many of this roster's own players already sit at
+# the candidate's position — trend score alone can't tell a real hole from an
+# already-saturated position, and those are very different adds.
+_POSITION_DEPTH_BONUS: dict[str, float] = {
+    "HOLE": 12.0,
+    "THIN": 6.0,
+    "NORMAL": 0.0,
+    "SURPLUS": -8.0,
+}
+
+
+def _positional_depth_tier(count: int) -> str:
+    """Classify roster depth at a position from a rostered-player count."""
+    if count == 0:
+        return "HOLE"
+    if count == 1:
+        return "THIN"
+    if count <= 3:
+        return "NORMAL"
+    return "SURPLUS"
+
+
+def _my_position_counts(
+    sleeper_players: dict[str, dict], my_roster_ids: set[str]
+) -> dict[str, int]:
+    """Count this roster's rostered players per skill position."""
+    counts: dict[str, int] = dict.fromkeys(SKILL_POSITIONS, 0)
+    for pid in my_roster_ids:
+        pos = sleeper_players.get(pid, {}).get("position")
+        if pos in counts:
+            counts[pos] += 1
+    return counts
+
 
 @dataclass
 class WaiverCandidate:
@@ -59,6 +92,10 @@ def analyze_waivers(
       - Position bump: QB=15, TE=10, WR/RB=5 (1QB dynasty scarcity)
       - Net signal:    min(20, (adds - drops) / max_adds * 20) -- drops dilute
       - Youth bonus:   age < 24 -> +8, age 24-26 -> +4
+      - Depth bonus:   +12 if this roster has 0 players at the position (a real
+        hole), +6 if 1 (thin), 0 if 2-3 (normal), -8 if 4+ (already deep) --
+        only applied when ``my_roster_ids`` is given; a raw trend score can't
+        tell a genuine roster hole from chasing depth at an already-strong spot.
       Capped at 100.
 
     FAAB estimate: when ``faab_market`` has enough historical winning bids for the
@@ -87,6 +124,11 @@ def analyze_waivers(
     protected_ids = protected_ids or set()
 
     max_adds = max(add_map.values(), default=1)
+    # Only computed (and only affects priority) when roster context is actually
+    # given -- an empty my_roster_ids means "no signal," not "confirmed empty roster."
+    my_position_counts = (
+        _my_position_counts(sleeper_players, my_roster_ids) if my_roster_ids else None
+    )
 
     candidates: list[WaiverCandidate] = []
     for pid, adds in add_map.items():
@@ -107,8 +149,12 @@ def analyze_waivers(
         pos_bump = _POSITION_BUMP.get(pos, 0.0)
         net_signal = min(20.0, (adds - drops) / max_adds * 20.0)
         youth_bonus = 8.0 if age < 24 else (4.0 if age <= 26 else 0.0)
+        depth_tier = _positional_depth_tier(my_position_counts[pos]) if my_position_counts else None
+        depth_bonus = _POSITION_DEPTH_BONUS[depth_tier] if depth_tier else 0.0
 
-        priority = round(min(100.0, trend_score + pos_bump + net_signal + youth_bonus), 1)
+        priority = round(
+            min(100.0, trend_score + pos_bump + net_signal + youth_bonus + depth_bonus), 1
+        )
         market_price = predicted_clearing_price(pos, priority, faab_market) if faab_market else None
         faab = (
             market_price + 1 if market_price is not None else _faab_estimate(priority, faab_budget)
@@ -123,7 +169,7 @@ def analyze_waivers(
         )
         downside = _downside(adds=adds, drops=drops, age=age, pos=pos)
         urgency = "HIGH" if priority >= 75 else "MED" if priority >= 50 else "LOW"
-        rationale = _build_rationale(adds, drops, age, pos)
+        rationale = _build_rationale(adds, drops, age, pos, depth_tier)
         decision = (
             f"Claim if dropping {drop_candidate}; bid ${bid_min}-${bid_max}."
             if drop_candidate
@@ -212,7 +258,9 @@ def _downside(adds: int, drops: int, age: float, pos: str) -> str:
     return "Mostly opportunity risk; confirm role before spending aggressively."
 
 
-def _build_rationale(adds: int, drops: int, age: float, pos: str) -> str:
+def _build_rationale(
+    adds: int, drops: int, age: float, pos: str, depth_tier: str | None = None
+) -> str:
     """Generate a human-readable waiver rationale string.
 
     Args:
@@ -220,6 +268,9 @@ def _build_rationale(adds: int, drops: int, age: float, pos: str) -> str:
         drops: Trending drop count.
         age: Player age in years.
         pos: Position string (QB/RB/WR/TE).
+        depth_tier: This roster's depth tier at ``pos`` ("HOLE"/"THIN"/"NORMAL"/
+            "SURPLUS"), or None if roster context wasn't given. Only the two
+            extremes are surfaced -- "normal" depth isn't worth a callout.
 
     Returns:
         Dot-separated rationale phrases.
@@ -235,4 +286,8 @@ def _build_rationale(adds: int, drops: int, age: float, pos: str) -> str:
         parts.append("QB scarcity")
     elif pos == "TE":
         parts.append("TE premium")
+    if depth_tier == "HOLE":
+        parts.append(f"fills a roster hole at {pos}")
+    elif depth_tier == "SURPLUS":
+        parts.append(f"already deep at {pos}")
     return " · ".join(parts)

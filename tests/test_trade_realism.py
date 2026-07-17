@@ -40,3 +40,13 @@ def test_impact_penalizes_trivial_swaps() -> None:
     impact, label = _impact(flier, give_value=45.0, receive_value=40.0, my_needs={"RB"})
     assert label == "LOW"
     assert impact < 45
+
+
+def test_impact_penalizes_timeline_mismatch() -> None:
+    wr = TradeAsset(asset_id="3", kind="player", label="Vet WR", position="WR", value=180.0)
+    fair, _ = _impact(wr, give_value=185.0, receive_value=180.0, my_needs={"WR"})
+    mismatched, _ = _impact(
+        wr, give_value=185.0, receive_value=180.0, my_needs={"WR"}, timeline_mismatch=True
+    )
+    assert mismatched < fair
+    assert fair - mismatched == 25.0

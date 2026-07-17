@@ -16,6 +16,7 @@ import httpx
 
 from sleeper_ffm.cache import ttl_cache
 from sleeper_ffm.config import CACHE_DIR, LEAGUE_ID, SLEEPER_BASE
+from sleeper_ffm.net import retry_call
 from sleeper_ffm.sleeper.models import (
     BracketMatchup,
     Draft,
@@ -32,6 +33,14 @@ log = logging.getLogger(__name__)
 
 _PLAYERS_CACHE = CACHE_DIR / "players_nfl.json"
 _PLAYERS_TTL_SECONDS = 24 * 3600
+
+# Statuses worth a retry: rate-limit and upstream/gateway hiccups. Everything else is a
+# real answer on the first try.
+_RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+
+
+class _TransientHTTPError(Exception):
+    """A retryable HTTP status from Sleeper (rate-limit or upstream error)."""
 
 
 @ttl_cache(key=lambda: "players")
@@ -62,9 +71,20 @@ class SleeperClient:
         self.close()
 
     def _get(self, path: str) -> Any:
-        resp = self._http.get(path)
-        resp.raise_for_status()
-        return resp.json()
+        def _do() -> Any:
+            resp = self._http.get(path)
+            # Retry only transient statuses (rate-limit / upstream hiccup); a 404 or other
+            # 4xx is a real answer and propagates on the first try.
+            if resp.status_code in _RETRYABLE_STATUS:
+                raise _TransientHTTPError(f"{resp.status_code} on {path}")
+            resp.raise_for_status()
+            return resp.json()
+
+        return retry_call(
+            _do,
+            exceptions=(httpx.TransportError, _TransientHTTPError),
+            label=f"sleeper {path}",
+        )
 
     # --- league ---------------------------------------------------------------
     def league(self, league_id: str | None = None) -> League:

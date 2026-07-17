@@ -62,6 +62,54 @@ def test_waiver_candidate_uses_faab_market_when_available() -> None:
     assert candidates[0].faab_estimate == 91
 
 
+def test_waiver_priority_rewards_roster_hole_over_surplus_at_same_position() -> None:
+    """Identical trend/position/age signal, different roster context -> the hole ranks higher."""
+    players_hole = {
+        "wr_add": {"position": "WR", "age": 26, "full_name": "Available WR", "team": "FA"},
+        "my_qb": {"position": "QB", "age": 27, "full_name": "My QB"},
+    }
+    players_surplus = {
+        "wr_add": {"position": "WR", "age": 26, "full_name": "Available WR", "team": "FA"},
+        "wr1": {"position": "WR", "age": 25, "full_name": "WR One"},
+        "wr2": {"position": "WR", "age": 25, "full_name": "WR Two"},
+        "wr3": {"position": "WR", "age": 25, "full_name": "WR Three"},
+        "wr4": {"position": "WR", "age": 25, "full_name": "WR Four"},
+    }
+    trending = [TrendingPlayer(player_id="wr_add", count=1000)]
+
+    no_context = analyze_waivers(
+        sleeper_players=players_hole,
+        trending_adds=trending,
+        trending_drops=[],
+        rostered_ids=set(),
+    )[0]
+    # Non-empty my_roster_ids with zero WRs on it -> a genuine hole at WR.
+    hole = analyze_waivers(
+        sleeper_players=players_hole,
+        trending_adds=trending,
+        trending_drops=[],
+        rostered_ids={"my_qb"},
+        my_roster_ids={"my_qb"},
+    )[0]
+    surplus = analyze_waivers(
+        sleeper_players=players_surplus,
+        trending_adds=trending,
+        trending_drops=[],
+        rostered_ids={"wr1", "wr2", "wr3", "wr4"},
+        my_roster_ids={"wr1", "wr2", "wr3", "wr4"},
+    )[0]
+
+    # No roster context given at all -> no adjustment (an empty my_roster_ids means
+    # "no signal," not "confirmed empty roster").
+    assert no_context.add_priority == round(min(100.0, 50.0 + 5.0 + 20.0 + 4.0), 1)
+    assert "roster hole" not in no_context.rationale
+    # 0 rostered WRs (a real hole) outranks 4 already-rostered WRs (surplus) for
+    # the identical trend/age signal.
+    assert hole.add_priority > surplus.add_priority
+    assert "roster hole" in hole.rationale
+    assert "already deep" in surplus.rationale
+
+
 def test_transaction_plan_is_non_mutating_and_confirm_gated() -> None:
     plan = build_transaction_plan(
         action_id="trade-offer-4",

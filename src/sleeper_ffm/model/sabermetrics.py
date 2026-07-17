@@ -402,7 +402,8 @@ def redzone_td_rates(
     Same bucket structure as :func:`redzone_usage_coefficients` (red-zone vs other,
     target vs carry) but for touchdown rate rather than fantasy-point rate — the
     basis for :mod:`sleeper_ffm.model.regression`'s red-zone-opportunity TD model
-    (backtested out-of-sample to cut expected-TD error ~18% vs a yardage baseline).
+    (backtested out-of-sample by :mod:`sleeper_ffm.evals.backtest` to cut expected-TD
+    error ~19% vs a yardage baseline — 19.3% fitting on 2024, scoring on 2025).
 
     Args:
         play_values: Output of :func:`pbp_play_value`.

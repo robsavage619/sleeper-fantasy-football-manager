@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -68,21 +68,80 @@ def latest(kind: str) -> FindingResponse:
     return FindingResponse.from_finding(f)
 
 
+class TradeRec(BaseModel):
+    """One trade recommendation. ``extra=allow``: unknown fields pass through untyped."""
+
+    model_config = {"extra": "allow"}
+
+    partner: str
+    # A multi-asset leg ("pick + player") is legitimately a list, not just a string —
+    # observed directly from real model output, not a hypothetical.
+    send: str | list[str]
+    receive: str | list[str]
+    urgency: Literal["LOW", "MED", "HIGH"]
+    rationale: str = ""
+
+
+class WaiverRec(BaseModel):
+    """One waiver recommendation. ``extra=allow``: unknown fields pass through untyped."""
+
+    model_config = {"extra": "allow"}
+
+    player: str
+    faab_bid: int
+    drop: str | None = None
+    rationale: str = ""
+
+
+class DraftRec(BaseModel):
+    """One draft recommendation. ``extra=allow``: unknown fields pass through untyped."""
+
+    model_config = {"extra": "allow"}
+
+    pick: str
+    alternatives: str = ""
+    rationale: str = ""
+
+
+class ProspectNote(BaseModel):
+    """One prospect note. ``extra=allow``: unknown fields pass through untyped."""
+
+    model_config = {"extra": "allow"}
+
+    name: str
+    verdict: str
+    rationale: str = ""
+
+
+class LineupRec(BaseModel):
+    """One lineup recommendation. ``extra=allow``: unknown fields pass through untyped."""
+
+    model_config = {"extra": "allow"}
+
+    start: str
+    sit: str
+    rationale: str = ""
+
+
 class MasterDocument(BaseModel):
     """The single JSON document Claude Code returns from the master briefing.
 
-    Fields mirror ``prompts.master.MASTER_SCHEMA``. Every field is required so a
-    missing section is rejected LOUDLY with 422 by pydantic — never stored raw.
+    Fields mirror ``prompts.master.MASTER_SCHEMA``. Every top-level field is
+    required so a missing section is rejected LOUDLY with 422 by pydantic —
+    never stored raw. Per-item fields are typed where a real format bug was
+    observed (``faab_bid`` as a string, ``send``/``receive`` shape) and left
+    loose (``extra=allow``) everywhere else, so an unanticipated extra key
+    from the model doesn't get silently dropped or rejected.
     """
 
     model_config = {"extra": "forbid"}
 
     narrative: str
-    trade_recs: list[dict[str, Any]]
-    waiver_recs: list[dict[str, Any]]
-    draft_recs: list[dict[str, Any]]
-    prospect_notes: list[dict[str, Any]]
-    lineup_recs: list[dict[str, Any]]
+    trade_recs: list[TradeRec]
+    waiver_recs: list[WaiverRec]
+    draft_recs: list[DraftRec]
+    prospect_notes: list[ProspectNote]
+    lineup_recs: list[LineupRec]
     generated_at: str
     data_quality_ack: str
 
@@ -115,7 +174,9 @@ def post_bulk(doc: MasterDocument) -> BulkResponse:
     stored: dict[str, int] = {}
     for section, kind, is_list in _SECTION_KINDS:
         value = getattr(doc, section)
-        items: list[dict[str, Any]] = value if is_list else [{section: value}]
+        items: list[dict[str, Any]] = (
+            [rec.model_dump() for rec in value] if is_list else [{section: value}]
+        )
         for item in items:
             post_finding(
                 kind=kind,

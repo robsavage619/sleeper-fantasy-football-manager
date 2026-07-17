@@ -1,0 +1,277 @@
+{
+  "scenarios": [
+    {
+      "id": "mispricing.below_min_games_excluded",
+      "tier": 1,
+      "engine": "mispricing",
+      "rationale": "A player below min_games is excluded from verdicts even with a real edge.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "season": 2025,
+            "min_games": 6,
+            "players": [
+              {
+                "sid": "A1",
+                "position": "WR",
+                "our_fp": 280.0,
+                "generic_fp": 200.0,
+                "games_played": 5.0
+              },
+              {
+                "sid": "B1",
+                "position": "WR",
+                "our_fp": 200.0,
+                "generic_fp": 200.0,
+                "games_played": 12.0
+              },
+              {
+                "sid": "C1",
+                "position": "WR",
+                "our_fp": 200.0,
+                "generic_fp": 200.0,
+                "games_played": 12.0
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_buy_sid",
+          "value": null
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_sell_sid",
+          "value": null
+        }
+      ]
+    },
+    {
+      "id": "mispricing.at_min_games_included",
+      "tier": 1,
+      "engine": "mispricing",
+      "rationale": "A player exactly at min_games is included.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "season": 2025,
+            "min_games": 6,
+            "players": [
+              {
+                "sid": "A1",
+                "position": "WR",
+                "our_fp": 280.0,
+                "generic_fp": 200.0,
+                "games_played": 6.0
+              },
+              {
+                "sid": "B1",
+                "position": "WR",
+                "our_fp": 200.0,
+                "generic_fp": 200.0,
+                "games_played": 12.0
+              },
+              {
+                "sid": "C1",
+                "position": "WR",
+                "our_fp": 140.0,
+                "generic_fp": 200.0,
+                "games_played": 12.0
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_buy_sid",
+          "value": "A1"
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_sell_sid",
+          "value": "C1"
+        }
+      ]
+    },
+    {
+      "id": "mispricing.league_wide_shift_cancels",
+      "tier": 1,
+      "engine": "mispricing",
+      "rationale": "A uniform league-wide scoring shift (same ratio for everyone) cancels out to FAIR for all.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "season": 2025,
+            "players": [
+              {
+                "sid": "A1",
+                "position": "WR",
+                "our_fp": 240.0,
+                "generic_fp": 200.0,
+                "games_played": 12.0
+              },
+              {
+                "sid": "B1",
+                "position": "WR",
+                "our_fp": 216.0,
+                "generic_fp": 180.0,
+                "games_played": 12.0
+              },
+              {
+                "sid": "C1",
+                "position": "WR",
+                "our_fp": 300.0,
+                "generic_fp": 250.0,
+                "games_played": 12.0
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_buy_sid",
+          "value": null
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_sell_sid",
+          "value": null
+        }
+      ]
+    },
+    {
+      "id": "mispricing.multi_position_verdicts",
+      "tier": 1,
+      "engine": "mispricing",
+      "rationale": "BUY/SELL verdicts compute independently per position (WR and RB pools don't cross-contaminate medians).",
+      "inputs": {
+        "cases": {
+          "base": {
+            "season": 2025,
+            "players": [
+              {
+                "sid": "A1",
+                "position": "WR",
+                "our_fp": 280.0,
+                "generic_fp": 200.0,
+                "games_played": 12.0
+              },
+              {
+                "sid": "B1",
+                "position": "WR",
+                "our_fp": 140.0,
+                "generic_fp": 200.0,
+                "games_played": 12.0
+              },
+              {
+                "sid": "C1",
+                "position": "WR",
+                "our_fp": 200.0,
+                "generic_fp": 200.0,
+                "games_played": 12.0
+              },
+              {
+                "sid": "D1",
+                "position": "RB",
+                "our_fp": 260.0,
+                "generic_fp": 200.0,
+                "games_played": 12.0
+              },
+              {
+                "sid": "E1",
+                "position": "RB",
+                "our_fp": 150.0,
+                "generic_fp": 200.0,
+                "games_played": 12.0
+              },
+              {
+                "sid": "F1",
+                "position": "RB",
+                "our_fp": 200.0,
+                "generic_fp": 200.0,
+                "games_played": 12.0
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_buy_sid",
+          "value": "A1"
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_sell_sid",
+          "value": "B1"
+        }
+      ]
+    },
+    {
+      "id": "mispricing.inside_fair_band",
+      "tier": 1,
+      "engine": "mispricing",
+      "rationale": "A small +2% edge stays inside the FAIR band (below the +/-4% threshold).",
+      "inputs": {
+        "cases": {
+          "base": {
+            "season": 2025,
+            "players": [
+              {
+                "sid": "A1",
+                "position": "WR",
+                "our_fp": 204.0,
+                "generic_fp": 200.0,
+                "games_played": 12.0
+              },
+              {
+                "sid": "B1",
+                "position": "WR",
+                "our_fp": 196.0,
+                "generic_fp": 200.0,
+                "games_played": 12.0
+              },
+              {
+                "sid": "C1",
+                "position": "WR",
+                "our_fp": 200.0,
+                "generic_fp": 200.0,
+                "games_played": 12.0
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_buy_sid",
+          "value": null
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_sell_sid",
+          "value": null
+        }
+      ]
+    }
+  ]
+}

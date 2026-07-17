@@ -70,3 +70,29 @@ def test_wrong_type_section_returns_422(client: TestClient) -> None:
     resp = client.post("/findings/bulk", json=bad)
     assert resp.status_code == 422
     assert client.get("/findings/").json() == []
+
+
+def test_dollar_prefixed_faab_bid_returns_422(client: TestClient) -> None:
+    """A currency-formatted faab_bid ("$16") is a real, observed model output bug."""
+    bad = _valid_doc()
+    bad["waiver_recs"] = [{"player": "Backup RB", "faab_bid": "$16", "drop": "Deep stash"}]
+    resp = client.post("/findings/bulk", json=bad)
+    assert resp.status_code == 422
+    assert client.get("/findings/").json() == []
+
+
+def test_multi_asset_trade_leg_as_list_is_accepted(client: TestClient) -> None:
+    """A 2-asset trade leg formatted as a JSON list is legitimate, not malformed."""
+    doc = _valid_doc()
+    doc["trade_recs"] = [
+        {
+            "partner": "Rival A",
+            "send": ["2027 1st", "Young WR"],
+            "receive": "Vet RB",
+            "urgency": "MED",
+        }
+    ]
+    resp = client.post("/findings/bulk", json=doc)
+    assert resp.status_code == 201
+    trades = client.get("/findings/", params={"kind": "trade"}).json()
+    assert trades[0]["body"]["send"] == ["2027 1st", "Young WR"]

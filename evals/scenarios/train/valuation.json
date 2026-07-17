@@ -1,0 +1,85 @@
+{
+  "scenarios": [
+    {
+      "id": "valuation.age_monotonic_wr",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "A 22-year-old WR must out-value an otherwise-identical 32-year-old WR.",
+      "inputs": {
+        "cases": {
+          "young": {"kind": "player", "player": {"player_id": "y1", "name": "Young WR", "position": "WR", "age": 22, "current_fpar": 50, "is_taxi": false}},
+          "old": {"kind": "player", "player": {"player_id": "o1", "name": "Old WR", "position": "WR", "age": 32, "current_fpar": 50, "is_taxi": false}}
+        }
+      },
+      "checks": [
+        {"type": "compare", "left": "young.value", "op": ">", "right": "old.value"}
+      ]
+    },
+    {
+      "id": "valuation.taxi_discount",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "A taxi-squad player must be valued at ~0.80x an otherwise-identical active player.",
+      "inputs": {
+        "cases": {
+          "taxi": {"kind": "player", "player": {"player_id": "t1", "name": "Taxi WR", "position": "WR", "age": 27, "current_fpar": 100, "is_taxi": true}},
+          "non_taxi": {"kind": "player", "player": {"player_id": "n1", "name": "Active WR", "position": "WR", "age": 27, "current_fpar": 100, "is_taxi": false}}
+        }
+      },
+      "checks": [
+        {"type": "ratio", "case_a": "taxi", "case_b": "non_taxi", "field": "value", "expected": 0.80, "tol": 0.02}
+      ]
+    },
+    {
+      "id": "valuation.pick_round_ordering",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "With no live market price, fallback pick values must order R1 > R2 > R3 > R4.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "kind": "pick_list",
+            "mode": "each",
+            "picks": [
+              {"pick": {"season": "2027", "round": 1, "original_owner_id": 1, "current_owner_id": 1, "class_strength": 1.0}, "market_value": null},
+              {"pick": {"season": "2027", "round": 2, "original_owner_id": 1, "current_owner_id": 1, "class_strength": 1.0}, "market_value": null},
+              {"pick": {"season": "2027", "round": 3, "original_owner_id": 1, "current_owner_id": 1, "class_strength": 1.0}, "market_value": null},
+              {"pick": {"season": "2027", "round": 4, "original_owner_id": 1, "current_owner_id": 1, "class_strength": 1.0}, "market_value": null}
+            ]
+          }
+        }
+      },
+      "checks": [
+        {"type": "ordering", "case": "base", "field": "values", "direction": "desc"}
+      ]
+    },
+    {
+      "id": "valuation.pick_add_monotonic",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "Adding a 2027 1st to a side's assets must strictly increase that side's total value.",
+      "inputs": {
+        "cases": {
+          "without_extra": {
+            "kind": "pick_list",
+            "mode": "sum",
+            "picks": [
+              {"pick": {"season": "2026", "round": 2, "original_owner_id": 1, "current_owner_id": 1, "class_strength": 1.0}, "market_value": 90}
+            ]
+          },
+          "with_extra": {
+            "kind": "pick_list",
+            "mode": "sum",
+            "picks": [
+              {"pick": {"season": "2026", "round": 2, "original_owner_id": 1, "current_owner_id": 1, "class_strength": 1.0}, "market_value": 90},
+              {"pick": {"season": "2027", "round": 1, "original_owner_id": 1, "current_owner_id": 1, "class_strength": 1.0}, "market_value": 190}
+            ]
+          }
+        }
+      },
+      "checks": [
+        {"type": "compare", "left": "with_extra.value", "op": ">", "right": "without_extra.value"}
+      ]
+    }
+  ]
+}

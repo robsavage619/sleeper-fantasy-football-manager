@@ -23,13 +23,18 @@ def client(monkeypatch) -> TestClient:
 
 def test_status_shape(client: TestClient) -> None:
     body = client.get("/admin/refresh/status").json()
-    assert set(body) == {"job", "freshness", "scheduler"}
+    assert set(body) == {"job", "freshness", "stale_fallbacks", "scheduler"}
     assert body["job"]["status"] == "idle"
     assert body["scheduler"] == {"enabled": False, "jobs": []}  # off under pytest
+    assert isinstance(body["stale_fallbacks"], dict)
     assert set(body["freshness"]) == {
         "sleeper_players",
         "nflverse_weekly",
         "nflverse_snaps",
+        "nflverse_schedules",
+        "nflverse_injuries",
+        "nflverse_depth_charts",
+        "nflverse_pbp",
         "fantasycalc",
     }
     for source in body["freshness"].values():
@@ -39,10 +44,13 @@ def test_status_shape(client: TestClient) -> None:
 
 def test_refresh_runs_sources_and_clears_cache(client: TestClient, monkeypatch) -> None:
     cleared: list[bool] = []
+    stale_reset: list[bool] = []
     monkeypatch.setattr(admin, "_refresh_sleeper", lambda: {"players": 1})
     monkeypatch.setattr(admin, "_refresh_nflverse", lambda: {"weekly_rows": 2})
+    monkeypatch.setattr(admin, "_refresh_nflverse_status", lambda: {"injury_rows": 4})
     monkeypatch.setattr(admin, "_refresh_fantasycalc", lambda date: {"entries": 3})
     monkeypatch.setattr(admin, "_clear_caches", lambda: cleared.append(True))
+    monkeypatch.setattr(admin.loader, "clear_stale_fallbacks", lambda: stale_reset.append(True))
 
     resp = client.post("/admin/refresh")
     assert resp.status_code == 200
@@ -52,9 +60,11 @@ def test_refresh_runs_sources_and_clears_cache(client: TestClient, monkeypatch) 
     status = client.get("/admin/refresh/status").json()["job"]
     assert status["status"] == "done"
     assert cleared == [True]
+    assert stale_reset == [True]  # stale-fallback registry reset at the start of a refresh
     assert {k: v["ok"] for k, v in status["sources"].items()} == {
         "sleeper": True,
         "nflverse": True,
+        "nflverse_status": True,
         "fantasycalc": True,
         "cache_clear": True,
     }
@@ -65,6 +75,7 @@ def test_one_source_failure_is_isolated_and_reported(client: TestClient, monkeyp
     monkeypatch.setattr(
         admin, "_refresh_nflverse", lambda: (_ for _ in ()).throw(RuntimeError("boom"))
     )
+    monkeypatch.setattr(admin, "_refresh_nflverse_status", lambda: {"injury_rows": 4})
     monkeypatch.setattr(admin, "_refresh_fantasycalc", lambda date: {"entries": 3})
     monkeypatch.setattr(admin, "_clear_caches", lambda: None)
 
@@ -75,6 +86,7 @@ def test_one_source_failure_is_isolated_and_reported(client: TestClient, monkeyp
     assert sources["sleeper"]["ok"] is True
     assert sources["nflverse"]["ok"] is False
     assert "boom" in sources["nflverse"]["error"]
+    assert sources["nflverse_status"]["ok"] is True  # isolated from the nflverse failure
     assert sources["fantasycalc"]["ok"] is True
     assert sources["cache_clear"]["ok"] is True
 

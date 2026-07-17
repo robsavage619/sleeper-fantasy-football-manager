@@ -1,0 +1,342 @@
+{
+  "scenarios": [
+    {
+      "id": "waivers.position_bump_qb",
+      "tier": 1,
+      "engine": "waivers",
+      "rationale": "Position bump for QB contributes its exact points to priority.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "sleeper_players": {
+              "p1": {
+                "position": "QB",
+                "age": 25,
+                "full_name": "p1",
+                "team": "FA"
+              }
+            },
+            "trending_adds": {
+              "p1": 1000
+            },
+            "trending_drops": {}
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_priority",
+          "value": 89.0
+        }
+      ]
+    },
+    {
+      "id": "waivers.position_bump_rb",
+      "tier": 1,
+      "engine": "waivers",
+      "rationale": "Position bump for RB contributes its exact points to priority.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "sleeper_players": {
+              "p1": {
+                "position": "RB",
+                "age": 25,
+                "full_name": "p1",
+                "team": "FA"
+              }
+            },
+            "trending_adds": {
+              "p1": 1000
+            },
+            "trending_drops": {}
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_priority",
+          "value": 79.0
+        }
+      ]
+    },
+    {
+      "id": "waivers.position_bump_te",
+      "tier": 1,
+      "engine": "waivers",
+      "rationale": "Position bump for TE contributes its exact points to priority.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "sleeper_players": {
+              "p1": {
+                "position": "TE",
+                "age": 25,
+                "full_name": "p1",
+                "team": "FA"
+              }
+            },
+            "trending_adds": {
+              "p1": 1000
+            },
+            "trending_drops": {}
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_priority",
+          "value": 84.0
+        }
+      ]
+    },
+    {
+      "id": "waivers.youth_bonus_under_24",
+      "tier": 1,
+      "engine": "waivers",
+      "rationale": "Age <24 gets the full +8 youth bonus.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "sleeper_players": {
+              "p1": {
+                "position": "WR",
+                "age": 22,
+                "full_name": "p1",
+                "team": "FA"
+              }
+            },
+            "trending_adds": {
+              "p1": 1000
+            },
+            "trending_drops": {}
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_priority",
+          "value": 83.0
+        }
+      ]
+    },
+    {
+      "id": "waivers.youth_bonus_24_to_26",
+      "tier": 1,
+      "engine": "waivers",
+      "rationale": "Age 24-26 gets the +4 youth bonus.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "sleeper_players": {
+              "p1": {
+                "position": "WR",
+                "age": 25,
+                "full_name": "p1",
+                "team": "FA"
+              }
+            },
+            "trending_adds": {
+              "p1": 1000
+            },
+            "trending_drops": {}
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_priority",
+          "value": 79.0
+        }
+      ]
+    },
+    {
+      "id": "waivers.youth_bonus_boundary_24",
+      "tier": 1,
+      "engine": "waivers",
+      "rationale": "Age exactly 24 is in the 24-26 band (+4), not the <24 band.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "sleeper_players": {
+              "p1": {
+                "position": "WR",
+                "age": 24,
+                "full_name": "p1",
+                "team": "FA"
+              }
+            },
+            "trending_adds": {
+              "p1": 1000
+            },
+            "trending_drops": {}
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_priority",
+          "value": 79.0
+        }
+      ]
+    },
+    {
+      "id": "waivers.priority_practical_ceiling",
+      "tier": 1,
+      "engine": "waivers",
+      "rationale": "The formula's individual component caps (trend 50 + pos-bump 15 + net-signal 20 + youth 8) produce a practical ceiling of 93 -- the code's min(100, ...) cap is never actually reachable.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "sleeper_players": {
+              "p1": {
+                "position": "QB",
+                "age": 22,
+                "full_name": "p1",
+                "team": "FA"
+              }
+            },
+            "trending_adds": {
+              "p1": 1000
+            },
+            "trending_drops": {}
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_priority",
+          "value": 93.0
+        }
+      ]
+    },
+    {
+      "id": "waivers.net_signal_partial_drops",
+      "tier": 1,
+      "engine": "waivers",
+      "rationale": "Partial drops reduce net_signal below its 20-point cap.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "sleeper_players": {
+              "p1": {
+                "position": "WR",
+                "age": 25,
+                "full_name": "p1",
+                "team": "FA"
+              }
+            },
+            "trending_adds": {
+              "p1": 1000
+            },
+            "trending_drops": {
+              "p1": 500
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_priority",
+          "value": 69.0
+        }
+      ]
+    },
+    {
+      "id": "waivers.multi_candidate_ordering",
+      "tier": 1,
+      "engine": "waivers",
+      "rationale": "Three simultaneous candidates with distinct signal are ranked correctly by priority.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "sleeper_players": {
+              "p1": {
+                "position": "QB",
+                "age": 24,
+                "full_name": "p1",
+                "team": "FA"
+              },
+              "p2": {
+                "position": "WR",
+                "age": 30,
+                "full_name": "p2",
+                "team": "FA"
+              },
+              "p3": {
+                "position": "RB",
+                "age": 22,
+                "full_name": "p3",
+                "team": "FA"
+              }
+            },
+            "trending_adds": {
+              "p1": 300,
+              "p2": 900,
+              "p3": 600
+            },
+            "trending_drops": {
+              "p2": 100
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "ordering",
+          "case": "base",
+          "field": "priorities",
+          "direction": "desc"
+        }
+      ]
+    },
+    {
+      "id": "waivers.non_skill_position_excluded",
+      "tier": 1,
+      "engine": "waivers",
+      "rationale": "A kicker (non-skill position) never appears as a waiver candidate.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "sleeper_players": {
+              "p1": {
+                "position": "K",
+                "age": 25,
+                "full_name": "p1",
+                "team": "FA"
+              }
+            },
+            "trending_adds": {
+              "p1": 1000
+            },
+            "trending_drops": {}
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "player_ids",
+          "value": []
+        }
+      ]
+    }
+  ]
+}

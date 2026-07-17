@@ -30,7 +30,10 @@ MASTER_SCHEMA: dict[str, str] = {
     "trade_recs": (
         "array of objects — each {partner, send, receive, rationale, urgency:LOW|MED|HIGH}"
     ),
-    "waiver_recs": "array of objects — each {player, faab_bid, drop, rationale}",
+    "waiver_recs": (
+        "array of objects — each {player, faab_bid, drop, rationale}; "
+        "faab_bid is a JSON number of dollars (e.g. 12), never a string or a $-prefixed value"
+    ),
     "draft_recs": "array of objects — each {pick, alternatives, rationale}",
     "prospect_notes": "array of objects — each {name, verdict, rationale}",
     "lineup_recs": "array of objects — each {start, sit, rationale}",
@@ -62,6 +65,8 @@ class BriefingContext:
     regression: str = ""
     handcuffs: str = ""
     wire_watch: str = ""
+    track_record: str = ""
+    data_freshness: str = ""
 
 
 def build_master_briefing(context: BriefingContext, generated_at: str) -> str:
@@ -94,6 +99,17 @@ answer with ONE JSON document (schema at the bottom) and NOTHING ELSE.
 
 ## Roster Sabermetrics (GM performance signals)
 {context.saber_summary}
+
+## GM Track Record (how your own past calls have graded out)
+Your prior lineup and waiver recommendations, scored against what actually happened
+(started player outscored the benched one; a waiver add cleared a startable week). Let
+this calibrate your confidence: if a category's hit-rate is low or thin, hedge and say so
+in `data_quality_ack`; if it's strong, you've earned the conviction. PENDING items aren't
+failures — they just haven't played out yet.
+{context.track_record}
+
+## Data Freshness (what the engine knows is stale right now)
+{context.data_freshness}
 
 ## Title Equity (Monte-Carlo season simulation)
 Where this roster's raw strength places it in the league's title race. This is the
@@ -224,7 +240,52 @@ def gather_briefing_context(my_roster_id: int = MY_ROSTER_ID) -> BriefingContext
         regression=_regression_section(),
         handcuffs=_handcuff_section(my_roster_id),
         wire_watch=_wire_watch_section(my_roster_id),
+        track_record=_track_record_section(),
+        data_freshness=_data_freshness_section(),
     )
+
+
+def _track_record_section() -> str:
+    """Graded hit-rate of the GM's own past lineup/waiver calls (calibration feedback)."""
+    try:
+        from sleeper_ffm.model.rec_scoreboard import build_scoreboard
+
+        board = build_scoreboard()
+    except Exception as exc:
+        log.warning("master: track record unavailable: %s", exc)
+        return "(degraded — recommendation scoreboard unavailable)"
+
+    if not board.recs:
+        return "  (no past recommendations posted yet — no track record to calibrate against)"
+
+    overall = f"{board.overall_hit_rate:.0%}" if board.overall_hit_rate is not None else "n/a"
+    lines = [
+        f"  Overall graded hit-rate: {overall} "
+        f"({board.graded_count} graded, {board.pending_count} pending)"
+    ]
+    for k in board.by_kind:
+        rate = f"{k.hit_rate:.0%}" if k.hit_rate is not None else "—"
+        lines.append(
+            f"    {k.kind}: {rate} hit-rate ({k.correct}/{k.graded} graded, {k.total} total)"
+        )
+    for w in board.warnings[:2]:
+        lines.append(f"  note: {w}")
+    return "\n".join(lines)
+
+
+def _data_freshness_section() -> str:
+    """Surface any stale-fallback the loaders recorded so the GM can acknowledge it."""
+    try:
+        from sleeper_ffm.nflverse.loader import stale_fallbacks
+
+        stale = stale_fallbacks()
+    except Exception as exc:
+        log.warning("master: data freshness unavailable: %s", exc)
+        return "(freshness check unavailable — assume sources may be stale)"
+
+    if not stale:
+        return "  (no stale-data fallbacks flagged this cycle)"
+    return "\n".join(f"  [STALE] {source}: {detail}" for source, detail in sorted(stale.items()))
 
 
 def _wire_watch_section(my_roster_id: int, top: int = 8) -> str:

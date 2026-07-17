@@ -1,0 +1,33 @@
+{
+  "scenarios": [
+    {
+      "id": "calibration.market_rank_corr",
+      "tier": 1,
+      "engine": "calibration_rank_corr",
+      "rationale": "Model dynasty values must broadly rank-correlate with market consensus (Spearman >= 0.75) — invariants alone prove coherence, not accuracy.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "players": [
+              {"player": {"player_id": "m1", "name": "P1", "position": "WR", "age": 27, "current_fpar": 20, "is_taxi": false}, "market_value": 20},
+              {"player": {"player_id": "m2", "name": "P2", "position": "WR", "age": 27, "current_fpar": 40, "is_taxi": false}, "market_value": 40},
+              {"player": {"player_id": "m3", "name": "P3", "position": "WR", "age": 27, "current_fpar": 60, "is_taxi": false}, "market_value": 60},
+              {"player": {"player_id": "m4", "name": "P4", "position": "WR", "age": 27, "current_fpar": 80, "is_taxi": false}, "market_value": 80},
+              {"player": {"player_id": "m5", "name": "P5", "position": "WR", "age": 27, "current_fpar": 100, "is_taxi": false}, "market_value": 120},
+              {"player": {"player_id": "m6", "name": "P6", "position": "WR", "age": 27, "current_fpar": 120, "is_taxi": false}, "market_value": 100},
+              {"player": {"player_id": "m7", "name": "P7", "position": "WR", "age": 27, "current_fpar": 140, "is_taxi": false}, "market_value": 140},
+              {"player": {"player_id": "m8", "name": "P8", "position": "WR", "age": 27, "current_fpar": 160, "is_taxi": false}, "market_value": 160},
+              {"player": {"player_id": "m9", "name": "P9", "position": "WR", "age": 27, "current_fpar": 180, "is_taxi": false}, "market_value": 180},
+              {"player": {"player_id": "m10", "name": "P10", "position": "WR", "age": 27, "current_fpar": 200, "is_taxi": false}, "market_value": 200},
+              {"player": {"player_id": "m11", "name": "P11", "position": "WR", "age": 27, "current_fpar": 220, "is_taxi": false}, "market_value": 220},
+              {"player": {"player_id": "m12", "name": "P12", "position": "WR", "age": 27, "current_fpar": 240, "is_taxi": false}, "market_value": 240}
+            ]
+          }
+        }
+      },
+      "checks": [
+        {"type": "rank_corr", "case": "base", "field_a": "model_values", "field_b": "market_values", "min": 0.75}
+      ]
+    }
+  ]
+}

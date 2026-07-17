@@ -1,0 +1,40 @@
+{
+  "scenarios": [
+    {
+      "id": "waiver.positional_hole_outranks_surplus",
+      "tier": 1,
+      "engine": "waivers",
+      "rationale": "Identical trend/position/age signal at the same position must rank a real roster hole (0 rostered) above an already-surplus depth chart (4 rostered), even though the raw market signal is tied.",
+      "inputs": {
+        "cases": {
+          "hole": {
+            "sleeper_players": {
+              "wr_add": {"position": "WR", "age": 26, "full_name": "Available WR", "team": "FA"},
+              "my_qb": {"position": "QB", "age": 27, "full_name": "My QB"}
+            },
+            "trending_adds": {"wr_add": 1000},
+            "rostered_ids": ["my_qb"],
+            "my_roster_ids": ["my_qb"]
+          },
+          "surplus": {
+            "sleeper_players": {
+              "wr_add": {"position": "WR", "age": 26, "full_name": "Available WR", "team": "FA"},
+              "wr1": {"position": "WR", "age": 25, "full_name": "WR One"},
+              "wr2": {"position": "WR", "age": 25, "full_name": "WR Two"},
+              "wr3": {"position": "WR", "age": 25, "full_name": "WR Three"},
+              "wr4": {"position": "WR", "age": 25, "full_name": "WR Four"}
+            },
+            "trending_adds": {"wr_add": 1000},
+            "rostered_ids": ["wr1", "wr2", "wr3", "wr4"],
+            "my_roster_ids": ["wr1", "wr2", "wr3", "wr4"]
+          }
+        }
+      },
+      "checks": [
+        {"type": "compare", "left": "hole.top_priority", "op": ">", "right": "surplus.top_priority"},
+        {"type": "exact", "case": "hole", "field": "top_priority", "value": 91.0},
+        {"type": "exact", "case": "surplus", "field": "top_priority", "value": 71.0}
+      ]
+    }
+  ]
+}

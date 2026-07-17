@@ -1,0 +1,26 @@
+{
+  "scenarios": [
+    {
+      "id": "trade.fleece_pick_based",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "A fleece expressed through a pick instead of a player must still land LOW.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {"roster_id": 1, "league_size": 10},
+            "partner": {"roster_id": 2, "league_size": 10, "contention_label": "OPEN"},
+            "history": null,
+            "give_asset": {"asset_id": "2027_R2", "kind": "pick", "label": "2027 R2", "position": null, "value": 50},
+            "receive_asset": {"asset_id": "p9", "kind": "player", "label": "Stud WR", "position": "WR", "value": 240},
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {"type": "range", "case": "base", "field": "score", "min": 5, "max": 53},
+        {"type": "exact", "case": "base", "field": "confidence", "value": "LOW"}
+      ]
+    }
+  ]
+}

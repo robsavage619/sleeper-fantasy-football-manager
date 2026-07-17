@@ -1,0 +1,25 @@
+{
+  "scenarios": [
+    {
+      "id": "faab.budget_edge",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "When the predicted clearing price meets or exceeds the budget, the bid must clamp to the full budget.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "TE",
+            "add_priority": 85,
+            "budget_remaining": 10,
+            "by_position": {
+              "TE": {"n": 6, "p25": 2.0, "p50": 8.0, "p75": 14.0, "p90": 50.0}
+            }
+          }
+        }
+      },
+      "checks": [
+        {"type": "exact", "case": "base", "field": "bid", "value": 10}
+      ]
+    }
+  ]
+}

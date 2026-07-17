@@ -1,0 +1,33 @@
+{
+  "scenarios": [
+    {
+      "id": "calibration.market_rank_corr_holdout",
+      "tier": 1,
+      "engine": "calibration_rank_corr",
+      "rationale": "Same market-calibration invariant as the train scenario, on a disjoint RB player mix.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "players": [
+              {"player": {"player_id": "h1", "name": "R1", "position": "RB", "age": 25, "current_fpar": 15, "is_taxi": false}, "market_value": 15},
+              {"player": {"player_id": "h2", "name": "R2", "position": "RB", "age": 25, "current_fpar": 30, "is_taxi": false}, "market_value": 30},
+              {"player": {"player_id": "h3", "name": "R3", "position": "RB", "age": 25, "current_fpar": 45, "is_taxi": false}, "market_value": 45},
+              {"player": {"player_id": "h4", "name": "R4", "position": "RB", "age": 25, "current_fpar": 60, "is_taxi": false}, "market_value": 60},
+              {"player": {"player_id": "h5", "name": "R5", "position": "RB", "age": 25, "current_fpar": 75, "is_taxi": false}, "market_value": 90},
+              {"player": {"player_id": "h6", "name": "R6", "position": "RB", "age": 25, "current_fpar": 90, "is_taxi": false}, "market_value": 75},
+              {"player": {"player_id": "h7", "name": "R7", "position": "RB", "age": 25, "current_fpar": 105, "is_taxi": false}, "market_value": 105},
+              {"player": {"player_id": "h8", "name": "R8", "position": "RB", "age": 25, "current_fpar": 120, "is_taxi": false}, "market_value": 120},
+              {"player": {"player_id": "h9", "name": "R9", "position": "RB", "age": 25, "current_fpar": 135, "is_taxi": false}, "market_value": 135},
+              {"player": {"player_id": "h10", "name": "R10", "position": "RB", "age": 25, "current_fpar": 150, "is_taxi": false}, "market_value": 150},
+              {"player": {"player_id": "h11", "name": "R11", "position": "RB", "age": 25, "current_fpar": 165, "is_taxi": false}, "market_value": 165},
+              {"player": {"player_id": "h12", "name": "R12", "position": "RB", "age": 25, "current_fpar": 180, "is_taxi": false}, "market_value": 180}
+            ]
+          }
+        }
+      },
+      "checks": [
+        {"type": "rank_corr", "case": "base", "field_a": "model_values", "field_b": "market_values", "min": 0.75}
+      ]
+    }
+  ]
+}

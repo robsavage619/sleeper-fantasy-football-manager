@@ -1,0 +1,26 @@
+{
+  "scenarios": [
+    {
+      "id": "mispricing.near_threshold",
+      "tier": 1,
+      "engine": "mispricing",
+      "rationale": "An edge just past the +/-4% verdict boundary must still land on the correct side.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "season": 2025,
+            "players": [
+              {"sid": "D1", "position": "WR", "our_fp": 209.0, "generic_fp": 200.0},
+              {"sid": "E1", "position": "WR", "our_fp": 191.0, "generic_fp": 200.0},
+              {"sid": "F1", "position": "WR", "our_fp": 200.0, "generic_fp": 200.0}
+            ]
+          }
+        }
+      },
+      "checks": [
+        {"type": "exact", "case": "base", "field": "top_buy_sid", "value": "D1"},
+        {"type": "exact", "case": "base", "field": "top_sell_sid", "value": "E1"}
+      ]
+    }
+  ]
+}

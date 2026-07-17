@@ -1,0 +1,460 @@
+{
+  "scenarios": [
+    {
+      "id": "faab.tier_p90_rb",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "Priority >=80 prices off the 90th percentile (RB).",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "RB",
+            "add_priority": 85,
+            "budget_remaining": 200,
+            "by_position": {
+              "RB": {
+                "n": 10,
+                "p25": 5.0,
+                "p50": 12.0,
+                "p75": 22.0,
+                "p90": 40.0
+              }
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "clearing_price",
+          "value": 40
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "bid",
+          "value": 41
+        }
+      ]
+    },
+    {
+      "id": "faab.tier_p75_rb",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "Priority 60-79 prices off the 75th percentile (RB).",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "RB",
+            "add_priority": 65,
+            "budget_remaining": 200,
+            "by_position": {
+              "RB": {
+                "n": 10,
+                "p25": 5.0,
+                "p50": 12.0,
+                "p75": 22.0,
+                "p90": 40.0
+              }
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "clearing_price",
+          "value": 22
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "bid",
+          "value": 23
+        }
+      ]
+    },
+    {
+      "id": "faab.tier_p50_rb",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "Priority 40-59 prices off the 50th percentile (RB).",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "RB",
+            "add_priority": 45,
+            "budget_remaining": 200,
+            "by_position": {
+              "RB": {
+                "n": 10,
+                "p25": 5.0,
+                "p50": 12.0,
+                "p75": 22.0,
+                "p90": 40.0
+              }
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "clearing_price",
+          "value": 12
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "bid",
+          "value": 13
+        }
+      ]
+    },
+    {
+      "id": "faab.tier_p25_rb",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "Priority <40 prices off the 25th percentile (RB).",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "RB",
+            "add_priority": 20,
+            "budget_remaining": 200,
+            "by_position": {
+              "RB": {
+                "n": 10,
+                "p25": 5.0,
+                "p50": 12.0,
+                "p75": 22.0,
+                "p90": 40.0
+              }
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "clearing_price",
+          "value": 5
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "bid",
+          "value": 6
+        }
+      ]
+    },
+    {
+      "id": "faab.tier_p90_wr",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "Priority >=80 prices off the 90th percentile (WR).",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "WR",
+            "add_priority": 90,
+            "budget_remaining": 200,
+            "by_position": {
+              "WR": {
+                "n": 9,
+                "p25": 3.0,
+                "p50": 9.0,
+                "p75": 18.0,
+                "p90": 33.0
+              }
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "clearing_price",
+          "value": 33
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "bid",
+          "value": 34
+        }
+      ]
+    },
+    {
+      "id": "faab.tier_p75_te",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "Priority 60-79 prices off the 75th percentile (TE).",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "TE",
+            "add_priority": 70,
+            "budget_remaining": 200,
+            "by_position": {
+              "TE": {
+                "n": 7,
+                "p25": 2.0,
+                "p50": 6.0,
+                "p75": 11.0,
+                "p90": 20.0
+              }
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "clearing_price",
+          "value": 11
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "bid",
+          "value": 12
+        }
+      ]
+    },
+    {
+      "id": "faab.boundary_priority_39",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "Priority 39 (just under 40) still uses p25.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "RB",
+            "add_priority": 39,
+            "budget_remaining": 200,
+            "by_position": {
+              "RB": {
+                "n": 10,
+                "p25": 5.0,
+                "p50": 12.0,
+                "p75": 22.0,
+                "p90": 40.0
+              }
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "clearing_price",
+          "value": 5
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "bid",
+          "value": 6
+        }
+      ]
+    },
+    {
+      "id": "faab.boundary_priority_40",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "Priority 40 (exact boundary) uses p50.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "RB",
+            "add_priority": 40,
+            "budget_remaining": 200,
+            "by_position": {
+              "RB": {
+                "n": 10,
+                "p25": 5.0,
+                "p50": 12.0,
+                "p75": 22.0,
+                "p90": 40.0
+              }
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "clearing_price",
+          "value": 12
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "bid",
+          "value": 13
+        }
+      ]
+    },
+    {
+      "id": "faab.boundary_priority_60",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "Priority 60 (exact boundary) uses p75.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "RB",
+            "add_priority": 60,
+            "budget_remaining": 200,
+            "by_position": {
+              "RB": {
+                "n": 10,
+                "p25": 5.0,
+                "p50": 12.0,
+                "p75": 22.0,
+                "p90": 40.0
+              }
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "clearing_price",
+          "value": 22
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "bid",
+          "value": 23
+        }
+      ]
+    },
+    {
+      "id": "faab.boundary_priority_79",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "Priority 79 (just under 80) still uses p75.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "RB",
+            "add_priority": 79,
+            "budget_remaining": 200,
+            "by_position": {
+              "RB": {
+                "n": 10,
+                "p25": 5.0,
+                "p50": 12.0,
+                "p75": 22.0,
+                "p90": 40.0
+              }
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "clearing_price",
+          "value": 22
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "bid",
+          "value": 23
+        }
+      ]
+    },
+    {
+      "id": "faab.missing_position_stats",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "A position with no historical bid stats returns None for both clearing price and bid.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "DEF",
+            "add_priority": 90,
+            "budget_remaining": 200,
+            "by_position": {
+              "RB": {
+                "n": 10,
+                "p25": 5.0,
+                "p50": 12.0,
+                "p75": 22.0,
+                "p90": 40.0
+              }
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "clearing_price",
+          "value": null
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "bid",
+          "value": null
+        }
+      ]
+    },
+    {
+      "id": "faab.budget_clamp_tight",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "A very tight remaining budget clamps the bid below the predicted clearing price + 1.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "RB",
+            "add_priority": 85,
+            "budget_remaining": 15,
+            "by_position": {
+              "RB": {
+                "n": 10,
+                "p25": 5.0,
+                "p50": 12.0,
+                "p75": 22.0,
+                "p90": 40.0
+              }
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "clearing_price",
+          "value": 40
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "bid",
+          "value": 15
+        }
+      ]
+    }
+  ]
+}

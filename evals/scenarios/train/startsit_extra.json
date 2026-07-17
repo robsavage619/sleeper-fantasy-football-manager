@@ -1,0 +1,593 @@
+{
+  "scenarios": [
+    {
+      "id": "startsit.thin_roster_no_te",
+      "tier": 1,
+      "engine": "startsit_solver",
+      "rationale": "A roster with zero TEs still fills every other slot (no TE in the lineup).",
+      "inputs": {
+        "cases": {
+          "base": {
+            "players": [
+              {
+                "player_id": "Q1",
+                "name": "Q1",
+                "position": "QB",
+                "team": "AAA",
+                "projected_pts": 20,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R1",
+                "name": "R1",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 15,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R2",
+                "name": "R2",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 12,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W1",
+                "name": "W1",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 14,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W2",
+                "name": "W2",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 10,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "starter_ids",
+          "value": [
+            "Q1",
+            "R1",
+            "R2",
+            "W1",
+            "W2"
+          ]
+        },
+        {
+          "type": "approx",
+          "case": "base",
+          "field": "total_pts",
+          "value": 71,
+          "tol": 0.1
+        }
+      ]
+    },
+    {
+      "id": "startsit.thin_roster_two_rb_only",
+      "tier": 1,
+      "engine": "startsit_solver",
+      "rationale": "Only 2 RBs available fills both RB slots but leaves the 3rd RB slot empty.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "players": [
+              {
+                "player_id": "Q1",
+                "name": "Q1",
+                "position": "QB",
+                "team": "AAA",
+                "projected_pts": 20,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R1",
+                "name": "R1",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 15,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R2",
+                "name": "R2",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 12,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W1",
+                "name": "W1",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 14,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W2",
+                "name": "W2",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 10,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W3",
+                "name": "W3",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 9,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "T1",
+                "name": "T1",
+                "position": "TE",
+                "team": "AAA",
+                "projected_pts": 8,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "starter_ids",
+          "value": [
+            "Q1",
+            "R1",
+            "R2",
+            "W1",
+            "W2",
+            "W3",
+            "T1"
+          ]
+        },
+        {
+          "type": "approx",
+          "case": "base",
+          "field": "total_pts",
+          "value": 88,
+          "tol": 0.1
+        }
+      ]
+    },
+    {
+      "id": "startsit.flex_competition_three_way",
+      "tier": 1,
+      "engine": "startsit_solver",
+      "rationale": "RB, WR, and TE depth all compete for exactly 2 FLEX slots.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "players": [
+              {
+                "player_id": "Q1",
+                "name": "Q1",
+                "position": "QB",
+                "team": "AAA",
+                "projected_pts": 20,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R1",
+                "name": "R1",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 18,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R2",
+                "name": "R2",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 14,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R3",
+                "name": "R3",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 10,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R4",
+                "name": "R4",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 13,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W1",
+                "name": "W1",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 16,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W2",
+                "name": "W2",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 11,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W3",
+                "name": "W3",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 7,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W4",
+                "name": "W4",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 9,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "T1",
+                "name": "T1",
+                "position": "TE",
+                "team": "AAA",
+                "projected_pts": 8,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "T2",
+                "name": "T2",
+                "position": "TE",
+                "team": "AAA",
+                "projected_pts": 6,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "starter_ids",
+          "value": [
+            "Q1",
+            "R1",
+            "R2",
+            "R4",
+            "W1",
+            "W2",
+            "W4",
+            "T1",
+            "R3",
+            "W3"
+          ]
+        },
+        {
+          "type": "approx",
+          "case": "base",
+          "field": "total_pts",
+          "value": 126,
+          "tol": 0.1
+        }
+      ]
+    },
+    {
+      "id": "startsit.single_qb_trivial",
+      "tier": 1,
+      "engine": "startsit_solver",
+      "rationale": "A single rostered QB trivially fills the QB slot.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "players": [
+              {
+                "player_id": "Q1",
+                "name": "Q1",
+                "position": "QB",
+                "team": "AAA",
+                "projected_pts": 22,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R1",
+                "name": "R1",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 15,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R2",
+                "name": "R2",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 12,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R3",
+                "name": "R3",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 9,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W1",
+                "name": "W1",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 14,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W2",
+                "name": "W2",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 10,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W3",
+                "name": "W3",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 8,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "T1",
+                "name": "T1",
+                "position": "TE",
+                "team": "AAA",
+                "projected_pts": 7,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "starter_ids",
+          "value": [
+            "Q1",
+            "R1",
+            "R2",
+            "R3",
+            "W1",
+            "W2",
+            "W3",
+            "T1"
+          ]
+        },
+        {
+          "type": "approx",
+          "case": "base",
+          "field": "total_pts",
+          "value": 97,
+          "tol": 0.1
+        }
+      ]
+    },
+    {
+      "id": "startsit.flex_prefers_te_when_best",
+      "tier": 1,
+      "engine": "startsit_solver",
+      "rationale": "FLEX correctly selects a backup TE over weaker RB/WR depth when it scores higher.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "players": [
+              {
+                "player_id": "Q1",
+                "name": "Q1",
+                "position": "QB",
+                "team": "AAA",
+                "projected_pts": 20,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R1",
+                "name": "R1",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 18,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R2",
+                "name": "R2",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 14,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "R3",
+                "name": "R3",
+                "position": "RB",
+                "team": "AAA",
+                "projected_pts": 5,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W1",
+                "name": "W1",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 16,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W2",
+                "name": "W2",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 11,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "W3",
+                "name": "W3",
+                "position": "WR",
+                "team": "AAA",
+                "projected_pts": 4,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "T1",
+                "name": "T1",
+                "position": "TE",
+                "team": "AAA",
+                "projected_pts": 12,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              },
+              {
+                "player_id": "T2",
+                "name": "T2",
+                "position": "TE",
+                "team": "AAA",
+                "projected_pts": 9,
+                "confidence": "HIGH",
+                "source": "test",
+                "notes": ""
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "starter_ids",
+          "value": [
+            "Q1",
+            "R1",
+            "R2",
+            "R3",
+            "W1",
+            "W2",
+            "W3",
+            "T1",
+            "T2"
+          ]
+        },
+        {
+          "type": "approx",
+          "case": "base",
+          "field": "total_pts",
+          "value": 109,
+          "tol": 0.1
+        }
+      ]
+    }
+  ]
+}

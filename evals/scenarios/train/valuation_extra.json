@@ -1,0 +1,525 @@
+{
+  "scenarios": [
+    {
+      "id": "valuation.age_monotonic_qb",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "QB variant of the age-monotonicity invariant.",
+      "inputs": {
+        "cases": {
+          "young": {
+            "kind": "player",
+            "player": {
+              "player_id": "y",
+              "name": "y",
+              "position": "QB",
+              "age": 23,
+              "current_fpar": 50,
+              "is_taxi": false
+            }
+          },
+          "old": {
+            "kind": "player",
+            "player": {
+              "player_id": "o",
+              "name": "o",
+              "position": "QB",
+              "age": 33,
+              "current_fpar": 50,
+              "is_taxi": false
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "compare",
+          "left": "young.value",
+          "op": ">",
+          "right": "old.value"
+        }
+      ]
+    },
+    {
+      "id": "valuation.age_monotonic_te",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "TE variant of the age-monotonicity invariant.",
+      "inputs": {
+        "cases": {
+          "young": {
+            "kind": "player",
+            "player": {
+              "player_id": "y",
+              "name": "y",
+              "position": "TE",
+              "age": 23,
+              "current_fpar": 50,
+              "is_taxi": false
+            }
+          },
+          "old": {
+            "kind": "player",
+            "player": {
+              "player_id": "o",
+              "name": "o",
+              "position": "TE",
+              "age": 33,
+              "current_fpar": 50,
+              "is_taxi": false
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "compare",
+          "left": "young.value",
+          "op": ">",
+          "right": "old.value"
+        }
+      ]
+    },
+    {
+      "id": "valuation.taxi_discount_rb",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "Taxi discount ratio (~0.80x) for RB.",
+      "inputs": {
+        "cases": {
+          "taxi": {
+            "kind": "player",
+            "player": {
+              "player_id": "t",
+              "name": "t",
+              "position": "RB",
+              "age": 25,
+              "current_fpar": 100,
+              "is_taxi": true
+            }
+          },
+          "non_taxi": {
+            "kind": "player",
+            "player": {
+              "player_id": "n",
+              "name": "n",
+              "position": "RB",
+              "age": 25,
+              "current_fpar": 100,
+              "is_taxi": false
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "ratio",
+          "case_a": "taxi",
+          "case_b": "non_taxi",
+          "field": "value",
+          "expected": 0.8,
+          "tol": 0.01
+        }
+      ]
+    },
+    {
+      "id": "valuation.taxi_discount_te",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "Taxi discount ratio (~0.80x) for TE.",
+      "inputs": {
+        "cases": {
+          "taxi": {
+            "kind": "player",
+            "player": {
+              "player_id": "t",
+              "name": "t",
+              "position": "TE",
+              "age": 27,
+              "current_fpar": 100,
+              "is_taxi": true
+            }
+          },
+          "non_taxi": {
+            "kind": "player",
+            "player": {
+              "player_id": "n",
+              "name": "n",
+              "position": "TE",
+              "age": 27,
+              "current_fpar": 100,
+              "is_taxi": false
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "ratio",
+          "case_a": "taxi",
+          "case_b": "non_taxi",
+          "field": "value",
+          "expected": 0.8,
+          "tol": 0.01
+        }
+      ]
+    },
+    {
+      "id": "valuation.pick_round_ordering_far_out",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "Fallback pick ordering holds for a pick 3 seasons out.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "kind": "pick_list",
+            "mode": "each",
+            "picks": [
+              {
+                "pick": {
+                  "season": "2029",
+                  "round": 1,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 1.0
+                },
+                "market_value": null
+              },
+              {
+                "pick": {
+                  "season": "2029",
+                  "round": 2,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 1.0
+                },
+                "market_value": null
+              },
+              {
+                "pick": {
+                  "season": "2029",
+                  "round": 3,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 1.0
+                },
+                "market_value": null
+              },
+              {
+                "pick": {
+                  "season": "2029",
+                  "round": 4,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 1.0
+                },
+                "market_value": null
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "ordering",
+          "case": "base",
+          "field": "values",
+          "direction": "desc"
+        }
+      ]
+    },
+    {
+      "id": "valuation.pick_round_ordering_strong_class",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "Fallback pick ordering holds even with a loaded class_strength multiplier.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "kind": "pick_list",
+            "mode": "each",
+            "picks": [
+              {
+                "pick": {
+                  "season": "2027",
+                  "round": 1,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 1.3
+                },
+                "market_value": null
+              },
+              {
+                "pick": {
+                  "season": "2027",
+                  "round": 2,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 1.3
+                },
+                "market_value": null
+              },
+              {
+                "pick": {
+                  "season": "2027",
+                  "round": 3,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 1.3
+                },
+                "market_value": null
+              },
+              {
+                "pick": {
+                  "season": "2027",
+                  "round": 4,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 1.3
+                },
+                "market_value": null
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "ordering",
+          "case": "base",
+          "field": "values",
+          "direction": "desc"
+        }
+      ]
+    },
+    {
+      "id": "valuation.pick_add_monotonic_2nd_round",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "Adding a 2nd-round pick to a side still strictly increases total value.",
+      "inputs": {
+        "cases": {
+          "without_extra": {
+            "kind": "pick_list",
+            "mode": "sum",
+            "picks": [
+              {
+                "pick": {
+                  "season": "2026",
+                  "round": 3,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 1.0
+                },
+                "market_value": 60
+              }
+            ]
+          },
+          "with_extra": {
+            "kind": "pick_list",
+            "mode": "sum",
+            "picks": [
+              {
+                "pick": {
+                  "season": "2026",
+                  "round": 3,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 1.0
+                },
+                "market_value": 60
+              },
+              {
+                "pick": {
+                  "season": "2027",
+                  "round": 2,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 1.0
+                },
+                "market_value": 95
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "compare",
+          "left": "with_extra.value",
+          "op": ">",
+          "right": "without_extra.value"
+        }
+      ]
+    },
+    {
+      "id": "valuation.pick_discount_compounds_with_distance",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "A 2027 pick (fallback) is worth more than an otherwise-identical 2030 pick.",
+      "inputs": {
+        "cases": {
+          "near": {
+            "kind": "pick_list",
+            "mode": "sum",
+            "picks": [
+              {
+                "pick": {
+                  "season": "2027",
+                  "round": 2,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 1.0
+                },
+                "market_value": null
+              }
+            ]
+          },
+          "far": {
+            "kind": "pick_list",
+            "mode": "sum",
+            "picks": [
+              {
+                "pick": {
+                  "season": "2030",
+                  "round": 2,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 1.0
+                },
+                "market_value": null
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "compare",
+          "left": "near.value",
+          "op": ">",
+          "right": "far.value"
+        }
+      ]
+    },
+    {
+      "id": "valuation.pick_market_class_strength_scales",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "A higher class_strength scales the market-priced pick value up proportionally.",
+      "inputs": {
+        "cases": {
+          "weak": {
+            "kind": "pick_list",
+            "mode": "sum",
+            "picks": [
+              {
+                "pick": {
+                  "season": "2027",
+                  "round": 1,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 0.9
+                },
+                "market_value": 190
+              }
+            ]
+          },
+          "strong": {
+            "kind": "pick_list",
+            "mode": "sum",
+            "picks": [
+              {
+                "pick": {
+                  "season": "2027",
+                  "round": 1,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 1.1
+                },
+                "market_value": 190
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "compare",
+          "left": "strong.value",
+          "op": ">",
+          "right": "weak.value"
+        }
+      ]
+    },
+    {
+      "id": "valuation.fpar_monotonic_wr",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "Higher current_fpar at the same age/position must yield a higher dynasty value (WR).",
+      "inputs": {
+        "cases": {
+          "low": {
+            "kind": "player",
+            "player": {
+              "player_id": "lo",
+              "name": "lo",
+              "position": "WR",
+              "age": 26,
+              "current_fpar": 40,
+              "is_taxi": false
+            }
+          },
+          "high": {
+            "kind": "player",
+            "player": {
+              "player_id": "hi",
+              "name": "hi",
+              "position": "WR",
+              "age": 26,
+              "current_fpar": 120,
+              "is_taxi": false
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "compare",
+          "left": "high.value",
+          "op": ">",
+          "right": "low.value"
+        }
+      ]
+    },
+    {
+      "id": "valuation.zero_fpar_floor",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "A replacement-level player (current_fpar=0) values at exactly 0.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "kind": "player",
+            "player": {
+              "player_id": "z",
+              "name": "z",
+              "position": "WR",
+              "age": 26,
+              "current_fpar": 0,
+              "is_taxi": false
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "value",
+          "value": 0.0
+        }
+      ]
+    }
+  ]
+}

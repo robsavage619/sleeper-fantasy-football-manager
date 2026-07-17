@@ -1,0 +1,19 @@
+{
+  "scenarios": [
+    {
+      "id": "valuation.age_monotonic_rb",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "RB variant of the age-monotonicity invariant (steeper decay, earlier peak than WR).",
+      "inputs": {
+        "cases": {
+          "young": {"kind": "player", "player": {"player_id": "y2", "name": "Young RB", "position": "RB", "age": 22, "current_fpar": 50, "is_taxi": false}},
+          "old": {"kind": "player", "player": {"player_id": "o2", "name": "Old RB", "position": "RB", "age": 32, "current_fpar": 50, "is_taxi": false}}
+        }
+      },
+      "checks": [
+        {"type": "compare", "left": "young.value", "op": ">", "right": "old.value"}
+      ]
+    }
+  ]
+}

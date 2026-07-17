@@ -1,0 +1,27 @@
+{
+  "scenarios": [
+    {
+      "id": "waiver.drops_dilute",
+      "tier": 1,
+      "engine": "waivers",
+      "rationale": "Identical adds but heavier trending drops must lower the waiver priority score.",
+      "inputs": {
+        "cases": {
+          "low_drops": {
+            "sleeper_players": {"p1": {"position": "WR", "age": 25, "full_name": "Wire WR", "team": "FA"}},
+            "trending_adds": {"p1": 1000},
+            "trending_drops": {}
+          },
+          "high_drops": {
+            "sleeper_players": {"p1": {"position": "WR", "age": 25, "full_name": "Wire WR", "team": "FA"}},
+            "trending_adds": {"p1": 1000},
+            "trending_drops": {"p1": 900}
+          }
+        }
+      },
+      "checks": [
+        {"type": "compare", "left": "low_drops.top_priority", "op": ">", "right": "high_drops.top_priority"}
+      ]
+    }
+  ]
+}

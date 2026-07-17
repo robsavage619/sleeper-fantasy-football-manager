@@ -45,6 +45,7 @@ router = APIRouter(tags=["admin"])
 
 _PLAYERS_CACHE = CACHE_DIR / "players_nfl.json"
 _SNAPS_PARQUET = NFLVERSE_DIR / "snaps.parquet"
+_SCHEDULES_PARQUET = NFLVERSE_DIR / "schedules.parquet"
 _FANTASYCALC_LATEST = DATA_DIR / "market" / "fantasycalc_latest.json"
 
 # Module-level job state, guarded by a lock so concurrent refreshes are rejected.
@@ -81,10 +82,34 @@ def _refresh_sleeper() -> dict[str, Any]:
 
 
 def _refresh_nflverse() -> dict[str, Any]:
-    """Force-refetch nflverse weekly (value season) + snap counts."""
+    """Force-refetch nflverse weekly (value season) + snap counts + schedules."""
     weekly = loader.load_weekly(seasons=[PREFERRED_VALUE_SEASON], force=True)
     snaps = loader.load_snaps(force=True)
-    return {"weekly_rows": len(weekly), "snap_rows": len(snaps), "season": PREFERRED_VALUE_SEASON}
+    schedules = loader.load_schedules(seasons=[PREFERRED_VALUE_SEASON], force=True)
+    return {
+        "weekly_rows": len(weekly),
+        "snap_rows": len(snaps),
+        "schedule_rows": len(schedules),
+        "season": PREFERRED_VALUE_SEASON,
+    }
+
+
+def _refresh_nflverse_status() -> dict[str, Any]:
+    """Force-refetch the in-season status feeds — injuries, depth charts, play-by-play.
+
+    Previously refreshed by neither ``sffm ingest`` nor ``POST /admin/refresh``; they went
+    arbitrarily stale with no surfaced signal. Isolated as their own source so an
+    in-progress-season PBP hiccup doesn't mask the weekly/snap refresh above.
+    """
+    injuries = loader.load_injuries(seasons=[PREFERRED_VALUE_SEASON], force=True)
+    depth = loader.load_depth_charts(seasons=[PREFERRED_VALUE_SEASON], force=True)
+    pbp = loader.load_pbp(seasons=[PREFERRED_VALUE_SEASON], force=True)
+    return {
+        "injury_rows": len(injuries),
+        "depth_rows": len(depth),
+        "pbp_rows": len(pbp),
+        "season": PREFERRED_VALUE_SEASON,
+    }
 
 
 def _refresh_fantasycalc(archive_date: str) -> dict[str, Any]:
@@ -114,10 +139,12 @@ def _clear_caches() -> None:
 def _run_refresh() -> None:
     """Run every source, isolate failures, then flush caches. Called in the background."""
     archive_date = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d")
+    loader.clear_stale_fallbacks()
     sources: dict[str, Any] = {}
     steps: list[tuple[str, Any]] = [
         ("sleeper", _refresh_sleeper),
         ("nflverse", _refresh_nflverse),
+        ("nflverse_status", _refresh_nflverse_status),
         ("fantasycalc", lambda: _refresh_fantasycalc(archive_date)),
         ("cache_clear", _clear_caches),
     ]
@@ -173,15 +200,27 @@ def refresh_status() -> dict[str, Any]:
         }
     weekly_fresh = _file_freshness(NFLVERSE_DIR / "weekly" / f"{PREFERRED_VALUE_SEASON}.parquet")
     weekly_fresh["cached_seasons"] = cached_weekly_seasons()
+    season = PREFERRED_VALUE_SEASON
     freshness = {
         "sleeper_players": _file_freshness(_PLAYERS_CACHE),
         "nflverse_weekly": weekly_fresh,
         "nflverse_snaps": _file_freshness(_SNAPS_PARQUET),
+        "nflverse_schedules": _file_freshness(_SCHEDULES_PARQUET),
+        "nflverse_injuries": _file_freshness(NFLVERSE_DIR / "injuries" / f"{season}.parquet"),
+        "nflverse_depth_charts": _file_freshness(
+            NFLVERSE_DIR / "depth_charts" / f"{season}.parquet"
+        ),
+        "nflverse_pbp": _file_freshness(NFLVERSE_DIR / "pbp" / f"{season}.parquet"),
         "fantasycalc": _file_freshness(_FANTASYCALC_LATEST),
     }
     from sleeper_ffm.schedule.scheduler import scheduler_info
 
-    return {"job": job, "freshness": freshness, "scheduler": scheduler_info()}
+    return {
+        "job": job,
+        "freshness": freshness,
+        "stale_fallbacks": loader.stale_fallbacks(),
+        "scheduler": scheduler_info(),
+    }
 
 
 @router.get("/ai/briefing", tags=["ai"])

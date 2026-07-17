@@ -19,6 +19,7 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from sleeper_ffm.config import DATA_DIR
+from sleeper_ffm.net import retry_call
 
 log = logging.getLogger(__name__)
 
@@ -41,8 +42,12 @@ def _is_stale(path: Path) -> bool:
 
 def _fetch_fresh() -> list[dict]:
     log.info("fantasycalc: fetching %s", _FC_URL)
-    with urlopen(_FC_URL, timeout=15) as resp:
-        raw = json.loads(resp.read().decode())
+
+    def _do() -> list[dict]:
+        with urlopen(_FC_URL, timeout=15) as resp:
+            return json.loads(resp.read().decode())
+
+    raw = retry_call(_do, exceptions=(OSError,), label="fantasycalc")
     log.info("fantasycalc: %d entries received", len(raw))
     return raw
 
@@ -155,6 +160,7 @@ def fetch_full() -> dict[str, dict]:
 
     log.debug("fantasycalc: %d full records with sleeper IDs", len(result))
     return result
+
 
 _PICK_ROUND_RE = _re.compile(r"\b(\d+)(?:st|nd|rd|th)\b", _re.IGNORECASE)
 _PICK_YEAR_RE = _re.compile(r"\b(20\d{2})\b")

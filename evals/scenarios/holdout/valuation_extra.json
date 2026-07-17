@@ -1,0 +1,330 @@
+{
+  "scenarios": [
+    {
+      "id": "valuation.age_monotonic_k",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "K variant of the age-monotonicity invariant.",
+      "inputs": {
+        "cases": {
+          "young": {
+            "kind": "player",
+            "player": {
+              "player_id": "y",
+              "name": "y",
+              "position": "K",
+              "age": 23,
+              "current_fpar": 50,
+              "is_taxi": false
+            }
+          },
+          "old": {
+            "kind": "player",
+            "player": {
+              "player_id": "o",
+              "name": "o",
+              "position": "K",
+              "age": 33,
+              "current_fpar": 50,
+              "is_taxi": false
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "compare",
+          "left": "young.value",
+          "op": ">",
+          "right": "old.value"
+        }
+      ]
+    },
+    {
+      "id": "valuation.age_monotonic_def",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "DEF variant of the age-monotonicity invariant.",
+      "inputs": {
+        "cases": {
+          "young": {
+            "kind": "player",
+            "player": {
+              "player_id": "y",
+              "name": "y",
+              "position": "DEF",
+              "age": 23,
+              "current_fpar": 50,
+              "is_taxi": false
+            }
+          },
+          "old": {
+            "kind": "player",
+            "player": {
+              "player_id": "o",
+              "name": "o",
+              "position": "DEF",
+              "age": 33,
+              "current_fpar": 50,
+              "is_taxi": false
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "compare",
+          "left": "young.value",
+          "op": ">",
+          "right": "old.value"
+        }
+      ]
+    },
+    {
+      "id": "valuation.taxi_discount_qb",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "Taxi discount ratio (~0.80x) for QB.",
+      "inputs": {
+        "cases": {
+          "taxi": {
+            "kind": "player",
+            "player": {
+              "player_id": "t",
+              "name": "t",
+              "position": "QB",
+              "age": 27,
+              "current_fpar": 100,
+              "is_taxi": true
+            }
+          },
+          "non_taxi": {
+            "kind": "player",
+            "player": {
+              "player_id": "n",
+              "name": "n",
+              "position": "QB",
+              "age": 27,
+              "current_fpar": 100,
+              "is_taxi": false
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "ratio",
+          "case_a": "taxi",
+          "case_b": "non_taxi",
+          "field": "value",
+          "expected": 0.8,
+          "tol": 0.01
+        }
+      ]
+    },
+    {
+      "id": "valuation.pick_round_ordering_weak_class",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "Fallback pick ordering holds even with a weak class_strength multiplier.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "kind": "pick_list",
+            "mode": "each",
+            "picks": [
+              {
+                "pick": {
+                  "season": "2027",
+                  "round": 1,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 0.7
+                },
+                "market_value": null
+              },
+              {
+                "pick": {
+                  "season": "2027",
+                  "round": 2,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 0.7
+                },
+                "market_value": null
+              },
+              {
+                "pick": {
+                  "season": "2027",
+                  "round": 3,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 0.7
+                },
+                "market_value": null
+              },
+              {
+                "pick": {
+                  "season": "2027",
+                  "round": 4,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 0.7
+                },
+                "market_value": null
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "ordering",
+          "case": "base",
+          "field": "values",
+          "direction": "desc"
+        }
+      ]
+    },
+    {
+      "id": "valuation.pick_add_monotonic_fallback",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "Adding a pick priced via the fallback (no market) branch still strictly increases total value.",
+      "inputs": {
+        "cases": {
+          "without_extra": {
+            "kind": "pick_list",
+            "mode": "sum",
+            "picks": [
+              {
+                "pick": {
+                  "season": "2026",
+                  "round": 1,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 1.0
+                },
+                "market_value": 180
+              }
+            ]
+          },
+          "with_extra": {
+            "kind": "pick_list",
+            "mode": "sum",
+            "picks": [
+              {
+                "pick": {
+                  "season": "2026",
+                  "round": 1,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 1.0
+                },
+                "market_value": 180
+              },
+              {
+                "pick": {
+                  "season": "2028",
+                  "round": 4,
+                  "original_owner_id": 1,
+                  "current_owner_id": 1,
+                  "class_strength": 1.0
+                },
+                "market_value": null
+              }
+            ]
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "compare",
+          "left": "with_extra.value",
+          "op": ">",
+          "right": "without_extra.value"
+        }
+      ]
+    },
+    {
+      "id": "valuation.fpar_monotonic_rb",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "Higher current_fpar at the same age/position must yield a higher dynasty value (RB).",
+      "inputs": {
+        "cases": {
+          "low": {
+            "kind": "player",
+            "player": {
+              "player_id": "lo",
+              "name": "lo",
+              "position": "RB",
+              "age": 26,
+              "current_fpar": 40,
+              "is_taxi": false
+            }
+          },
+          "high": {
+            "kind": "player",
+            "player": {
+              "player_id": "hi",
+              "name": "hi",
+              "position": "RB",
+              "age": 26,
+              "current_fpar": 120,
+              "is_taxi": false
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "compare",
+          "left": "high.value",
+          "op": ">",
+          "right": "low.value"
+        }
+      ]
+    },
+    {
+      "id": "valuation.pre_peak_vs_at_peak_wr",
+      "tier": 1,
+      "engine": "dynasty_value",
+      "rationale": "A WR several years before peak is valued differently than one at peak (same current fpar) -- non-degenerate case.",
+      "inputs": {
+        "cases": {
+          "pre_peak": {
+            "kind": "player",
+            "player": {
+              "player_id": "pp",
+              "name": "pp",
+              "position": "WR",
+              "age": 22,
+              "current_fpar": 80,
+              "is_taxi": false
+            }
+          },
+          "at_peak": {
+            "kind": "player",
+            "player": {
+              "player_id": "ap",
+              "name": "ap",
+              "position": "WR",
+              "age": 27,
+              "current_fpar": 80,
+              "is_taxi": false
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "compare",
+          "left": "pre_peak.value",
+          "op": ">",
+          "right": "at_peak.value"
+        }
+      ]
+    }
+  ]
+}

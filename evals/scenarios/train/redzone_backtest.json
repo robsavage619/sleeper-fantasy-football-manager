@@ -1,0 +1,23 @@
+{
+  "scenarios": [
+    {
+      "id": "regression.redzone_beats_yardage_oos",
+      "tier": 1,
+      "engine": "redzone_backtest",
+      "rationale": "The regression engine's docstrings claim the red-zone-opportunity expected-TD model beats the yardage baseline out-of-sample. This runs the real backtest (fit on 2024, score on 2025 from cached parquet) and asserts red-zone MAE is strictly lower — substantiating the claim instead of trusting a comment. Degrades to a non-crashing miss when the parquet cache is absent.",
+      "inputs": {
+        "cases": {
+          "fit2024_eval2025": {
+            "train_season": 2024,
+            "eval_season": 2025,
+            "min_yards": 250
+          }
+        }
+      },
+      "checks": [
+        {"type": "compare", "left": "fit2024_eval2025.mae_redzone", "op": "<", "right": "fit2024_eval2025.mae_yardage"},
+        {"type": "range", "case": "fit2024_eval2025", "field": "improvement_pct", "min": 5.0, "max": 100.0}
+      ]
+    }
+  ]
+}

@@ -8,9 +8,11 @@ caught up to.
 Two expected-TD models, picked automatically by data availability (``RegressionBoard.basis``):
     - **redzone-opportunity** (preferred): each red-zone/other target/carry priced by
       its own observed touchdown probability (``sabermetrics.redzone_td_rates``, from
-      play-by-play). Backtested out-of-sample — fit on one season, evaluated on the
-      next — expected-TD MAE dropped ~18% vs the yardage baseline: where a look came
-      from predicts touchdowns much better than raw yardage volume does.
+      play-by-play). Backtested out-of-sample by ``sleeper_ffm.evals.backtest`` (fit on
+      one season, scored on the next): expected-TD MAE dropped ~19% vs the yardage
+      baseline (19.3% fitting on 2024 and evaluating on 2025, n=235) — where a look came
+      from predicts touchdowns much better than raw yardage volume does. Reproduce with
+      the ``regression.redzone_beats_yardage_oos`` tier-1 eval scenario.
     - **yardage** (fallback): actual TDs minus total yardage x position TD-per-yard
       rate. Used when play-by-play isn't cached for the season.
 
@@ -157,9 +159,10 @@ def compute_redzone_td_regression(
     Where :func:`compute_td_regression` expects TDs from total yardage at a flat
     position rate, this prices each red-zone and non-red-zone target/carry by its own
     observed touchdown probability (:func:`sleeper_ffm.model.sabermetrics.redzone_td_rates`).
-    Backtested out-of-sample (fit on one season, evaluated on the next): expected-TD
-    MAE dropped ~18% vs the yardage baseline — where a look came from predicts
-    touchdowns much better than how many yards a player racked up.
+    Backtested out-of-sample by :mod:`sleeper_ffm.evals.backtest` (fit on one season,
+    scored on the next): expected-TD MAE dropped ~19% vs the yardage baseline (19.3%
+    fitting on 2024 and evaluating on 2025) — where a look came from predicts touchdowns
+    much better than how many yards a player racked up.
 
     Args:
         rows: Same per-player rows as :func:`compute_td_regression`, plus a

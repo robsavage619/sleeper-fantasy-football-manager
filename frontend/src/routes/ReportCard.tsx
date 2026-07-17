@@ -12,6 +12,8 @@ import {
   type TransactionValue,
   type OwnerHistory,
   type DraftClassStrength,
+  type Scoreboard,
+  type ScoreboardKind,
 } from '@/lib/api'
 import {
   Scatter,
@@ -865,6 +867,80 @@ function leagueStory(cards: ManagerReportCard[], ctx: Ctx): string[] {
   return lines
 }
 
+// ── GM track record (the AI's own calls, graded) ────────────────────────────────
+
+function kindAccent(kind: string): string {
+  if (kind === 'lineup') return C.cyan
+  if (kind === 'waiver') return C.green
+  if (kind === 'trade') return C.violet
+  if (kind === 'draft') return C.blue
+  return C.amber
+}
+
+function TrackRecordTile({ k }: { k: ScoreboardKind }) {
+  const accent = kindAccent(k.kind)
+  const graded = k.graded > 0
+  const pending = k.total - k.graded
+  return (
+    <div style={{ border: `1px solid ${C.border}`, borderTop: `2px solid ${accent}`, background: C.card, borderRadius: 3, padding: '11px 13px' }}>
+      <div className="tracking-[0.16em] uppercase" style={{ fontSize: 9, color: accent, fontWeight: 700, marginBottom: 6 }}>
+        {k.kind}
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <span style={{ fontFamily: barlow, fontWeight: 800, fontSize: 26, color: graded ? C.text : C.dim, lineHeight: 1 }}>
+          {graded ? `${Math.round((k.hit_rate ?? 0) * 100)}%` : '—'}
+        </span>
+        <span className="uppercase tracking-wide" style={{ fontSize: 8, color: C.muted }}>
+          {graded ? `hit rate · ${k.correct}/${k.graded}` : 'not yet graded'}
+        </span>
+      </div>
+      {pending > 0 && (
+        <div className="uppercase tracking-wide" style={{ fontSize: 8, color: C.dim, marginTop: 4 }}>
+          {pending} pending
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TrackRecord({ board }: { board: Scoreboard }) {
+  const overall = board.overall_hit_rate
+  const graded = board.by_kind.filter((k) => k.total > 0)
+  return (
+    <Band title="GM Track Record" sub="THE ENGINE'S OWN CALLS · GRADED AGAINST WHAT HAPPENED">
+      <div className="flex items-baseline gap-3" style={{ marginBottom: 14, maxWidth: 780 }}>
+        <span style={{ fontFamily: barlow, fontWeight: 800, fontSize: 34, color: overall != null ? C.text : C.dim, lineHeight: 1 }}>
+          {overall != null ? `${Math.round(overall * 100)}%` : '—'}
+        </span>
+        <span style={{ color: C.muted, fontSize: 13 }}>
+          overall lineup + waiver hit rate · {board.graded_count} graded, {board.pending_count} pending
+        </span>
+      </div>
+      {graded.length > 0 ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+          {graded.map((k) => (
+            <TrackRecordTile key={k.kind} k={k} />
+          ))}
+        </div>
+      ) : (
+        <div className="tracking-wide uppercase" style={{ color: C.dim, fontSize: 10, padding: '8px 0' }}>
+          No recommendations posted yet — the track record fills in as the war room runs.
+        </div>
+      )}
+      {board.warnings.length > 0 && (
+        <div style={{ marginTop: 12, fontSize: 11, color: C.muted, lineHeight: 1.5, maxWidth: 780 }}>
+          {board.warnings.map((w, i) => (
+            <div key={i} className="flex gap-1.5" style={{ opacity: 0.85 }}>
+              <span style={{ color: C.dim }}>·</span>
+              {w}
+            </div>
+          ))}
+        </div>
+      )}
+    </Band>
+  )
+}
+
 // ── Page ────────────────────────────────────────────────────────────────────────
 
 export function ReportCard() {
@@ -878,6 +954,7 @@ export function ReportCard() {
   const txQ = useQuery({ queryKey: ['owner-tx'], queryFn: () => api.transactionValue(), staleTime: 5 * 60 * 1000 })
   const histQ = useQuery({ queryKey: ['owner-history'], queryFn: () => api.leagueHistory(), staleTime: 5 * 60 * 1000 })
   const classQ = useQuery({ queryKey: ['draft-class-strength'], queryFn: () => api.draftClassStrength(), staleTime: 5 * 60 * 1000 })
+  const scoreQ = useQuery({ queryKey: ['gm-scoreboard'], queryFn: () => api.scoreboard(), staleTime: 5 * 60 * 1000 })
 
   const cards = rc.data ?? []
 
@@ -1035,6 +1112,9 @@ export function ReportCard() {
               </div>
             </Band>
           )}
+
+          {/* ── GM TRACK RECORD ── */}
+          {scoreQ.data && <TrackRecord board={scoreQ.data} />}
 
           {/* ── SUPERLATIVES ── */}
           {awards.length > 0 && (

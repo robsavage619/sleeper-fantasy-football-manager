@@ -1,0 +1,1361 @@
+{
+  "scenarios": [
+    {
+      "id": "trade.confidence_boundary_med_high_73",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "margin_score=11 lands score=73, just below the HIGH threshold.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "RETOOLING",
+              "position_ranks": []
+            },
+            "history": null,
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 131.4
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 73
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "MED"
+        }
+      ]
+    },
+    {
+      "id": "trade.confidence_boundary_high_74",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "margin_score=12 lands score=74, exactly the HIGH threshold.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "RETOOLING",
+              "position_ranks": []
+            },
+            "history": null,
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 134.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 74
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "HIGH"
+        }
+      ]
+    },
+    {
+      "id": "trade.confidence_boundary_low_53",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "margin_score=-9 lands score=53, just below the MED threshold.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "RETOOLING",
+              "position_ranks": []
+            },
+            "history": null,
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 74.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 53
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "LOW"
+        }
+      ]
+    },
+    {
+      "id": "trade.approachability_open",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "Approachability bucket OPEN contributes its exact bonus.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "RETOOLING",
+              "position_ranks": []
+            },
+            "history": {
+              "roster_id": 2,
+              "trade_count": 5,
+              "approachability": "OPEN"
+            },
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 100.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 81
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "HIGH"
+        }
+      ]
+    },
+    {
+      "id": "trade.approachability_selective",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "Approachability bucket SELECTIVE contributes its exact bonus.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "RETOOLING",
+              "position_ranks": []
+            },
+            "history": {
+              "roster_id": 2,
+              "trade_count": 5,
+              "approachability": "SELECTIVE"
+            },
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 100.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 74
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "HIGH"
+        }
+      ]
+    },
+    {
+      "id": "trade.approachability_insular",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "Approachability bucket INSULAR contributes its exact bonus.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "RETOOLING",
+              "position_ranks": []
+            },
+            "history": {
+              "roster_id": 2,
+              "trade_count": 5,
+              "approachability": "INSULAR"
+            },
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 100.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 62
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "MED"
+        }
+      ]
+    },
+    {
+      "id": "trade.approachability_dormant",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "Approachability bucket DORMANT contributes its exact bonus.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "RETOOLING",
+              "position_ranks": []
+            },
+            "history": {
+              "roster_id": 2,
+              "trade_count": 5,
+              "approachability": "DORMANT"
+            },
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 100.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 54
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "MED"
+        }
+      ]
+    },
+    {
+      "id": "trade.tag_active_trader",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "ACTIVE-TRADER tag adds +5 on top of the approachability bonus.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "RETOOLING",
+              "position_ranks": []
+            },
+            "history": {
+              "roster_id": 2,
+              "trade_count": 5,
+              "approachability": "OPEN",
+              "behavioral_tags": [
+                "ACTIVE-TRADER"
+              ]
+            },
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 100.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 86
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "HIGH"
+        }
+      ]
+    },
+    {
+      "id": "trade.sample_penalty_below_3",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "trade_count=2 (below 3) incurs the -4 low-sample penalty.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "RETOOLING",
+              "position_ranks": []
+            },
+            "history": {
+              "roster_id": 2,
+              "trade_count": 2,
+              "approachability": "DORMANT"
+            },
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 100.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 50
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "LOW"
+        }
+      ]
+    },
+    {
+      "id": "trade.sample_penalty_at_3",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "trade_count=3 clears the low-sample penalty (0, not -4).",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "RETOOLING",
+              "position_ranks": []
+            },
+            "history": {
+              "roster_id": 2,
+              "trade_count": 3,
+              "approachability": "DORMANT"
+            },
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 100.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 54
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "MED"
+        }
+      ]
+    },
+    {
+      "id": "trade.window_open_player_give",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "OPEN partner + player give triggers the +8 window bonus.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "OPEN",
+              "position_ranks": []
+            },
+            "history": null,
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 100.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 70
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "MED"
+        }
+      ]
+    },
+    {
+      "id": "trade.window_closing_player_give",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "CLOSING partner + player give also triggers the +8 window bonus.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "CLOSING",
+              "position_ranks": []
+            },
+            "history": null,
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 100.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 70
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "MED"
+        }
+      ]
+    },
+    {
+      "id": "trade.window_open_pick_give_no_bonus",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "OPEN partner but a PICK give does not trigger the player-give window bonus.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "OPEN",
+              "position_ranks": []
+            },
+            "history": null,
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "pick",
+              "label": "Give",
+              "position": null,
+              "value": 100.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 62
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "MED"
+        }
+      ]
+    },
+    {
+      "id": "trade.window_ascending_with_sweetener",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "ASCENDING partner + a sweetener triggers the +8 window bonus.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "ASCENDING",
+              "position_ranks": []
+            },
+            "history": null,
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 90.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 95.0
+            },
+            "sweetener": {
+              "asset_id": "sw1",
+              "kind": "pick",
+              "label": "Sweetener",
+              "position": null,
+              "value": 15.0
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 74
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "HIGH"
+        }
+      ]
+    },
+    {
+      "id": "trade.window_opening_with_sweetener",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "OPENING partner + a sweetener triggers the +8 window bonus.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "OPENING",
+              "position_ranks": []
+            },
+            "history": null,
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 90.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 95.0
+            },
+            "sweetener": {
+              "asset_id": "sw2",
+              "kind": "pick",
+              "label": "Sweetener",
+              "position": null,
+              "value": 15.0
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 74
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "HIGH"
+        }
+      ]
+    },
+    {
+      "id": "trade.league_size_8_position_fit",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "League size 8 with empty ranks produces a specific position_fit via the 2*n+2 formula.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 8,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 8,
+              "contention_label": "RETOOLING",
+              "position_ranks": []
+            },
+            "history": null,
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 100.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 58
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "MED"
+        }
+      ]
+    },
+    {
+      "id": "trade.league_size_12_position_fit",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "League size 12 with empty ranks produces a specific position_fit via the 2*n+2 formula.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 12,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 12,
+              "contention_label": "RETOOLING",
+              "position_ranks": []
+            },
+            "history": null,
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 100.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 67
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "MED"
+        }
+      ]
+    },
+    {
+      "id": "trade.score_floor_clamp",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "An extreme fleece with worst-case position fit and history clamps the raw score to the floor of 5.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": [
+                {
+                  "position": "RB",
+                  "value": 0.0,
+                  "rank": 999,
+                  "of": 10,
+                  "league_avg": 0.0,
+                  "tier": "THIN"
+                },
+                {
+                  "position": "WR",
+                  "value": 0.0,
+                  "rank": 0,
+                  "of": 10,
+                  "league_avg": 0.0,
+                  "tier": "DEEP"
+                }
+              ]
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "DORMANT",
+              "position_ranks": [
+                {
+                  "position": "RB",
+                  "value": 0.0,
+                  "rank": 0,
+                  "of": 10,
+                  "league_avg": 0.0,
+                  "tier": "DEEP"
+                },
+                {
+                  "position": "WR",
+                  "value": 0.0,
+                  "rank": 999,
+                  "of": 10,
+                  "league_avg": 0.0,
+                  "tier": "THIN"
+                }
+              ]
+            },
+            "history": {
+              "roster_id": 2,
+              "trade_count": 0,
+              "approachability": "DORMANT"
+            },
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 10.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 300.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 5
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "LOW"
+        }
+      ]
+    },
+    {
+      "id": "trade.score_ceiling_clamp",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "A maximally favorable offer with best-case position fit, history, and window clamps the raw score to the ceiling of 98.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": [
+                {
+                  "position": "RB",
+                  "value": 0.0,
+                  "rank": 0,
+                  "of": 10,
+                  "league_avg": 0.0,
+                  "tier": "DEEP"
+                },
+                {
+                  "position": "WR",
+                  "value": 0.0,
+                  "rank": 999,
+                  "of": 10,
+                  "league_avg": 0.0,
+                  "tier": "THIN"
+                }
+              ]
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "OPEN",
+              "position_ranks": [
+                {
+                  "position": "RB",
+                  "value": 0.0,
+                  "rank": 999,
+                  "of": 10,
+                  "league_avg": 0.0,
+                  "tier": "THIN"
+                },
+                {
+                  "position": "WR",
+                  "value": 0.0,
+                  "rank": 0,
+                  "of": 10,
+                  "league_avg": 0.0,
+                  "tier": "DEEP"
+                }
+              ]
+            },
+            "history": {
+              "roster_id": 2,
+              "trade_count": 10,
+              "approachability": "OPEN",
+              "behavioral_tags": [
+                "ACTIVE-TRADER"
+              ]
+            },
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 400.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 10.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 98
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "HIGH"
+        }
+      ]
+    },
+    {
+      "id": "trade.qb_give_neutral",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "A QB-give neutral-margin offer under a TYPICAL-ish approachability bucket.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "RETOOLING",
+              "position_ranks": []
+            },
+            "history": {
+              "roster_id": 2,
+              "trade_count": 5,
+              "approachability": "SELECTIVE"
+            },
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "QB",
+              "value": 100.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "TE",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 74
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "HIGH"
+        }
+      ]
+    },
+    {
+      "id": "trade.moderate_overpay",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "A moderate overpay (partner favorable) with OPEN approachability.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "OPEN",
+              "position_ranks": []
+            },
+            "history": {
+              "roster_id": 2,
+              "trade_count": 6,
+              "approachability": "OPEN"
+            },
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 150.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 98
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "HIGH"
+        }
+      ]
+    },
+    {
+      "id": "trade.moderate_underpay",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "A moderate underpay (partner unfavorable) with SELECTIVE approachability.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "RETOOLING",
+              "position_ranks": []
+            },
+            "history": {
+              "roster_id": 2,
+              "trade_count": 6,
+              "approachability": "SELECTIVE"
+            },
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 70.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 64
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "MED"
+        }
+      ]
+    },
+    {
+      "id": "trade.slight_overpay_dormant",
+      "tier": 1,
+      "engine": "trade_acceptance",
+      "rationale": "A slight overpay against a DORMANT partner.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "my_dossier": {
+              "roster_id": 1,
+              "league_size": 10,
+              "position_ranks": []
+            },
+            "partner": {
+              "roster_id": 2,
+              "league_size": 10,
+              "contention_label": "RETOOLING",
+              "position_ranks": []
+            },
+            "history": {
+              "roster_id": 2,
+              "trade_count": 1,
+              "approachability": "DORMANT"
+            },
+            "give_asset": {
+              "asset_id": "g1",
+              "kind": "player",
+              "label": "Give",
+              "position": "RB",
+              "value": 110.0
+            },
+            "receive_asset": {
+              "asset_id": "r1",
+              "kind": "player",
+              "label": "Receive",
+              "position": "WR",
+              "value": 100.0
+            },
+            "sweetener": null
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "score",
+          "value": 54
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "confidence",
+          "value": "MED"
+        }
+      ]
+    }
+  ]
+}

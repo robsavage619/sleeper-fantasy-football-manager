@@ -1,0 +1,47 @@
+{
+  "scenarios": [
+    {
+      "id": "faab.bid_le_budget",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "A recommended bid can never exceed the bidder's remaining budget.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "RB",
+            "add_priority": 100,
+            "budget_remaining": 23,
+            "by_position": {
+              "RB": {"n": 10, "p25": 5.0, "p50": 10.0, "p75": 20.0, "p90": 200.0}
+            }
+          }
+        }
+      },
+      "checks": [
+        {"type": "range", "case": "base", "field": "bid", "min": 1, "max": 23}
+      ]
+    },
+    {
+      "id": "faab.second_price_plus_one",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "The recommended bid is the predicted clearing price plus one dollar.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "WR",
+            "add_priority": 90,
+            "budget_remaining": 500,
+            "by_position": {
+              "WR": {"n": 8, "p25": 5.0, "p50": 15.0, "p75": 25.0, "p90": 37.0}
+            }
+          }
+        }
+      },
+      "checks": [
+        {"type": "exact", "case": "base", "field": "clearing_price", "value": 37},
+        {"type": "exact", "case": "base", "field": "bid", "value": 38}
+      ]
+    }
+  ]
+}

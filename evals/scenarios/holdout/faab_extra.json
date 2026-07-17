@@ -1,0 +1,156 @@
+{
+  "scenarios": [
+    {
+      "id": "faab.tier_p50_qb",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "Priority 40-59 prices off the 50th percentile (QB).",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "QB",
+            "add_priority": 50,
+            "budget_remaining": 200,
+            "by_position": {
+              "QB": {
+                "n": 6,
+                "p25": 4.0,
+                "p50": 8.0,
+                "p75": 14.0,
+                "p90": 22.0
+              }
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "clearing_price",
+          "value": 8
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "bid",
+          "value": 9
+        }
+      ]
+    },
+    {
+      "id": "faab.boundary_priority_59",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "Priority 59 (just under 60) still uses p50.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "RB",
+            "add_priority": 59,
+            "budget_remaining": 200,
+            "by_position": {
+              "RB": {
+                "n": 10,
+                "p25": 5.0,
+                "p50": 12.0,
+                "p75": 22.0,
+                "p90": 40.0
+              }
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "clearing_price",
+          "value": 12
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "bid",
+          "value": 13
+        }
+      ]
+    },
+    {
+      "id": "faab.boundary_priority_80",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "Priority 80 (exact boundary) uses p90.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "RB",
+            "add_priority": 80,
+            "budget_remaining": 200,
+            "by_position": {
+              "RB": {
+                "n": 10,
+                "p25": 5.0,
+                "p50": 12.0,
+                "p75": 22.0,
+                "p90": 40.0
+              }
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "clearing_price",
+          "value": 40
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "bid",
+          "value": 41
+        }
+      ]
+    },
+    {
+      "id": "faab.budget_clamp_exact_match",
+      "tier": 1,
+      "engine": "faab",
+      "rationale": "A remaining budget exactly equal to clearing+1 requires no clamping.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "position": "RB",
+            "add_priority": 85,
+            "budget_remaining": 41,
+            "by_position": {
+              "RB": {
+                "n": 10,
+                "p25": 5.0,
+                "p50": 12.0,
+                "p75": 22.0,
+                "p90": 40.0
+              }
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "clearing_price",
+          "value": 40
+        },
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "bid",
+          "value": 41
+        }
+      ]
+    }
+  ]
+}

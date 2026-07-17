@@ -1,0 +1,158 @@
+{
+  "scenarios": [
+    {
+      "id": "waivers.position_bump_wr",
+      "tier": 1,
+      "engine": "waivers",
+      "rationale": "Position bump for WR contributes its exact points to priority.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "sleeper_players": {
+              "p1": {
+                "position": "WR",
+                "age": 25,
+                "full_name": "p1",
+                "team": "FA"
+              }
+            },
+            "trending_adds": {
+              "p1": 1000
+            },
+            "trending_drops": {}
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_priority",
+          "value": 79.0
+        }
+      ]
+    },
+    {
+      "id": "waivers.youth_bonus_none",
+      "tier": 1,
+      "engine": "waivers",
+      "rationale": "Age >26 gets no youth bonus.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "sleeper_players": {
+              "p1": {
+                "position": "WR",
+                "age": 29,
+                "full_name": "p1",
+                "team": "FA"
+              }
+            },
+            "trending_adds": {
+              "p1": 1000
+            },
+            "trending_drops": {}
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_priority",
+          "value": 75.0
+        }
+      ]
+    },
+    {
+      "id": "waivers.youth_bonus_boundary_26",
+      "tier": 1,
+      "engine": "waivers",
+      "rationale": "Age exactly 26 is still in the 24-26 band (+4), not >26.",
+      "inputs": {
+        "cases": {
+          "base": {
+            "sleeper_players": {
+              "p1": {
+                "position": "WR",
+                "age": 26,
+                "full_name": "p1",
+                "team": "FA"
+              }
+            },
+            "trending_adds": {
+              "p1": 1000
+            },
+            "trending_drops": {}
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "base",
+          "field": "top_priority",
+          "value": 79.0
+        }
+      ]
+    },
+    {
+      "id": "waivers.rostered_excluded",
+      "tier": 1,
+      "engine": "waivers",
+      "rationale": "A trending player already on a roster is excluded from candidates entirely.",
+      "inputs": {
+        "cases": {
+          "low": {
+            "sleeper_players": {
+              "p1": {
+                "position": "WR",
+                "age": 25,
+                "full_name": "p1",
+                "team": "FA"
+              }
+            },
+            "trending_adds": {
+              "p1": 1000
+            },
+            "trending_drops": {},
+            "rostered_ids": [
+              "p1"
+            ]
+          },
+          "high": {
+            "sleeper_players": {
+              "p1": {
+                "position": "WR",
+                "age": 25,
+                "full_name": "p1",
+                "team": "FA"
+              }
+            },
+            "trending_adds": {
+              "p1": 1000
+            },
+            "trending_drops": {},
+            "rostered_ids": []
+          }
+        }
+      },
+      "checks": [
+        {
+          "type": "exact",
+          "case": "low",
+          "field": "player_ids",
+          "value": []
+        },
+        {
+          "type": "exact",
+          "case": "high",
+          "field": "player_ids",
+          "value": [
+            "p1"
+          ]
+        }
+      ]
+    }
+  ]
+}

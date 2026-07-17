@@ -28,6 +28,14 @@ _PICK_LEG_RE = re.compile(r"^20\d\d R\d")
 # Fallback demand shares when this league has no trade history yet.
 _DEFAULT_LIQUIDITY: dict[str, float] = {"RB": 0.40, "WR": 0.32, "TE": 0.16, "QB": 0.12}
 
+# Contention labels (owner_dossier.ContentionWindow) where this roster should be
+# a net seller of production, not a buyer — see _contention() in owner_dossier.py.
+_SELL_WINDOW_LABELS: frozenset[str] = frozenset({"RETOOLING", "CLOSING"})
+# Coarse "still ascending, not proven production" age ceiling for the timeline check
+# below. Deliberately simpler than dynasty.py's per-position peak-age curve — this
+# is a blunt sanity flag, not a valuation.
+_YOUNG_ASSET_AGE_CEILING: float = 24.0
+
 
 def _leg_position(leg: str, name_to_pos: dict[str, str]) -> str | None:
     """Classify one trade leg (a stored player name / pick / FAAB string)."""
@@ -161,18 +169,34 @@ def _impact(
     give_value: float,
     receive_value: float,
     my_needs: set[str],
+    timeline_mismatch: bool = False,
 ) -> tuple[float, str]:
     """Score how much an offer actually improves the roster (vs merely being fair).
 
     The point of a trade is landing a real player at a real need; paying a premium
     is the cost of doing so. Impact rewards the caliber acquired at a need and
-    penalizes overpay and trivial flier-for-flier swaps.
+    penalizes overpay, trivial flier-for-flier swaps, and a timeline mismatch
+    (see ``timeline_mismatch``).
+
+    Args:
+        receive_asset: The asset being acquired.
+        give_value: Total value given up.
+        receive_value: Total value received.
+        my_needs: Positions where this roster is genuinely weak.
+        timeline_mismatch: True when this roster's own contention window says
+            "sell production" but the offer spends a pick to acquire more of
+            it — see ``_offer_for_partner``. The acceptance model only asks
+            whether the partner would say yes; impact is where whether *I*
+            should want to is scored, so the penalty lives here, not in
+            ``_acceptance_score``.
     """
     fills_need = (receive_asset.position or "") in my_needs
     impact = receive_value if fills_need else receive_value * 0.35
     impact -= 0.7 * max(0.0, give_value - receive_value)  # overpay penalty
     if receive_value < _TRIVIAL_ASSET:
         impact -= 30.0
+    if timeline_mismatch:
+        impact -= 25.0
     impact = round(impact, 1)
     label = "HIGH" if impact >= 90 else "MED" if impact >= 45 else "LOW"
     return impact, label
@@ -458,14 +482,31 @@ def _offer_for_partner(
                 f"({receive_asset.position} is {demand_pct}% of this league's trades)"
             )
             priority = acceptance + round(max(-8, min(18, value_delta * 0.35)))
+            # The acceptance model only asks whether the partner says yes; whether
+            # *I* should want to is a separate question. A sell-window roster
+            # spending a pick to acquire non-ascending production is backwards
+            # regardless of how the raw value margin looks — flag it here, in
+            # impact, not in acceptance_score.
+            timeline_mismatch = (
+                sweetener is not None
+                and my_dossier.contention.label in _SELL_WINDOW_LABELS
+                and target_age > _YOUNG_ASSET_AGE_CEILING
+            )
             impact_score, impact_label = _impact(
-                receive_asset, give_value, receive_value, my_needs
+                receive_asset, give_value, receive_value, my_needs, timeline_mismatch
             )
             calibration, evidence_count, calibration_notes = _calibration_context(history)
             if sweetener is not None and not pick_market_available():
                 calibration_notes += (
                     " FantasyCalc pick market unavailable — the pick sweetener's "
                     "value uses the static fallback table, not live pricing."
+                )
+            if timeline_mismatch:
+                calibration_notes += (
+                    f" Timeline caveat: this roster's contention window is "
+                    f"{my_dossier.contention.label} (should be selling production for "
+                    f"future assets) — sending a pick to acquire a {target_age:.0f}-year-old "
+                    "cuts against that."
                 )
             offer = TradeOfferRecommendation(
                 partner_roster_id=partner.roster_id,
