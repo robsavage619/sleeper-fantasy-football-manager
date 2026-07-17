@@ -11,6 +11,7 @@ Public API::
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import io
 import logging
@@ -88,10 +89,8 @@ def fetch() -> dict[str, float]:
         raw_value = (row.get("value") or "").strip()
         if not sleeper_id or not raw_value:
             continue
-        try:
+        with contextlib.suppress(ValueError):
             result[sleeper_id] = float(raw_value)
-        except ValueError:
-            pass
 
     log.debug("dynastyprocess: %d players with sleeper IDs", len(result))
     return result

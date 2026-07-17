@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,11 +12,27 @@ def _with_path(tmp: Path):
     return patch.object(offer_log, "_OFFERS_PATH", tmp / "offers.jsonl")
 
 
-def _sample_offer(partner_id: int = 2, give_label: str = "WR-A", receive_label: str = "RB-B") -> dict:
+def _sample_offer(
+    partner_id: int = 2, give_label: str = "WR-A", receive_label: str = "RB-B"
+) -> dict:
+    give_asset = {
+        "label": give_label,
+        "asset_id": "g1",
+        "kind": "player",
+        "position": "WR",
+        "value": 80.0,
+    }
+    receive_asset = {
+        "label": receive_label,
+        "asset_id": "r1",
+        "kind": "player",
+        "position": "RB",
+        "value": 90.0,
+    }
     return {
         "partner_roster_id": partner_id,
-        "give": [{"label": give_label, "asset_id": "g1", "kind": "player", "position": "WR", "value": 80.0}],
-        "receive": [{"label": receive_label, "asset_id": "r1", "kind": "player", "position": "RB", "value": 90.0}],
+        "give": [give_asset],
+        "receive": [receive_asset],
         "acceptance_score": 70,
         "confidence": "HIGH",
         "priority": 75,
