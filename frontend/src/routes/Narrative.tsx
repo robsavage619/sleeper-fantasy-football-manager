@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { api } from '@/lib/api'
 import type { NarrativeContext } from '@/lib/api'
@@ -100,11 +101,38 @@ export function Narrative() {
         fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800,
         fontSize: 30, color: C.cyan, margin: 0, letterSpacing: '0.04em', lineHeight: 1,
       }}>
-        WEEKLY NARRATIVE
+        AI BRIEFING
       </h1>
-      <p style={{ color: C.muted, fontSize: 11, margin: '4px 0 20px', letterSpacing: '0.1em' }}>
-        AI GM BRIEFING · ASSEMBLE CONTEXT · PASTE INTO CLAUDE CODE
+      <p style={{ color: C.muted, fontSize: 11, margin: '4px 0 16px', letterSpacing: '0.1em' }}>
+        MANUAL CONTEXT BUILDER · NOT THE AUTOMATED LOOP — SEE NOTE BELOW
       </p>
+
+      {/* Where the real output lands */}
+      <div style={{
+        background: C.card, border: `1px solid ${C.cyan}44`,
+        boxShadow: `inset 3px 0 0 ${C.cyan}`,
+        borderRadius: 2, padding: '14px 16px', marginBottom: 16,
+      }}>
+        <div style={{
+          fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800,
+          fontSize: 16, color: C.cyan, letterSpacing: '0.05em', marginBottom: 6,
+        }}>
+          The real AI GM loop runs outside this page
+        </div>
+        <p style={{ color: C.muted, fontSize: 12, lineHeight: 1.6, margin: 0 }}>
+          Every week, run the <code style={{ color: C.text }}>war-room-reason</code> skill in a Claude Code
+          session (or ask Claude to "run the war room"). It fetches the full briefing, reasons over your
+          whole franchise, drafts recommendations, has a second independent agent critique the draft for
+          invented facts or bad math, fixes anything flagged, then posts one verified document straight to
+          the findings store — no copy-paste required. That output shows up as{' '}
+          <Link to="/" style={{ color: C.cyan }}>INTEL · FINDINGS on the War Room</Link> dashboard.
+        </p>
+        <p style={{ color: C.muted, fontSize: 12, lineHeight: 1.6, margin: '8px 0 0' }}>
+          The generator below is a <strong style={{ color: C.text }}>manual fallback</strong> — a plain
+          context dump you can paste into any LLM by hand when you can't run the skill. It has no
+          self-critique step, so treat anything it produces as a first draft, not a verified call.
+        </p>
+      </div>
 
       {/* Generate button */}
       <button
@@ -112,16 +140,16 @@ export function Narrative() {
         disabled={loading}
         style={{
           width: '100%', padding: '12px 0', marginBottom: 16,
-          background: loading ? C.border : C.cyan,
-          border: 'none', borderRadius: 2,
+          background: loading ? C.border : C.border,
+          border: `1px solid ${C.cyan}44`, borderRadius: 2,
           cursor: loading ? 'default' : 'pointer',
           fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800,
-          fontSize: 18, letterSpacing: '0.1em',
-          color: loading ? C.muted : C.bg,
+          fontSize: 16, letterSpacing: '0.1em',
+          color: loading ? C.muted : C.cyan,
           transition: 'background 0.12s',
         }}
       >
-        {loading ? 'ASSEMBLING CONTEXT…' : ctx ? 'REGENERATE' : 'GENERATE WEEKLY BRIEFING'}
+        {loading ? 'ASSEMBLING CONTEXT…' : ctx ? 'REGENERATE MANUAL CONTEXT' : 'BUILD MANUAL CONTEXT (FALLBACK)'}
       </button>
 
       {error && (
@@ -231,10 +259,10 @@ export function Narrative() {
                   fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800,
                   fontSize: 18, color: C.cyan, letterSpacing: '0.06em',
                 }}>
-                  CLAUDE CODE PROMPT
+                  MANUAL FALLBACK PROMPT
                 </div>
                 <div style={{ color: C.muted, fontSize: 10, letterSpacing: '0.06em', marginTop: 2, fontFamily: "'DM Mono', monospace" }}>
-                  COPY AND PASTE INTO A NEW CLAUDE CODE SESSION
+                  NO SELF-CRITIQUE · PASTE INTO ANY LLM SESSION BY HAND
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
@@ -294,19 +322,23 @@ export function Narrative() {
             )}
           </div>
 
-          {/* How to use */}
+          {/* How to use the fallback */}
           <div style={{
             marginTop: 12, padding: '10px 14px',
             background: C.card, border: `1px solid ${C.border}`, borderRadius: 2,
           }}>
             <div style={{ color: C.muted, fontSize: 10, letterSpacing: '0.08em', marginBottom: 8, fontFamily: "'DM Mono', monospace" }}>
-              HOW TO USE
+              WHEN YOU CAN'T RUN THE SKILL
             </div>
             <ol style={{ margin: 0, padding: '0 0 0 16px', color: C.muted, fontSize: 11, lineHeight: 1.8 }}>
               <li>Click <span style={{ color: C.cyan }}>COPY PROMPT</span> above</li>
-              <li>Open a new Claude Code session (<code style={{ color: C.text }}>claude</code> in terminal)</li>
-              <li>Paste — Claude Code reasons over the structured data and posts a finding</li>
-              <li>Finding appears in War Room dashboard under <span style={{ color: C.amber }}>FINDINGS</span></li>
+              <li>Paste it into any LLM chat session by hand</li>
+              <li>Read the output as an unverified first draft — it skipped the critique pass</li>
+              <li>
+                If you can, run <code style={{ color: C.text }}>war-room-reason</code> in Claude Code instead —
+                it produces a verified finding that appears on the{' '}
+                <Link to="/" style={{ color: C.amber }}>War Room dashboard</Link> automatically
+              </li>
             </ol>
           </div>
         </motion.div>

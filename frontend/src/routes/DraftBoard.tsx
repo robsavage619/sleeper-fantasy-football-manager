@@ -2,14 +2,8 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { PlayerProfileDrawer } from '@/components/PlayerProfileDrawer'
+import { POS_COLOR } from '@/components/viz'
 import { api, type DraftPlayer } from '@/lib/api'
-
-const POS_COLOR: Record<string, string> = {
-  QB: '#e05030',
-  RB: '#24a870',
-  WR: '#3a8cd4',
-  TE: '#c8820a',
-}
 
 const TABLE_COLS = [
   { label: '#', className: 'py-2 pl-3 pr-2 w-10' },
@@ -523,7 +517,15 @@ export function DraftBoard() {
             </div>
           </div>
 
-          {/* Board table */}
+          {/*
+            Board table — intentionally left unvirtualized. `@tanstack/react-virtual`
+            is wired in on Prospects.tsx (up to 200 rows, a real win); this table caps
+            at 60 rows (`api.draftBoard(60)` below) and is a native <table> with
+            AnimatePresence enter/exit animations and sort-driven re-ordering per row.
+            Virtualizing would mean giving up native table semantics for a row count
+            where windowing saves negligible render cost — not worth the risk of
+            breaking the sort animation for this table specifically.
+          */}
           <div style={{ overflowX: 'auto' }}>
             <table className="w-full text-left war-table">
               <thead>

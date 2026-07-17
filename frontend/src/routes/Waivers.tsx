@@ -1,22 +1,16 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { PlayerProfileDrawer } from '@/components/PlayerProfileDrawer'
 import { api } from '@/lib/api'
-import { InfoTip } from '@/components/viz'
+import { InfoTip, POS_COLOR } from '@/components/viz'
 import { GLOSSARY } from '@/lib/glossary'
-
-const POS_COLOR: Record<string, string> = {
-  QB: '#e05030',
-  RB: '#24a870',
-  WR: '#3a8cd4',
-  TE: '#c8820a',
-}
 
 const POS_FILTER = ['ALL', 'QB', 'RB', 'WR', 'TE'] as const
 type Filter = (typeof POS_FILTER)[number]
 
-const TABLE_COLS = ['#', 'PLAYER', 'POS', 'AGE', 'PRIORITY', 'ADDS', 'BID', 'DROP']
+const TABLE_COLS = ['#', 'PLAYER', 'POS', 'AGE', 'PRIORITY', 'ADDS', 'BID', 'DROP', 'TREND']
 const COL_INFO: Record<string, string> = {
   PRIORITY: GLOSSARY.waiverPriority,
   BID: GLOSSARY.faabBidRange,
@@ -329,6 +323,15 @@ export function Waivers() {
                     }}
                   >
                     {c.drop_candidate ?? 'Open spot'}
+                  </td>
+                  <td className="py-2.5 px-3" style={{ width: 90 }}>
+                    <Link
+                      to={`/market?tab=${encodeURIComponent('VEGAS & MOVERS')}&player=${encodeURIComponent(c.player_id)}&name=${encodeURIComponent(c.name)}`}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ fontSize: 10, color: '#00b8cc', letterSpacing: '0.06em', textDecoration: 'none', whiteSpace: 'nowrap' }}
+                    >
+                      PRICE TREND →
+                    </Link>
                   </td>
                 </motion.tr>
               )

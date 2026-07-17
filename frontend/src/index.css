@@ -43,6 +43,13 @@ body {
   background: #0c1625;
 }
 
+/* Virtualized (div-grid) row list — same hover affordance as .war-table rows,
+   used where @tanstack/react-virtual needs absolutely-positioned rows instead
+   of native <tr> (DraftBoard/Prospects). */
+.war-table-row:hover {
+  background: #0c1625;
+}
+
 /* Pulse animation for live indicator */
 @keyframes warPulse {
   0%, 100% { opacity: 1; }

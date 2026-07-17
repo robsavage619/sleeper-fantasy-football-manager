@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
-import { api, leagueFormatLabel, type StartSitRec, type TransactionPlan, type WarRoomAction } from '@/lib/api'
-import { InfoTip } from '@/components/viz'
+import { Link } from 'react-router-dom'
+import { api, leagueFormatLabel, type PlayerAlert, type StartSitRec, type TransactionPlan, type WarRoomAction } from '@/lib/api'
+import { InfoTip, POS_COLOR, PosTag, STATUS } from '@/components/viz'
 import { GLOSSARY } from '@/lib/glossary'
 
 function Panel({
@@ -135,8 +136,11 @@ export function Dashboard() {
         </span>
       </div>
 
+      {/* Weekly routine strip — the cadence the app is built around */}
+      <WeeklyRoutineStrip />
+
       {/* Stat strip */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatBlock
           label="Teams"
           value={String(league?.total_rosters ?? '—')}
@@ -200,10 +204,14 @@ export function Dashboard() {
         errorMessage={actionsErrorObj instanceof Error ? actionsErrorObj.message : null}
       />
 
-      {/* Main grid: intel feed + wire */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 260px' }}>
+      {/* Main grid: AI findings + real-world intel feed + wire */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_260px] gap-4">
         <Panel label="INTEL · FINDINGS" accent="#00b8cc">
           <FindingsFeed />
+        </Panel>
+
+        <Panel label="INTEL · LIVE FEED" accent="#d4860c">
+          <IntelFeedPanel />
         </Panel>
 
         <Panel label="WIRE · TRENDING ADDS (24H)" accent="#3a7cc0">
@@ -214,12 +222,159 @@ export function Dashboard() {
   )
 }
 
+/**
+ * Compact statement of the intended weekly cadence — refresh, run the AI GM,
+ * read the queue, decide. The app never told a new user (or Rob on a random
+ * Sunday) what to do first; this is the one-line fix.
+ */
+function WeeklyRoutineStrip() {
+  const steps = [
+    { n: 1, label: 'Refresh data', hint: 'OpsBar → Refresh Data' },
+    { n: 2, label: 'Run the AI GM', hint: 'war-room-reason skill in Claude Code' },
+    { n: 3, label: 'Read the queue', hint: 'Action Queue below' },
+    { n: 4, label: 'Decide', hint: 'Trades / Waivers / Lineup' },
+  ]
+  return (
+    <div
+      className="flex flex-wrap items-center gap-x-2 gap-y-2 px-4 py-2.5"
+      style={{ background: '#0c1625', border: '1px solid #162035', borderRadius: 2 }}
+    >
+      {steps.map((s, i) => (
+        <div key={s.n} className="flex items-center gap-2">
+          <span
+            className="flex items-center justify-center flex-shrink-0"
+            style={{
+              width: 18,
+              height: 18,
+              borderRadius: '50%',
+              border: '1px solid #24344f',
+              color: '#6a8098',
+              fontFamily: "'DM Mono', monospace",
+              fontSize: 10,
+            }}
+          >
+            {s.n}
+          </span>
+          <span style={{ fontSize: 12, color: '#c9d6e8', fontWeight: 600 }}>{s.label}</span>
+          <span className="hidden sm:inline" style={{ fontSize: 10, color: '#3d5070' }}>
+            {s.hint}
+          </span>
+          {i < steps.length - 1 && <span style={{ color: '#24344f', marginLeft: 6 }}>→</span>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+const ALERT_COLOR: Record<PlayerAlert['severity'], string> = {
+  WARN: STATUS.bad,
+  WATCH: STATUS.warn,
+  INFO: STATUS.info,
+}
+
+function IntelFeedPanel() {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['intel-feed'],
+    queryFn: () => api.intelFeed(),
+    refetchInterval: 5 * 60_000,
+  })
+
+  if (isLoading) {
+    return <div className="p-4" style={{ fontSize: 12, color: '#3d5070' }}>Loading…</div>
+  }
+  if (error) {
+    return (
+      <div className="p-4" style={{ fontSize: 12, color: '#e07060' }}>
+        {error instanceof Error ? error.message : 'Failed to load intel feed'}
+      </div>
+    )
+  }
+
+  const alerts = data?.roster_alerts ?? []
+  const opps = data?.opportunities ?? []
+  const moves = (data?.league_moves ?? []).filter((m) => !m.involves_me).slice(0, 5)
+
+  if (alerts.length === 0 && opps.length === 0 && moves.length === 0) {
+    return <div className="p-5" style={{ fontSize: 12, color: '#3d5070' }}>{data?.generated_note ?? 'No signal this cycle.'}</div>
+  }
+
+  return (
+    <div>
+      {alerts.length > 0 && (
+        <div className="px-4 pt-2" style={{ fontSize: 9, color: '#3d5070', letterSpacing: '0.1em' }}>
+          SEVERITY <InfoTip text={GLOSSARY.intelSeverity} label="severity" />
+        </div>
+      )}
+      {alerts.slice(0, 5).map((a, i) => (
+        <motion.div
+          key={`${a.player_id}-${i}`}
+          initial={{ opacity: 0, x: 6 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: i * 0.03 }}
+          className="flex items-start gap-2 px-4 py-2"
+          style={{ borderBottom: '1px solid #162035', borderLeft: `2px solid ${ALERT_COLOR[a.severity]}` }}
+        >
+          <PosTag position={a.position} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline gap-2">
+              <span style={{ fontSize: 12, color: '#e8eef6', fontWeight: 600 }}>{a.name}</span>
+              <span style={{ fontSize: 9, color: ALERT_COLOR[a.severity], letterSpacing: '0.1em' }}>{a.kind}</span>
+            </div>
+            <p style={{ fontSize: 11, color: '#7a8fa8', marginTop: 2, lineHeight: 1.4 }}>{a.detail}</p>
+          </div>
+        </motion.div>
+      ))}
+      {opps.slice(0, 3).map((o, i) => (
+        <motion.div
+          key={`opp-${o.player_id}-${i}`}
+          initial={{ opacity: 0, x: 6 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: (alerts.length + i) * 0.03 }}
+          className="flex items-start gap-2 px-4 py-2"
+          style={{ borderBottom: '1px solid #162035', borderLeft: `2px solid ${STATUS.good}` }}
+        >
+          <PosTag position={o.position} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline gap-2">
+              <span style={{ fontSize: 12, color: '#e8eef6', fontWeight: 600 }}>{o.name}</span>
+              <span style={{ fontSize: 9, color: STATUS.good, letterSpacing: '0.1em' }}>OPPORTUNITY</span>
+            </div>
+            <p style={{ fontSize: 11, color: '#7a8fa8', marginTop: 2, lineHeight: 1.4 }}>{o.detail}</p>
+          </div>
+        </motion.div>
+      ))}
+      {moves.length > 0 && (
+        <div className="px-4 py-2">
+          <div className="tracking-[0.2em] uppercase" style={{ fontSize: 9, color: '#3d5070', marginBottom: 4 }}>
+            Rival moves
+          </div>
+          {moves.map((m, i) => (
+            <div key={i} style={{ fontSize: 11, color: '#6a8098', padding: '2px 0' }}>
+              WK{m.week} {m.type ?? 'move'}
+              {m.adds.length > 0 ? ` · +${m.adds.join(', ')}` : ''}
+              {m.drops.length > 0 ? ` · -${m.drops.join(', ')}` : ''}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const ACTION_COLOR: Record<WarRoomAction['kind'], string> = {
   TRADE: '#00b8cc',
   WAIVER: '#3a8cd4',
   PICK: '#d4860c',
   LINEUP: '#1a9b5e',
   SYSTEM: '#c93328',
+}
+
+// Deep-link an action-queue card to the page that explains the underlying
+// recommendation, so a flagged move isn't a dead end.
+const ACTION_ROUTE: Partial<Record<WarRoomAction['kind'], string>> = {
+  TRADE: '/trades',
+  WAIVER: '/waivers',
+  PICK: '/trades', // pick-market BUY/SELL signals live in the Trades pick inventory panel
 }
 
 function ActionQueue({
@@ -274,9 +429,10 @@ function ActionQueue({
           No live actions. Data source may still be warming.
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-px" style={{ background: '#162035' }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-px" style={{ background: '#162035' }}>
           {top.map((action, index) => {
             const color = ACTION_COLOR[action.kind]
+            const route = ACTION_ROUTE[action.kind]
             return (
               <motion.div
                 key={action.action_id}
@@ -342,25 +498,43 @@ function ActionQueue({
                 <div style={{ fontSize: 12, color: '#8aa0b8', lineHeight: 1.45, flex: 1 }}>
                   {action.command}
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: '#3d5070' }}>
                     {action.source}
                   </span>
-                  <button
-                    onClick={() => void buildPlan(action)}
-                    style={{
-                      border: '1px solid #24344f',
-                      background: planningId === action.action_id ? '#162035' : 'transparent',
-                      color: '#6a8098',
-                      fontFamily: "'DM Mono', monospace",
-                      fontSize: 10,
-                      padding: '2px 6px',
-                      borderRadius: 2,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {planningId === action.action_id ? '...' : 'PLAN'}
-                  </button>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {route && (
+                      <Link
+                        to={route}
+                        style={{
+                          border: `1px solid ${color}55`,
+                          color,
+                          fontFamily: "'DM Mono', monospace",
+                          fontSize: 10,
+                          padding: '2px 6px',
+                          borderRadius: 2,
+                          textDecoration: 'none',
+                        }}
+                      >
+                        OPEN →
+                      </Link>
+                    )}
+                    <button
+                      onClick={() => void buildPlan(action)}
+                      style={{
+                        border: '1px solid #24344f',
+                        background: planningId === action.action_id ? '#162035' : 'transparent',
+                        color: '#6a8098',
+                        fontFamily: "'DM Mono', monospace",
+                        fontSize: 10,
+                        padding: '2px 6px',
+                        borderRadius: 2,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {planningId === action.action_id ? '...' : 'PLAN'}
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             )
@@ -390,13 +564,6 @@ function ActionQueue({
       )}
     </Panel>
   )
-}
-
-const POS_COLOR: Record<string, string> = {
-  QB: '#e05030',
-  RB: '#24a870',
-  WR: '#3a8cd4',
-  TE: '#c8820a',
 }
 
 function TrendingWire({ trending }: { trending: Array<{ player_id: string; count: number; name: string; position: string; team: string }> }) {
@@ -635,22 +802,16 @@ function FindingsFeed() {
   if (!findings?.length) {
     return (
       <div className="p-5">
-        <p className="mb-3" style={{ fontSize: 13, color: '#6a8098' }}>
-          No findings. Post via:
+        <p className="mb-2" style={{ fontSize: 13, color: '#6a8098', lineHeight: 1.5 }}>
+          No findings yet. Run the AI GM update — the <code style={{ color: '#00b8cc' }}>war-room-reason</code>{' '}
+          skill in Claude Code — and its verified narrative, trade, waiver, draft, and lineup calls appear here.
         </p>
-        <code
-          className="px-2 py-1"
-          style={{
-            fontFamily: "'DM Mono', monospace",
-            fontSize: 12,
-            color: '#00b8cc',
-            background: 'rgba(0, 184, 204, 0.08)',
-            border: '1px solid rgba(0, 184, 204, 0.2)',
-            borderRadius: 2,
-          }}
+        <Link
+          to="/narrative"
+          style={{ fontSize: 11, color: '#00b8cc', letterSpacing: '0.06em', textDecoration: 'none' }}
         >
-          sffm finding &lt;kind&gt; --body '…'
-        </code>
+          See how it works →
+        </Link>
       </div>
     )
   }

@@ -775,6 +775,109 @@ export function BumpChart({
   )
 }
 
+// --- shared page chrome (was redefined per-route; consolidated here) ------
+
+const BARLOW_FONT = "'Barlow Condensed', sans-serif"
+
+/** Section header used at the top of every dense page section. */
+export function SectionTitle({ children, sub }: { children: import('react').ReactNode; sub?: string }) {
+  return (
+    <div className="flex items-baseline gap-3 px-5 pt-6 pb-2">
+      <h2
+        className="uppercase tracking-wide leading-none"
+        style={{ fontFamily: BARLOW_FONT, fontSize: 22, fontWeight: 800, color: INK.primary }}
+      >
+        {children}
+      </h2>
+      {sub && (
+        <span className="tracking-[0.2em] uppercase" style={{ fontSize: 10, color: INK.dim }}>
+          {sub}
+        </span>
+      )}
+    </div>
+  )
+}
+
+/** Small colored position badge (QB/RB/WR/TE). */
+export function PosTag({ position }: { position: string }) {
+  const c = POS_COLOR[position] ?? INK.muted
+  return (
+    <span
+      style={{
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: '0.12em',
+        padding: '1px 5px',
+        color: c,
+        background: `${c}18`,
+        borderRadius: 1,
+      }}
+    >
+      {position}
+    </span>
+  )
+}
+
+/** Colored two-column-grid section sub-header (e.g. BUY / SELL column headers). */
+export function ColHead({ children, color }: { children: import('react').ReactNode; color: string }) {
+  return (
+    <div
+      className="px-3 py-2 tracking-[0.15em] uppercase"
+      style={{ fontSize: 10, fontWeight: 700, color, borderBottom: `1px solid ${color}30` }}
+    >
+      {children}
+    </div>
+  )
+}
+
+/** Centered loading label for a table/section still fetching. */
+export function Loading({ label }: { label: string }) {
+  return (
+    <div className="py-6 text-center tracking-widest uppercase" style={{ color: INK.dim, fontSize: 12 }}>
+      {label}
+    </div>
+  )
+}
+
+/** Left-aligned empty-state note inside a section. */
+export function Empty({ children }: { children: import('react').ReactNode }) {
+  return <div style={{ color: INK.dim, fontSize: 12, padding: '10px 20px' }}>{children}</div>
+}
+
+/** Minimal inline-SVG line sparkline for a price/value series over time. */
+export function Sparkline({
+  values,
+  width = 84,
+  height = 26,
+  color = STATUS.info,
+}: {
+  values: number[]
+  width?: number
+  height?: number
+  color?: string
+}) {
+  if (values.length < 2) {
+    return (
+      <span style={{ color: INK.dim, fontSize: 10, fontFamily: "'DM Mono', monospace" }}>—</span>
+    )
+  }
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const range = max - min || 1
+  const step = width / (values.length - 1)
+  const pts = values.map((v, i) => [i * step, height - ((v - min) / range) * height])
+  const path = pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+  const last = pts[pts.length - 1]
+  const rising = values[values.length - 1] >= values[0]
+  const stroke = color === STATUS.info ? (rising ? STATUS.good : STATUS.bad) : color
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="value trend">
+      <path d={path} fill="none" stroke={stroke} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={last[0]} cy={last[1]} r={2} fill={stroke} />
+    </svg>
+  )
+}
+
 /** Horizontal stacked value bar for roster/position composition. */
 export function StackBar({
   segments,

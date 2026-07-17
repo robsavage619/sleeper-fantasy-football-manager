@@ -11,6 +11,7 @@ import {
   PlayerHeadshot,
   POS_COLOR,
   RangeBar,
+  Sparkline,
   STATUS,
 } from '@/components/viz'
 import { GLOSSARY } from '@/lib/glossary'
@@ -19,6 +20,121 @@ const USAGE_INFO: Record<string, string> = {
   WOPR: GLOSSARY.wopr,
   'Target Share': GLOSSARY.targetShare,
   'Air-Yds Share': GLOSSARY.airYardsShare,
+}
+
+/** Price-history sparkline — the endpoint was wrapped in the client but never rendered anywhere. */
+function PriceTrendSection({ playerId }: { playerId: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['price-trend', playerId],
+    queryFn: () => api.playerPriceTrend(playerId),
+    enabled: !!playerId,
+  })
+
+  if (isLoading) {
+    return (
+      <Section title="Market Price Trend">
+        <div style={{ color: '#3d5070', fontSize: 12 }}>Loading price history…</div>
+      </Section>
+    )
+  }
+  if (!data || data.points.length < 2) {
+    return (
+      <Section title="Market Price Trend">
+        <div style={{ color: '#3d5070', fontSize: 12 }}>{data?.note ?? 'Not enough snapshots yet for a trend.'}</div>
+      </Section>
+    )
+  }
+
+  const momentum = data.momentum_pct
+  return (
+    <Section title="Market Price Trend">
+      <div className="flex items-center gap-4">
+        <Sparkline values={data.points.map((p) => p.value)} width={140} height={36} />
+        <div>
+          <div
+            style={{
+              fontFamily: "'DM Mono', monospace",
+              fontSize: 16,
+              fontWeight: 600,
+              color: momentum == null ? INK.muted : momentum >= 0 ? STATUS.good : STATUS.bad,
+            }}
+          >
+            {momentum != null ? `${momentum > 0 ? '+' : ''}${momentum.toFixed(1)}%` : '—'}
+          </div>
+          <div style={{ color: INK.dim, fontSize: 10 }}>{data.snapshot_dates.length} snapshots</div>
+        </div>
+      </div>
+    </Section>
+  )
+}
+
+/** Stadium/weather environment splits — distinct from the league-wide flag list on Matchups. */
+function EnvironmentSection({ playerId }: { playerId: string }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['player-environment', playerId],
+    queryFn: () => api.playerEnvironment(playerId),
+    enabled: !!playerId,
+  })
+
+  if (isLoading) {
+    return (
+      <Section title="Environment Splits">
+        <div style={{ color: '#3d5070', fontSize: 12 }}>Loading environment splits…</div>
+      </Section>
+    )
+  }
+  if (error || !data) {
+    return (
+      <Section title="Environment Splits">
+        <div style={{ color: '#3d5070', fontSize: 12 }}>No environment splits available.</div>
+      </Section>
+    )
+  }
+
+  const splitRows = Object.entries(data.splits)
+  if (splitRows.length === 0 && data.stadiums.length === 0) {
+    return (
+      <Section title="Environment Splits">
+        <div style={{ color: '#3d5070', fontSize: 12 }}>Not enough games ({data.total_games}) for a reliable split.</div>
+      </Section>
+    )
+  }
+
+  return (
+    <Section title="Environment Splits">
+      {data.flags.length > 0 && (
+        <div style={{ color: '#d4860c', fontSize: 11, marginBottom: 10 }}>{data.flags.join(' · ')}</div>
+      )}
+      {splitRows.length > 0 && (
+        <div style={{ display: 'grid', gap: 1, background: '#162035', marginBottom: 10 }}>
+          {splitRows.map(([bucket, s]) => (
+            <div key={bucket} className="grid grid-cols-4 gap-2" style={{ background: '#0c1625', padding: '8px 10px', fontSize: 12 }}>
+              <span style={{ color: '#e8eef6', textTransform: 'capitalize' }}>{bucket.replace(/_/g, ' ')}</span>
+              <span style={{ color: '#6a8098' }}>{s.games} G</span>
+              <span style={{ color: '#d4860c' }}>{s.avg_fp.toFixed(1)} FP</span>
+              <span style={{ color: s.delta >= 0 ? STATUS.good : STATUS.bad, fontFamily: "'DM Mono', monospace" }}>
+                {s.delta >= 0 ? '+' : ''}{s.delta.toFixed(1)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {data.stadiums.length > 0 && (
+        <div style={{ display: 'grid', gap: 1, background: '#162035' }}>
+          {data.stadiums.slice(0, 6).map((s) => (
+            <div key={s.stadium} className="grid grid-cols-4 gap-2" style={{ background: '#0c1625', padding: '8px 10px', fontSize: 12 }}>
+              <span style={{ color: '#e8eef6' }}>{s.stadium}</span>
+              <span style={{ color: '#6a8098' }}>{s.games} G</span>
+              <span style={{ color: '#d4860c' }}>{s.avg_fp.toFixed(1)} FP</span>
+              <span style={{ color: s.delta >= 0 ? STATUS.good : STATUS.bad, fontFamily: "'DM Mono', monospace" }}>
+                {s.delta >= 0 ? '+' : ''}{s.delta.toFixed(1)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Section>
+  )
 }
 
 function AnalyticsSection({ playerId }: { playerId: string }) {
@@ -325,6 +441,9 @@ function ProfileBody({ profile }: { profile: PlayerProfile }) {
       </Section>
 
       <AnalyticsSection playerId={profile.player_id} />
+
+      <PriceTrendSection playerId={profile.player_id} />
+      <EnvironmentSection playerId={profile.player_id} />
 
       <Section title="Recent Weeks">
         {latestWeeks.length === 0 ? (
