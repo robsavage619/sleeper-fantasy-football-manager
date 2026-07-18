@@ -577,6 +577,19 @@ function AiScoutingSection({ prospect }: { prospect: ProspectProfile }) {
     }
   }
 
+  // The model posts comps as plain strings and risk_notes as either a string or a list.
+  // Normalize both so the render never assumes a shape the payload doesn't have.
+  const comps = scout
+    ? scout.comps.map((c) => (typeof c === 'string' ? { name: c, rationale: '' } : c))
+    : []
+  const risks = scout
+    ? Array.isArray(scout.risk_notes)
+      ? scout.risk_notes
+      : scout.risk_notes
+        ? [scout.risk_notes]
+        : []
+    : []
+
   return (
     <Section title="AI Scouting & NFL Comps" accent={C.cyan}>
       {scout ? (
@@ -588,16 +601,18 @@ function AiScoutingSection({ prospect }: { prospect: ProspectProfile }) {
             <div style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 4 }}>{scout.verdict}</div>
             <div style={{ color: C.muted, fontSize: 12, lineHeight: 1.5 }}>{scout.case}</div>
           </div>
-          {scout.comps.length > 0 && (
+          {comps.length > 0 && (
             <div style={{ marginBottom: 12 }}>
               <div className="tracking-[0.18em] uppercase" style={{ color: C.cyan, fontSize: 9, marginBottom: 6 }}>
                 NFL Comps
               </div>
               <div style={{ display: 'grid', gap: 1, background: C.border }}>
-                {scout.comps.map((comp, i) => (
+                {comps.map((comp, i) => (
                   <div key={i} style={{ background: C.card, padding: '8px 10px' }}>
                     <div style={{ color: C.text, fontSize: 12, fontWeight: 700 }}>{comp.name}</div>
-                    <div style={{ color: C.muted, fontSize: 11, marginTop: 2, lineHeight: 1.4 }}>{comp.rationale}</div>
+                    {comp.rationale && (
+                      <div style={{ color: C.muted, fontSize: 11, marginTop: 2, lineHeight: 1.4 }}>{comp.rationale}</div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -611,13 +626,13 @@ function AiScoutingSection({ prospect }: { prospect: ProspectProfile }) {
               <div style={{ color: C.muted, fontSize: 12, lineHeight: 1.5 }}>{scout.consensus_check}</div>
             </div>
           )}
-          {scout.risk_notes.length > 0 && (
+          {risks.length > 0 && (
             <div>
               <div className="tracking-[0.18em] uppercase" style={{ color: C.amber, fontSize: 9, marginBottom: 4 }}>
                 Risk Factors
               </div>
               <ul style={{ color: C.muted, fontSize: 12, lineHeight: 1.6, paddingLeft: 16, margin: 0 }}>
-                {scout.risk_notes.map((note, i) => (
+                {risks.map((note, i) => (
                   <li key={i}>{note}</li>
                 ))}
               </ul>

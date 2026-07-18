@@ -852,11 +852,14 @@ export type ProspectScoutFinding = {
   player_id: string | null
   name: string
   college: string
-  comps: Array<{ name: string; rationale: string }>
+  // The model posts comps as plain strings ("Saquon Barkley — three-down back…"), but
+  // older/structured payloads may use {name, rationale}. Accept both.
+  comps: Array<string | { name: string; rationale?: string }>
   verdict: string
   case: string
   team_fit: string
-  risk_notes: string[]
+  // risk_notes arrives as either a single string or a list of strings.
+  risk_notes: string | string[]
   consensus_check?: string
   sources?: string[]
 }
@@ -1390,8 +1393,11 @@ export const api = {
   matchups: (week: number) => get<SleeperMatchup[]>(`/league/matchups/${week}`),
   nflState: () => get<NFLState>('/league/state'),
   trending: (kind: 'add' | 'drop') => get<TrendingPlayer[]>(`/league/trending/${kind}`),
-  findings: (kind?: string) =>
-    get<Finding[]>(`/findings/${kind ? `?kind=${kind}` : ''}`),
+  // Request a generous limit: the backend defaults to 50, which silently truncates the
+  // per-prospect scout set (60+) and drops the oldest findings — exactly the top-of-board
+  // players scouted first. Callers here want the full set for matching/badging.
+  findings: (kind?: string, limit = 500) =>
+    get<Finding[]>(`/findings/?limit=${limit}${kind ? `&kind=${kind}` : ''}`),
   latestFinding: (kind: string) => get<Finding>(`/findings/latest/${kind}`),
   postFinding: (kind: string, body: Record<string, unknown>) =>
     post<Finding>('/findings/', { kind, body }),
