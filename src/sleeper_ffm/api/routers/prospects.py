@@ -12,9 +12,43 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/draft", tags=["draft"])
 
 
+def _rerank_by_market(profiles: list) -> list:
+    """Order the board by FantasyCalc dynasty value (1QB), not the search-rank heuristic.
+
+    The raw ``dynasty_prospect_score`` is a Sleeper ``search_rank`` proxy, which is
+    superflex/overall-weighted — in a 1QB league it over-ranks rookie QBs and handcuffs
+    (e.g. it floats a rookie QB to #2 and a backup RB to #4). FantasyCalc's public API is
+    queried with ``numQbs=1``, so its values are format-correct and match the market-blended
+    draft pool the engine already uses. Matched players are re-scored/re-ordered by that
+    value; unmatched (deep UDFAs FantasyCalc doesn't price) keep the heuristic and sort below.
+    Degrades to the original order if market data is unavailable.
+    """
+    try:
+        from sleeper_ffm.market.fantasycalc import fetch as fc_fetch
+
+        market = fc_fetch()
+    except Exception as exc:
+        log.warning("prospect board: market re-rank unavailable (%s); keeping heuristic order", exc)
+        return profiles
+    if not market:
+        return profiles
+
+    max_v = max((market.get(p.player_id, 0.0) for p in profiles), default=0.0) or 1.0
+    keyed: list[tuple[float, object]] = []
+    for p in profiles:
+        mv = market.get(p.player_id, 0.0)
+        if mv > 0:
+            p.dynasty_prospect_score = round(min(100.0, mv / max_v * 100.0), 1)
+            p.rationale = f"Market-anchored: FantasyCalc 1QB dynasty value {mv:.0f}. {p.rationale}"
+        keyed.append((mv, p))
+    # Matched (market value > 0) rank first by value; unmatched fall below by heuristic.
+    keyed.sort(key=lambda t: (t[0] > 0, t[0], t[1].dynasty_prospect_score), reverse=True)
+    return [p for _, p in keyed]
+
+
 @router.get("/prospects")
 def draft_prospects(year: int = 2025, top: int = 50) -> list[dict]:
-    """Return top dynasty prospects scored from CFBD college data.
+    """Return top dynasty prospects, ordered by market-anchored (1QB) dynasty value.
 
     Args:
         year: Draft class year (2025 or 2026).
@@ -23,12 +57,15 @@ def draft_prospects(year: int = 2025, top: int = 50) -> list[dict]:
     from sleeper_ffm.cfbd.loader import load_prospects
 
     try:
-        profiles = load_prospects(year=year, top=top)
+        # Pull a wider pool than requested so the market re-rank can lift the true top
+        # names up from deeper in the search-rank ordering before trimming to ``top``.
+        profiles = load_prospects(year=year, top=max(top, 200))
     except Exception as exc:
         log.exception("load_prospects failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    return [dataclasses.asdict(p) for p in profiles]
+    profiles = _rerank_by_market(profiles)
+    return [dataclasses.asdict(p) for p in profiles[:top]]
 
 
 @router.get("/prospects/scouting-prompts")
