@@ -774,6 +774,42 @@ function summarizeFinding(kind: string, body: Record<string, unknown>): {
         title: `Lineup — start ${s(body.start)}`,
         detail: `Sit ${s(body.sit)}. ${s(body.rationale)}`,
       }
+    case 'owner_dossier': {
+      const angles = Array.isArray(body.angles) ? body.angles.length : 0
+      return {
+        title: `Dossier — ${s(body.target) || 'rival'}`,
+        detail: `${s(body.exploit_plan)}${angles ? ` (${angles} angle${angles > 1 ? 's' : ''})` : ''}`,
+      }
+    }
+    case 'market_edge': {
+      const buys = Array.isArray(body.buys) ? body.buys.length : 0
+      const sells = Array.isArray(body.sells) ? body.sells.length : 0
+      const first = Array.isArray(body.buys) && body.buys[0]
+        ? s((body.buys[0] as Record<string, unknown>).player)
+        : ''
+      return {
+        title: `Market edges — ${buys} buy${buys === 1 ? '' : 's'}, ${sells} sell${sells === 1 ? '' : 's'}`,
+        detail: first ? `Top buy: ${first}. ${s(body.reconciliations)}` : s(body.reconciliations),
+      }
+    }
+    case 'waiver_plan': {
+      const recs = Array.isArray(body.waiver_recs) ? body.waiver_recs : []
+      const top = recs[0] as Record<string, unknown> | undefined
+      return {
+        title: `Waiver plan — ${recs.length} claim${recs.length === 1 ? '' : 's'}`,
+        detail: top ? `Top: ${s(top.player)} ($${s(top.faab_bid)}, ${s(top.tier)})` : 'No claims this cycle',
+      }
+    }
+    case 'trade_plan':
+      return {
+        title: `Trade plan — ${s(body.posture) || 'posture'}`,
+        detail: `${s(body.plan)}${body.sequencing ? ` · ${s(body.sequencing)}` : ''}`,
+      }
+    case 'prospect_scout':
+      return {
+        title: `Scout — ${s(body.name)}`,
+        detail: `${s(body.verdict)}. ${s(body.case)}`,
+      }
     default: {
       const detail = Object.entries(body)
         .filter(([k]) => k !== 'generated_at' && k !== 'data_quality_ack')

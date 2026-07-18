@@ -60,10 +60,12 @@ function ProspectRow({
   prospect,
   rank,
   onOpen,
+  scouted = false,
 }: {
   prospect: ProspectProfile
   rank: number
   onOpen: (prospect: ProspectProfile) => void
+  scouted?: boolean
 }) {
   const posColor = POS_COLOR[prospect.position] ?? '#6a8098'
   const showUsage = prospect.position === 'WR' || prospect.position === 'TE'
@@ -93,6 +95,24 @@ function ProspectRow({
             title="Matched on Sleeper"
             style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#00b8cc', flexShrink: 0 }}
           />
+        )}
+        {scouted && (
+          <span
+            title="AI deep-scout report available — open to view"
+            style={{
+              flexShrink: 0,
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              padding: '1px 4px',
+              color: '#1a9b5e',
+              background: 'rgba(26,155,94,0.12)',
+              border: '1px solid rgba(26,155,94,0.35)',
+              borderRadius: 2,
+            }}
+          >
+            AI
+          </span>
         )}
       </span>
       <span className="px-3">
@@ -158,6 +178,20 @@ export function Prospects() {
     queryKey: ['prospects', year],
     queryFn: () => api.prospects(year, 200),
   })
+
+  // Which prospects have an AI deep-scout finding (kind `prospect_scout`), keyed by
+  // Sleeper id and by lowercased name so the table can flag them without opening the drawer.
+  const { data: scoutFindings } = useQuery({
+    queryKey: ['findings', 'prospect_scout'],
+    queryFn: () => api.findings('prospect_scout'),
+    refetchInterval: 60_000,
+  })
+  const scoutedKeys = new Set<string>()
+  for (const f of scoutFindings ?? []) {
+    const b = (f.body ?? {}) as Record<string, unknown>
+    if (b.player_id) scoutedKeys.add(`id:${String(b.player_id)}`)
+    if (b.name) scoutedKeys.add(`nm:${String(b.name).toLowerCase()}`)
+  }
 
   const prospects = (data ?? []).filter((p) => filter === 'ALL' || p.position === filter)
   const fallbackMode = (data ?? []).some((p) => p.rationale.includes('Sleeper dynasty fallback'))
@@ -317,7 +351,7 @@ export function Prospects() {
             </div>
           ))}
         </div>
-        <ProspectVirtualList prospects={prospects} onOpen={setSelected} />
+        <ProspectVirtualList prospects={prospects} onOpen={setSelected} scoutedKeys={scoutedKeys} />
         {prospects.length === 0 && !isLoading && (
           <div
             className="py-10 text-center tracking-widest uppercase"
@@ -341,9 +375,11 @@ export function Prospects() {
 function ProspectVirtualList({
   prospects,
   onOpen,
+  scoutedKeys,
 }: {
   prospects: ProspectProfile[]
   onOpen: (p: ProspectProfile) => void
+  scoutedKeys: Set<string>
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const virtualizer = useVirtualizer({
@@ -358,12 +394,15 @@ function ProspectVirtualList({
       <div style={{ position: 'relative', height: virtualizer.getTotalSize() }}>
         {virtualizer.getVirtualItems().map((row) => {
           const p = prospects[row.index]
+          const scouted =
+            (p.player_id != null && scoutedKeys.has(`id:${p.player_id}`)) ||
+            scoutedKeys.has(`nm:${p.name.toLowerCase()}`)
           return (
             <div
               key={`${p.name}-${p.college}`}
               style={{ position: 'absolute', top: 0, left: 0, right: 0, transform: `translateY(${row.start}px)` }}
             >
-              <ProspectRow prospect={p} rank={row.index + 1} onOpen={onOpen} />
+              <ProspectRow prospect={p} rank={row.index + 1} onOpen={onOpen} scouted={scouted} />
             </div>
           )
         })}
