@@ -15,6 +15,15 @@ log = logging.getLogger(__name__)
 CFBD_BASE = "https://api.collegefootballdata.com"
 _SKILL_POSITIONS = {"QB", "RB", "WR", "TE"}
 
+# Sleeper keeps historical/retired players in the dump with years_exp 0, so years_exp
+# alone lets stale entries (a coach, a player out of the league since 2020) onto a rookie
+# board. The clean discriminator is an NFL team: a genuine incoming rookie is drafted or
+# signed (team set), while the stale/misindexed rows carry team=None. This mirrors the
+# rookie gate in model.valuation.build_rookie_assets. NB: search_rank is NOT usable here —
+# Sleeper stamps real deep rookies (e.g. late UDFAs) with the same 9_999_999 sentinel as
+# irrelevant players, so filtering on it would drop legitimate prospects.
+_MAX_PROSPECT_AGE = 26.0
+
 # CFBD position labels → normalised
 _POS_MAP = {
     "QB": "QB",
@@ -79,12 +88,24 @@ def _fallback_sleeper_prospects(year: int, top: int) -> list[ProspectProfile]:
         if years_exp is None or years_exp > max_years_exp:
             continue
 
+        # Primary gate: a real incoming rookie is drafted or signed (has a team); the stale
+        # and misindexed entries carry team=None. Mirrors build_rookie_assets.
+        if not (player.get("team") or (player.get("metadata") or {}).get("team")):
+            continue
+
+        # Belt-and-suspenders: drop anything Sleeper flags inactive (retired coaches etc.).
+        if player.get("active") is False:
+            continue
+
         search_rank = player.get("search_rank")
         if search_rank is None:
             continue
 
         raw_age = player.get("age")
         age = float(raw_age) if raw_age else None
+        # An incoming rookie is ~20-24; a present age well past that is a stale/misindexed row.
+        if age is not None and age > _MAX_PROSPECT_AGE:
+            continue
         metadata = player.get("metadata") or {}
         college = player.get("college") or metadata.get("college") or "—"
         name = player.get("full_name") or player.get("search_full_name") or f"Player {pid}"
