@@ -31,6 +31,70 @@ def draft_prospects(year: int = 2025, top: int = 50) -> list[dict]:
     return [dataclasses.asdict(p) for p in profiles]
 
 
+@router.get("/prospects/scouting-prompts")
+def prospect_scouting_prompts_batch(
+    year: int = 2026,
+    top: int = 50,
+    offset: int = 0,
+    limit: int = 8,
+) -> dict:
+    """Batch scouting-prompt generator for the whole draft board.
+
+    Enumerates ``load_prospects(year, top)`` and returns the deep-dive scouting prompt for
+    a bounded slice ``[offset : offset+limit]``, so an orchestrator can page through the
+    entire board and deep-scout every prospect without an N+1 of per-name calls. ``limit``
+    is capped (each item assembles a multi-source report) to keep a request bounded.
+
+    Returns ``{year, total, offset, count, prompts: [{player_id, name, position, college,
+    dynasty_prospect_score, prompt}]}``.
+    """
+    from sleeper_ffm.cfbd.loader import load_prospects
+    from sleeper_ffm.model.prospect_report import build_scouting_prompt
+
+    limit = max(1, min(limit, 12))
+    try:
+        board = load_prospects(year=year, top=top)
+    except Exception as exc:
+        log.exception("load_prospects failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    window = board[offset : offset + limit]
+    prompts: list[dict] = []
+    for p in window:
+        try:
+            prompt = build_scouting_prompt(
+                name=p.name,
+                position=p.position,
+                college=p.college,
+                year=p.year,
+                age=p.age,
+                player_id=p.player_id,
+                recruiting_rank=p.recruiting_rank,
+                stars=p.stars,
+                dynasty_prospect_score=p.dynasty_prospect_score,
+            )
+        except Exception as exc:  # one bad prospect must not sink the page
+            log.warning("scouting prompt failed for %s: %s", p.name, exc)
+            prompt = f"(degraded — scouting prompt for {p.name} unavailable: {exc})"
+        prompts.append(
+            {
+                "player_id": p.player_id,
+                "name": p.name,
+                "position": p.position,
+                "college": p.college,
+                "dynasty_prospect_score": p.dynasty_prospect_score,
+                "prompt": prompt,
+            }
+        )
+    return {
+        "year": year,
+        "total": len(board),
+        "offset": offset,
+        "count": len(prompts),
+        "prompts": prompts,
+    }
+
+
 @router.get("/prospects/scouting")
 def prospect_scouting(
     name: str,

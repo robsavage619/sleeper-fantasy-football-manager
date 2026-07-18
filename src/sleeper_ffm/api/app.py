@@ -31,6 +31,7 @@ from sleeper_ffm.api.routers import picks as picks_router
 from sleeper_ffm.api.routers import players as players_router
 from sleeper_ffm.api.routers import price_history as price_history_router
 from sleeper_ffm.api.routers import prospects as prospects_router
+from sleeper_ffm.api.routers import reasoning as reasoning_router
 from sleeper_ffm.api.routers import regression as regression_router
 from sleeper_ffm.api.routers import roster as roster_router
 from sleeper_ffm.api.routers import sabermetrics as sabermetrics_router
@@ -105,6 +106,7 @@ def create_app() -> FastAPI:
     app.include_router(price_history_router.router)
     app.include_router(faab_market_router.router)
     app.include_router(opponent_adjusted_router.router)
+    app.include_router(reasoning_router.router)
     return app
 
 

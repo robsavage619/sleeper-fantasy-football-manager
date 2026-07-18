@@ -153,6 +153,138 @@ class BulkResponse(BaseModel):
     total: int
 
 
+# --- Typed single-surface reasoning documents (the /ai/* surfaces) ------------------
+# Each focused surface (dossier, market edges, waivers, trade plan, prospect scout) posts
+# ONE cohesive document, unlike the master briefing which fans out per item. Every model
+# is ``extra=allow`` so an unanticipated key survives, but the load-bearing fields are
+# typed so malformed model output is rejected with 422 instead of stored raw.
+
+
+class _EdgeThesis(BaseModel):
+    model_config = {"extra": "allow"}
+
+    player: str
+    thesis: str = ""
+    target_partner: str = ""
+
+
+class OwnerDossierDoc(BaseModel):
+    """Exploit plan for one rival manager (kind ``owner_dossier``)."""
+
+    model_config = {"extra": "allow"}
+
+    target: str
+    exploit_plan: str = ""
+    angles: list[TradeRec] = []
+    watch_items: list[str] = []
+    generated_at: str
+    data_quality_ack: str = ""
+
+
+class MarketEdgeDoc(BaseModel):
+    """Reconciled buy/sell board (kind ``market_edge``)."""
+
+    model_config = {"extra": "allow"}
+
+    buys: list[_EdgeThesis] = []
+    sells: list[_EdgeThesis] = []
+    reconciliations: str = ""
+    generated_at: str
+    data_quality_ack: str = ""
+
+
+class _WaiverPlanRec(WaiverRec):
+    """WaiverRec plus a bid tier."""
+
+    tier: str = ""
+
+
+class WaiverPlanDoc(BaseModel):
+    """FAAB bid plan (kind ``waiver_plan``)."""
+
+    model_config = {"extra": "allow"}
+
+    waiver_recs: list[_WaiverPlanRec] = []
+    holds: list[str] = []
+    generated_at: str
+    data_quality_ack: str = ""
+
+
+class TradePlanDoc(BaseModel):
+    """Franchise buy/sell posture + sequenced plan (kind ``trade_plan``)."""
+
+    model_config = {"extra": "allow"}
+
+    posture: str
+    plan: str = ""
+    trade_recs: list[TradeRec] = []
+    sequencing: str = ""
+    generated_at: str
+    data_quality_ack: str = ""
+
+
+class ProspectScoutDoc(BaseModel):
+    """Deep per-prospect scouting insight (kind ``prospect_scout``).
+
+    Mirrors the post shape in ``prompts.prospect_scouting``. ``player_id``/``name`` are
+    required so the frontend drawer can match the finding back to a board row.
+    """
+
+    model_config = {"extra": "allow"}
+
+    name: str
+    player_id: str | None = None
+    college: str = ""
+    verdict: str = ""
+    case: str = ""
+    comps: list[str] = []
+    team_fit: str = ""
+    risk_notes: str | list[str] = ""
+    consensus_check: str = ""
+    sources: list[str] = []
+    generated_at: str | None = None
+
+
+# kind → validating model. A POST to /ai/finding with a known kind is validated against
+# its model; an unknown kind falls through to the untyped POST /findings/ path.
+TYPED_KINDS: dict[str, type[BaseModel]] = {
+    "owner_dossier": OwnerDossierDoc,
+    "market_edge": MarketEdgeDoc,
+    "waiver_plan": WaiverPlanDoc,
+    "trade_plan": TradePlanDoc,
+    "prospect_scout": ProspectScoutDoc,
+}
+
+
+class TypedFindingRequest(BaseModel):
+    """A typed single-surface finding: ``kind`` selects the schema ``body`` is checked against."""
+
+    kind: str
+    body: dict[str, Any]
+    prompt_hash: str | None = None
+
+
+@router.post("/typed", response_model=FindingResponse, status_code=201)
+def post_typed(req: TypedFindingRequest) -> FindingResponse:
+    """Post a single-surface finding, validating ``body`` against the kind's schema.
+
+    Unlike ``/bulk`` (which fans a master document out per item), this stores ONE finding
+    for the whole document. A known ``kind`` whose ``body`` fails validation is rejected
+    422; an unknown ``kind`` is stored as-is (parity with the untyped ``POST /findings/``).
+    """
+    model = TYPED_KINDS.get(req.kind)
+    if model is not None:
+        try:
+            validated = model.model_validate(req.body)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        body = validated.model_dump()
+    else:
+        body = req.body
+    finding = post_finding(kind=req.kind, body=body, prompt_hash=req.prompt_hash)
+    return FindingResponse.from_finding(finding)
+
+
 # Section name → (finding kind, whether the section is a list fanned out per-item).
 _SECTION_KINDS: list[tuple[str, str, bool]] = [
     ("narrative", "narrative", False),
