@@ -591,7 +591,12 @@ def _saber_summary(my_roster_id: int) -> str:
 
 
 def _draft_context() -> str:
-    """Live draft board summary when a draft is active, else an off-season note."""
+    """Live draft board summary + the actual available pool (rookies + free agents).
+
+    The board header describes where my pick falls; the pool is the *groundable* part —
+    the incoming rookie class plus unrostered free agents, value-ranked, so a pick can be
+    recommended by name instead of a stale generic prospect board.
+    """
     try:
         from sleeper_ffm.draft.assistant import sync_board
 
@@ -602,13 +607,16 @@ def _draft_context() -> str:
 
     if board.is_complete():
         return "(draft complete — no live picks)"
+
+    pick_no: int | None
     if board.order_confirmed:
-        return (
+        header = (
             f"Live draft: pick {board.current_pick_no}/{board.total_picks} "
             f"(round {board.current_round}), {board.picks_until_my_turn} picks until my turn."
         )
-    if board.order_projected and board.my_slot is not None:
-        return (
+        pick_no = board.next_my_pick or board.current_pick_no
+    elif board.order_projected and board.my_slot is not None:
+        header = (
             f"Draft created ({board.total_picks} picks, {board.total_teams} teams). Sleeper has "
             f"NOT yet officially set the draft order, but this league's rookie draft order is a "
             f"verified convention (reverse of the full final standings from the prior completed "
@@ -618,18 +626,61 @@ def _draft_context() -> str:
             "official Sleeper-confirmed slot — a name recommended as 'the pick' must account for "
             "how many picks happen before this projected turn, since top names may not survive."
         )
-    return (
-        f"Draft created ({board.total_picks} picks, {board.total_teams} teams) but Sleeper has "
-        "NOT yet set/randomized the draft order, and no standings-based projection was available "
-        "either — there is no confirmed or projected pick number yet. Do not state a specific "
-        "slot or 'picks until my turn' as fact; recommend players generally and note the order "
-        "is pending."
-    )
+        pick_no = board.next_my_pick
+    else:
+        header = (
+            f"Draft created ({board.total_picks} picks, {board.total_teams} teams) but Sleeper has "
+            "NOT yet set/randomized the draft order, and no standings-based projection was "
+            "available either — there is no confirmed or projected pick number yet. Do not state a "
+            "specific slot or 'picks until my turn' as fact; recommend players generally and note "
+            "the order is pending."
+        )
+        pick_no = None
+
+    # Inject the real, groundable pool: incoming rookies + unrostered free agents, value-ranked.
+    # `is_taxi` is set True by the rookie builder and False for unrostered veterans, so it is the
+    # authoritative rookie-vs-free-agent tag on each asset.
+    try:
+        from sleeper_ffm.draft.assistant import build_full_pool
+        from sleeper_ffm.sleeper.client import SleeperClient
+
+        with SleeperClient() as c:
+            sleeper_players = c.players()
+        pool = build_full_pool(board, sleeper_players=sleeper_players)
+    except Exception as exc:
+        log.warning("master: draft pool build failed (%s)", exc)
+        return header + "\n(available-player pool unavailable this cycle — recommend generally)"
+
+    if not pool:
+        return header + "\n(no unrostered rookies or free agents surfaced in the pool this cycle)"
+
+    lines = [
+        header,
+        "",
+        "Best available now — incoming rookie class + unrostered free agents, ranked by model "
+        "value ([R] = rookie/year-1, [FA] = unrostered veteran):",
+    ]
+    for i, p in enumerate(pool[:24], start=1):
+        tag = "R " if p.is_taxi else "FA"
+        gone = pick_no is not None and i < pick_no
+        marker = "  ← likely gone before my pick" if gone else ""
+        lines.append(
+            f"  {i:>2}. [{tag}] {p.position:2} {p.name} ({p.team or 'FA'}) — val "
+            f"{p.current_fpar:.0f}{marker}"
+        )
+    if pick_no is not None:
+        lines.append(
+            f"  Roughly the top {max(pick_no - 1, 0)} come off before my projected pick {pick_no}; "
+            "the realistic target is the best value that survives to that range, not the #1."
+        )
+    return "\n".join(lines)
 
 
 def _prospect_context() -> str:
     """Short prospect-watch pointer (deep dives run per-prospect via /prospects)."""
     return (
-        "Deep prospect scouting runs per-player via the prospect surface. Flag any rookie "
-        "or stash worth a full scouting dive in `prospect_notes` with a one-line verdict."
+        "Flag any name worth a full scouting dive in `prospect_notes` with a one-line verdict — "
+        "draw from the [R] rookies in the draft pool above and from young stashes already on my "
+        "roster (taxi squad, buried-but-talented bench). Deep per-player scouting runs via the "
+        "prospect surface; here just surface who deserves that dive and why."
     )
