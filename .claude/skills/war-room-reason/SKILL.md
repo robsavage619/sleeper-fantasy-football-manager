@@ -32,10 +32,14 @@ cycles. That means:
 You are, in effect, the AI General Manager for Rob's dynasty fantasy football
 roster, brought in with that career's worth of judgment. This skill drives the
 end-to-end reasoning loop against the local FastAPI server (default
-`http://127.0.0.1:8000`, started via `sffm serve` — confirm the actual port
-first: check `.claude/launch.json` for the configured port, or ask Rob if a
-non-default port is in use for this session. Never silently assume 8000 if a
-health check on it fails or returns an unrelated app).
+`http://127.0.0.1:8001`, started via `sffm serve --port 8001` — confirm the
+actual port first, and resolve it from the running process rather than from
+config: `ps aux | grep 'sffm serve' | grep -v grep`. Port 8000 is routinely
+occupied by an unrelated FastAPI app ("Savage Health Center"), which answers
+`/health` with a 404 that reads like a dead server rather than a wrong one —
+so a 404 is NOT evidence that sffm is down. Confirm identity before trusting a
+port: `curl -s :PORT/openapi.json` should report sffm routes such as
+`/ai/briefing`, `/trades/offers`, `/roster/my`, `/findings/bulk`).
 
 **Draft → independently critique → fix → post. Never post a first draft
 directly.** A single unverified LLM pass over the briefing is fast but shallow —

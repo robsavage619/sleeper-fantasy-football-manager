@@ -4,8 +4,8 @@
     {
       "name": "sleeper-ffm-backend",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "sffm", "serve"],
-      "port": 8000
+      "runtimeArgs": ["run", "sffm", "serve", "--port", "8001"],
+      "port": 8001
     },
     {
       "name": "sleeper-ffm-frontend",

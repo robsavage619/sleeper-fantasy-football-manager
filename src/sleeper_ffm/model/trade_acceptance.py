@@ -424,7 +424,7 @@ def _acceptance_score(
     score = max(5, min(98, round(raw)))
     confidence = "HIGH" if score >= 74 else "MED" if score >= 54 else "LOW"
     rationale = (
-        f"{position_fit}/30 roster-fit, {margin_for_partner:+.1f} value margin, "
+        f"{position_fit}/30 roster-fit, {margin_for_partner:+.1f} value margin to them, "
         f"{history.approachability if history else 'UNKNOWN'} approachability, "
         f"{partner.contention.label.lower()} window"
     )
