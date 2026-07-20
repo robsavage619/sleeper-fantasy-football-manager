@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Sleeper War Room">
+  <rect width="32" height="32" rx="6" fill="#060a12"/>
+  <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="5.25" fill="none" stroke="#162035" stroke-width="1.5"/>
+  <!-- Ascending read on the board: the war-room signal, legible at 16px -->
+  <rect x="6" y="18" width="4.5" height="8" rx="1" fill="#3a7cc0"/>
+  <rect x="13.75" y="12" width="4.5" height="14" rx="1" fill="#00b8cc"/>
+  <rect x="21.5" y="6" width="4.5" height="20" rx="1" fill="#d4860c"/>
+</svg>

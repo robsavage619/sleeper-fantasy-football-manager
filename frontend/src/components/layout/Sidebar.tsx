@@ -155,7 +155,10 @@ export function Sidebar() {
         <img
           src="/logo.png"
           alt="Sleeper War Room"
-          style={{ width: '100%', height: 'auto', display: 'block' }}
+          // The asset carries a baked-in black field; screen blending drops it
+          // against the dark sidebar so the mark reads as part of the chrome
+          // instead of a pasted-on slab.
+          style={{ width: '100%', height: 'auto', display: 'block', mixBlendMode: 'screen' }}
           onError={(e) => {
             // Fallback: hide the broken image, show text brand
             ;(e.currentTarget as HTMLImageElement).style.display = 'none'

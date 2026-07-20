@@ -58,3 +58,52 @@ body {
 .war-pulse {
   animation: warPulse 1.8s ease-in-out infinite;
 }
+
+/* Skeleton shimmer for loading states — a scan sweeping across a dim bar,
+   reading as a terminal still acquiring signal rather than a dead label. */
+@keyframes warScan {
+  0% { background-position: -180% 0; }
+  100% { background-position: 180% 0; }
+}
+.war-skeleton {
+  background: linear-gradient(
+    90deg,
+    #0c1625 0%,
+    #0c1625 35%,
+    #16283f 50%,
+    #0c1625 65%,
+    #0c1625 100%
+  );
+  background-size: 220% 100%;
+  animation: warScan 1.6s ease-in-out infinite;
+  border-radius: 2px;
+}
+
+/* Collectible-card sheen — a slow diagonal highlight that sweeps once on hover. */
+@keyframes warSheen {
+  0% { transform: translateX(-120%) skewX(-18deg); opacity: 0; }
+  18% { opacity: 1; }
+  100% { transform: translateX(320%) skewX(-18deg); opacity: 0; }
+}
+.war-card-sheen::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 42px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  opacity: 0;
+}
+.war-card-sheen:hover::after {
+  animation: warSheen 0.9s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .war-pulse,
+  .war-skeleton,
+  .war-card-sheen:hover::after {
+    animation: none;
+  }
+}

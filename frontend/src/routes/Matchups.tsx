@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
+import { Link } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { Empty, INK, InfoTip, Loading, PosTag, SectionTitle, STATUS } from '@/components/viz'
 import { GLOSSARY } from '@/lib/glossary'
@@ -14,6 +15,138 @@ function sosColor(idx: number): string {
   return '#6a8098'
 }
 
+/**
+ * Estimated NFL kickoff: the Thursday following Labor Day (first Monday of
+ * September). A league-scheduling convention, not a Sleeper-confirmed date —
+ * labelled EST. in the UI for that reason.
+ */
+function estimatedKickoff(season: number): Date {
+  // Built in local time — a UTC date renders a day early west of Greenwich.
+  const dow = new Date(season, 8, 1).getDay() // 0=Sun … 1=Mon
+  const laborDay = 1 + ((8 - dow) % 7)
+  return new Date(season, 8, laborDay + 3)
+}
+
+/**
+ * Off-season replacement for the gameday readout. There is no matchup to
+ * report, so the room re-tasks itself to the work that actually matters
+ * between seasons instead of printing a dead one-liner.
+ */
+function OffSeasonBoard({
+  note,
+  season,
+  seasonType,
+  myPicks,
+}: {
+  note: string | null
+  season: string | null
+  seasonType: string | null
+  myPicks: number | null
+}) {
+  const year = Number(season)
+  const kickoff = Number.isFinite(year) && year > 2000 ? estimatedKickoff(year) : null
+  const days = kickoff ? Math.max(0, Math.ceil((kickoff.getTime() - Date.now()) / 86_400_000)) : null
+
+  const priorities = [
+    {
+      to: '/prospects',
+      label: 'SCOUT THE CLASS',
+      body: 'Rookie board with AI scout reports — the cheapest value in the calendar.',
+      color: '#00b8cc',
+    },
+    {
+      to: '/draft',
+      label: 'WORK THE BOARD',
+      body: myPicks != null ? `${myPicks} pick${myPicks === 1 ? '' : 's'} of draft capital to deploy.` : 'Set the board before you are on the clock.',
+      color: '#d4860c',
+    },
+    {
+      to: '/trades',
+      label: 'MOVE WHILE LIQUID',
+      body: 'The off-season market is the most liquid it gets. Convert frozen depth now.',
+      color: '#24a870',
+    },
+  ]
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-end gap-8 mb-4">
+        <div>
+          <div className="tracking-[0.2em] uppercase" style={{ fontSize: 10, color: '#3d5070' }}>
+            {seasonType ? seasonType.replace(/_/g, ' ').toUpperCase() : 'OFF-SEASON'}
+          </div>
+          <div
+            style={{
+              fontFamily: "'Barlow Condensed', sans-serif",
+              fontSize: 40,
+              fontWeight: 800,
+              lineHeight: 1,
+              color: '#e8eef6',
+            }}
+          >
+            NO GAMES ON THE BOARD
+          </div>
+        </div>
+        {days != null && (
+          <div>
+            <div className="tracking-[0.2em] uppercase" style={{ fontSize: 10, color: '#3d5070' }}>
+              EST. KICKOFF · {kickoff!.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span
+                style={{
+                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontSize: 48,
+                  fontWeight: 800,
+                  lineHeight: 1,
+                  color: '#00b8cc',
+                }}
+              >
+                {days}
+              </span>
+              <span className="tracking-[0.18em] uppercase" style={{ fontSize: 11, color: '#6a8098' }}>
+                DAYS OUT
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {note && (
+        <div style={{ color: '#6a8098', fontSize: 12, marginBottom: 14, fontFamily: "'DM Mono', monospace" }}>
+          {note}
+        </div>
+      )}
+
+      <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))' }}>
+        {priorities.map((p) => (
+          <Link
+            key={p.to}
+            to={p.to}
+            style={{
+              display: 'block',
+              padding: '12px 14px',
+              background: '#09111f',
+              border: '1px solid #162035',
+              borderLeft: `2px solid ${p.color}`,
+              borderRadius: 2,
+              textDecoration: 'none',
+            }}
+          >
+            <div
+              className="tracking-[0.16em] uppercase mb-1.5"
+              style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 13, color: p.color }}
+            >
+              {p.label}
+            </div>
+            <div style={{ fontSize: 12, color: '#6a8098', lineHeight: 1.55 }}>{p.body}</div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function Matchups() {
   const gameday = useQuery({ queryKey: ['gameday'], queryFn: () => api.gameday(1) })
   const myRoster = useQuery({ queryKey: ['my-roster'], queryFn: () => api.myRoster() })
@@ -24,6 +157,7 @@ export function Matchups() {
   const me = useQuery({ queryKey: ['me'], queryFn: api.me, staleTime: 5 * 60 * 1000 })
   const owners = useQuery({ queryKey: ['owner-profiles'], queryFn: api.ownerProfiles, staleTime: 5 * 60 * 1000 })
   const vegasPlayoffs = useQuery({ queryKey: ['vegas-playoffs'], queryFn: api.vegasPlayoffs })
+  const state = useQuery({ queryKey: ['nfl-state'], queryFn: api.nflState, staleTime: 5 * 60 * 1000 })
 
   const week = gameday.data?.week ?? 1
   const weekMatchups = useQuery({
@@ -38,6 +172,8 @@ export function Matchups() {
 
   const nameByRoster = new Map<number, string>()
   for (const o of owners.data ?? []) nameByRoster.set(o.roster_id, o.display_name || `Roster ${o.roster_id}`)
+
+  const myPicks = (owners.data ?? []).find((o) => o.is_me)?.picks_owned ?? null
 
   // Pair matchup rows by matchup_id, ordering my own game first.
   const matchupPairs: Array<[import('@/lib/api').SleeperMatchup, import('@/lib/api').SleeperMatchup | undefined]> = []
@@ -112,9 +248,14 @@ export function Matchups() {
             )}
           </div>
         ) : (
-          <div style={{ color: '#6a8098', fontSize: 13 }}>{g?.note ?? 'No live matchup.'}</div>
+          <OffSeasonBoard
+            note={g?.note ?? null}
+            season={state.data?.season ?? null}
+            seasonType={state.data?.season_type ?? null}
+            myPicks={myPicks}
+          />
         )}
-        {gameday.isLoading && <Loading label="COMPUTING WIN PROBABILITY…" />}
+        {gameday.isLoading && <Loading label="COMPUTING WIN PROBABILITY" rows={2} />}
       </div>
 
       {/* Weekly matchups — every league game this week, not just mine */}
@@ -130,7 +271,7 @@ export function Matchups() {
               key={a.matchup_id ?? i}
               initial={{ opacity: 0, x: -6 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.02 }}
+              transition={{ delay: Math.min(i, 15) * 0.02 }}
               className="flex items-center gap-3 py-1.5 px-3"
               style={{
                 borderLeft: `2px solid ${mine ? STATUS.info : 'transparent'}`,
@@ -161,7 +302,7 @@ export function Matchups() {
       <div className="px-5 pb-2">
         {myFlagged.length === 0 && !env.isLoading && <Empty>No material venue/weather leans on the roster.</Empty>}
         {myFlagged.map((p, i) => (
-          <motion.div key={p.player_id} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.02 }} className="flex items-center gap-3 py-1.5" style={{ borderBottom: '1px solid #0e1526' }}>
+          <motion.div key={p.player_id} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(i, 15) * 0.02 }} className="flex items-center gap-3 py-1.5" style={{ borderBottom: '1px solid #0e1526' }}>
             <PosTag position={p.position} />
             <span style={{ fontSize: 13, color: '#e8eef6', width: 150 }}>{p.name}</span>
             <span style={{ fontSize: 12, color: '#8a9ab0' }}>{p.flags.join(' · ')}</span>
@@ -180,7 +321,7 @@ export function Matchups() {
           <Empty>{sched.data?.warnings?.[0] ?? 'Schedule not yet published for the upcoming season.'}</Empty>
         )}
         {mySos.map(({ p, idx }, i) => (
-          <motion.div key={p.player_id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.015 }} className="flex items-center gap-3 py-1">
+          <motion.div key={p.player_id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i, 15) * 0.015 }} className="flex items-center gap-3 py-1">
             <PosTag position={p.position} />
             <span style={{ fontSize: 13, color: '#e8eef6', width: 150 }}>{p.name}</span>
             <span style={{ fontSize: 11, color: '#6a8098', width: 40 }}>{p.team}</span>
@@ -242,7 +383,7 @@ export function Matchups() {
           <div className="px-5 pb-4">
             {(wire.data?.alerts ?? []).length === 0 && !wire.isLoading && <Empty>No available risers cleared the bar.</Empty>}
             {(wire.data?.alerts ?? []).slice(0, 12).map((a, i) => (
-              <motion.div key={a.player_id} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.02 }} className="flex items-center gap-2 py-1.5" style={{ borderBottom: '1px solid #0e1526' }}>
+              <motion.div key={a.player_id} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(i, 15) * 0.02 }} className="flex items-center gap-2 py-1.5" style={{ borderBottom: '1px solid #0e1526' }}>
                 <PosTag position={a.position} />
                 <span style={{ fontSize: 13, color: '#e8eef6', width: 140 }}>{a.name}</span>
                 <span style={{ fontSize: 11, color: '#24a870', fontFamily: "'DM Mono', monospace" }}>{a.note}</span>

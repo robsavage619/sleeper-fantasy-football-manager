@@ -87,7 +87,7 @@ function EdgeTable({ rows, tone }: { rows: MispricingEntry[]; tone: 'buy' | 'sel
       </thead>
       <tbody>
         {rows.map((e, i) => (
-          <motion.tr key={e.player_id + i} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.02 }}>
+          <motion.tr key={e.player_id + i} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(i, 15) * 0.02 }}>
             <td className="py-2 px-3" style={{ borderLeft: `2px solid ${color}`, fontSize: 13, color: INK.primary }}>{e.name}</td>
             <td className="py-2 px-3"><PosTag position={e.position} /></td>
             <td className="py-2 px-3" style={{ fontSize: 12, color: INK.muted, fontFamily: "'DM Mono', monospace" }}>{e.team}</td>
@@ -176,7 +176,7 @@ function RegTable({ rows, tone }: { rows: RegressionFlag[]; tone: 'buy' | 'sell'
       </thead>
       <tbody>
         {rows.map((f, i) => (
-          <motion.tr key={f.player_id + i} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.02 }}>
+          <motion.tr key={f.player_id + i} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(i, 15) * 0.02 }}>
             <td className="py-2 px-3" style={{ borderLeft: `2px solid ${color}`, fontSize: 13, color: INK.primary }}>{f.name}</td>
             <td className="py-2 px-3"><PosTag position={f.position} /></td>
             <td className="py-2 px-3 tabular-nums" style={{ fontSize: 12, color: INK.muted, fontFamily: "'DM Mono', monospace" }}>{f.total_tds.toFixed(0)}</td>
@@ -201,7 +201,7 @@ function blowoutColor(risk: number | null): string {
 function VegasRow({ g, i }: { g: VegasGame; i: number }) {
   const total = g.implied_total
   return (
-    <motion.tr initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.015 }}>
+    <motion.tr initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(i, 15) * 0.015 }}>
       <td className="py-2 px-3" style={{ fontSize: 13, color: INK.primary, width: 60 }}>{g.team}</td>
       <td className="py-2 px-3" style={{ fontSize: 12, color: INK.muted }}>{g.is_home ? 'vs' : '@'} {g.opponent}</td>
       <td className="py-2 px-3 tabular-nums" style={{ fontSize: 13, color: total != null ? INK.primary : INK.dim, fontFamily: "'DM Mono', monospace", fontWeight: 600 }}>
@@ -509,7 +509,7 @@ export function Market() {
               </thead>
               <tbody>
                 {(contention.data?.windows ?? []).map((w, i) => (
-                  <motion.tr key={w.roster_id} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.02 }}>
+                  <motion.tr key={w.roster_id} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: Math.min(i, 15) * 0.02 }}>
                     <td className="py-2 px-3" style={{ fontSize: 13, color: w.is_me ? STATUS.info : INK.primary, fontWeight: w.is_me ? 600 : 400, whiteSpace: 'nowrap' }}>{rosterName(w.roster_id)}{w.is_me ? ' ◆' : ''}</td>
                     <td className="py-2 px-3">
                       <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', padding: '2px 7px', color: LABEL_COLOR[w.label], background: `${LABEL_COLOR[w.label]}18`, borderRadius: 1, whiteSpace: 'nowrap' }}>{w.label}</span>
@@ -621,7 +621,7 @@ export function Market() {
                 key={o.roster_id}
                 initial={{ opacity: 0, x: -6 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.02 }}
+                transition={{ delay: Math.min(i, 15) * 0.02 }}
                 className="flex items-center gap-3 py-1.5"
                 style={{ borderBottom: '1px solid #0e1526' }}
               >

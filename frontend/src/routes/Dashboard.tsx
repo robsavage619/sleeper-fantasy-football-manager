@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import type { ReactNode } from 'react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, leagueFormatLabel, type PlayerAlert, type StartSitRec, type TransactionPlan, type WarRoomAction } from '@/lib/api'
-import { InfoTip, POS_COLOR, PosTag, STATUS } from '@/components/viz'
+import { api, leagueFormatLabel, type Finding, type PlayerAlert, type StartSitRec, type TransactionPlan, type WarRoomAction } from '@/lib/api'
+import { Empty, InfoTip, Loading, POS_COLOR, PosTag, STATUS, VerdictStamp } from '@/components/viz'
+import { buildStanding, evaluationAge, findingTime, stampDate } from '@/lib/standing'
 import { GLOSSARY } from '@/lib/glossary'
 
 function Panel({
@@ -425,9 +426,10 @@ function ActionQueue({
           Failed to load action queue{errorMessage ? ` · ${errorMessage}` : ''}
         </div>
       ) : top.length === 0 ? (
-        <div className="p-5" style={{ color: '#3d5070', fontSize: 12 }}>
-          No live actions. Data source may still be warming.
-        </div>
+        <Empty title="NO MOVES ON THE BOARD">
+          Nothing is demanding a decision right now — either the engines are still warming, or the
+          off-season is quiet. The draft and trade rooms are where the work is.
+        </Empty>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-px" style={{ background: '#162035' }}>
           {top.map((action, index) => {
@@ -730,18 +732,6 @@ function StartSitPanel({ rec, week }: { rec: StartSitRec | undefined; week: numb
   )
 }
 
-function relativeTime(iso: string | undefined): string {
-  if (!iso) return ''
-  const then = Date.parse(iso)
-  if (Number.isNaN(then)) return ''
-  const mins = Math.round((Date.now() - then) / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.round(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  return `${Math.round(hrs / 24)}d ago`
-}
-
 function summarizeFinding(kind: string, body: Record<string, unknown>): {
   title: string
   detail: string
@@ -820,6 +810,28 @@ function summarizeFinding(kind: string, body: Record<string, unknown>): {
   }
 }
 
+/** Human label for each decision kind, shown on the standing-evaluation rows. */
+const KIND_LABEL: Record<string, string> = {
+  narrative: 'STATE OF THE FRANCHISE',
+  trade_plan: 'TRADE PLAN',
+  market_edge: 'MARKET EDGES',
+  waiver_plan: 'WAIVER PLAN',
+  owner_dossier: 'RIVAL DOSSIER',
+  trade: 'TRADE CALL',
+  waiver: 'WAIVER CALL',
+  draft: 'DRAFT CALL',
+  lineup: 'LINEUP CALL',
+  prospect: 'PROSPECT CALL',
+}
+
+/**
+ * The AI GM's currently-standing evaluation.
+ *
+ * Findings are append-only, so a plain newest-first feed buried the weekly GM
+ * calls under the next 60-report scout batch. Each decision kind is instead
+ * shown as a standing document that holds until the next run replaces it, with
+ * scout reports collapsed into a separate library.
+ */
 function FindingsFeed() {
   const { data: findings, isLoading } = useQuery({
     queryKey: ['findings'],
@@ -827,72 +839,172 @@ function FindingsFeed() {
     refetchInterval: 60_000,
   })
 
-  if (isLoading) {
+  const standing = useMemo(() => buildStanding(findings), [findings])
+
+  if (isLoading) return <Loading label="Reading findings store" rows={4} />
+
+  if (standing.isEmpty) {
     return (
-      <div className="p-4" style={{ fontSize: 12, color: '#3d5070' }}>
-        Loading…
-      </div>
+      <Empty
+        title="NO STANDING EVALUATION"
+        action={
+          <Link
+            to="/narrative"
+            style={{ fontSize: 11, color: '#00b8cc', letterSpacing: '0.06em', textDecoration: 'none' }}
+          >
+            OPEN THE GM'S DESK →
+          </Link>
+        }
+      >
+        The war room has no verified calls on file. Run the{' '}
+        <code style={{ color: '#00b8cc' }}>war-room-reason</code> skill in Claude Code and its narrative,
+        trade, waiver, draft and lineup calls stand here until the next run.
+      </Empty>
     )
   }
 
-  if (!findings?.length) {
-    return (
-      <div className="p-5">
-        <p className="mb-2" style={{ fontSize: 13, color: '#6a8098', lineHeight: 1.5 }}>
-          No findings yet. Run the AI GM update — the <code style={{ color: '#00b8cc' }}>war-room-reason</code>{' '}
-          skill in Claude Code — and its verified narrative, trade, waiver, draft, and lineup calls appear here.
-        </p>
-        <Link
-          to="/narrative"
-          style={{ fontSize: 11, color: '#00b8cc', letterSpacing: '0.06em', textDecoration: 'none' }}
-        >
-          See how it works →
-        </Link>
-      </div>
-    )
-  }
+  const age = evaluationAge(standing.evaluatedAt)
 
   return (
     <div>
-      {findings.slice(0, 6).map((f, i) => {
+      {/* Standing-document header — makes clear this holds until superseded */}
+      <div
+        className="px-4 py-2.5 flex items-baseline justify-between gap-2 flex-wrap"
+        style={{ borderBottom: '1px solid #162035', background: 'rgba(0,184,204,0.03)' }}
+      >
+        <span
+          className="tracking-[0.16em] uppercase"
+          style={{ fontSize: 9.5, color: '#00b8cc', fontFamily: "'DM Mono', monospace" }}
+        >
+          EVALUATED {stampDate(standing.evaluatedAt)}
+        </span>
+        <span
+          className="tracking-[0.14em] uppercase"
+          style={{ fontSize: 9.5, color: age.stale ? '#d4860c' : '#3d5070', fontFamily: "'DM Mono', monospace" }}
+        >
+          {age.stale ? `STALE · ${age.label}` : `STANDS UNTIL NEXT RUN · ${age.label}`}
+        </span>
+      </div>
+
+      {standing.sections.map((f) => {
         const body = (f.body ?? {}) as Record<string, unknown>
         const { title, detail } = summarizeFinding(f.kind, body)
-        const stamp = relativeTime(body.generated_at as string | undefined)
+        const siblings = standing.byKind.get(f.kind)?.length ?? 1
         return (
-          <motion.div
+          // Not animated: the standing evaluation must be legible the instant
+          // it paints, not after an entrance fade resolves.
+          <div
             key={f.finding_id}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.06 }}
-            className="p-4 flex items-start gap-3"
+            className="px-4 py-3"
             style={{ borderBottom: '1px solid #162035' }}
           >
-            <span
-              className="shrink-0 mt-0.5 px-2 py-0.5 tracking-wider uppercase"
-              style={{
-                fontSize: 10,
-                color: '#00b8cc',
-                background: 'rgba(0, 184, 204, 0.08)',
-                border: '1px solid rgba(0, 184, 204, 0.2)',
-                borderRadius: 2,
-              }}
-            >
-              {f.kind}
-            </span>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-baseline justify-between gap-2">
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#c9d6e8' }}>{title}</span>
-                {stamp && <span style={{ fontSize: 10, color: '#3d5070' }}>{stamp}</span>}
-              </div>
-              {detail && (
-                <p className="mt-1" style={{ fontSize: 12, color: '#7a8fa8', lineHeight: 1.5 }}>
-                  {detail}
-                </p>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span
+                className="tracking-[0.18em] uppercase"
+                style={{
+                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontWeight: 800,
+                  fontSize: 11,
+                  color: '#00b8cc',
+                }}
+              >
+                {KIND_LABEL[f.kind] ?? f.kind.replace(/_/g, ' ').toUpperCase()}
+              </span>
+              {siblings > 1 && (
+                <span style={{ fontSize: 9.5, color: '#3d5070', fontFamily: "'DM Mono', monospace" }}>
+                  ×{siblings}
+                </span>
               )}
+              <span className="flex-1" style={{ height: 1, background: '#162035' }} />
+              <span style={{ fontSize: 9.5, color: '#3d5070', fontFamily: "'DM Mono', monospace" }}>
+                {stampDate(findingTime(f))}
+              </span>
             </div>
-          </motion.div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#c9d6e8' }}>{title}</div>
+            {detail && (
+              <p
+                className="mt-1"
+                style={{
+                  fontSize: 12,
+                  color: '#7a8fa8',
+                  lineHeight: 1.55,
+                  display: '-webkit-box',
+                  WebkitLineClamp: 3,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+              >
+                {detail}
+              </p>
+            )}
+          </div>
         )
       })}
+
+      {standing.scouts.length > 0 && <ScoutLibrary scouts={standing.scouts} />}
+
+      <div className="px-4 py-3">
+        <Link
+          to="/narrative"
+          style={{ fontSize: 11, color: '#00b8cc', letterSpacing: '0.08em', textDecoration: 'none' }}
+        >
+          READ THE FULL EVALUATION →
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+/** Scout reports collapsed into a library — a shelf of players, not a feed. */
+function ScoutLibrary({ scouts }: { scouts: Finding[] }) {
+  const [open, setOpen] = useState(false)
+  const preview = open ? scouts.slice(0, 12) : scouts.slice(0, 4)
+
+  return (
+    <div style={{ borderBottom: '1px solid #162035' }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full px-4 py-2.5 flex items-center gap-2 text-left"
+        style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+      >
+        <span
+          className="tracking-[0.18em] uppercase"
+          style={{ fontFamily: "'Barlow Condensed', sans-serif", fontWeight: 800, fontSize: 11, color: '#8aa0b8' }}
+        >
+          SCOUT LIBRARY
+        </span>
+        <span style={{ fontSize: 9.5, color: '#3d5070', fontFamily: "'DM Mono', monospace" }}>
+          {scouts.length} REPORTS
+        </span>
+        <span className="flex-1" style={{ height: 1, background: '#162035' }} />
+        <span style={{ fontSize: 10, color: '#3a7cc0', fontFamily: "'DM Mono', monospace" }}>
+          {open ? 'COLLAPSE' : 'EXPAND'}
+        </span>
+      </button>
+      <div className="px-4 pb-3 flex flex-col gap-1.5">
+        {preview.map((f) => {
+          const body = (f.body ?? {}) as Record<string, unknown>
+          const verdict = String(body.verdict ?? '')
+          return (
+            <div key={f.finding_id} className="flex items-center gap-2">
+              {verdict && <VerdictStamp verdict={verdict} />}
+              <span style={{ fontSize: 12, color: '#c9d6e8' }}>{String(body.name ?? '')}</span>
+              <span style={{ fontSize: 10.5, color: '#3d5070', fontFamily: "'DM Mono', monospace" }}>
+                {String(body.college ?? '')}
+              </span>
+            </div>
+          )
+        })}
+        {scouts.length > preview.length && (
+          <Link
+            to="/prospects"
+            className="mt-1"
+            style={{ fontSize: 10.5, color: '#3a7cc0', letterSpacing: '0.06em', textDecoration: 'none' }}
+          >
+            ALL {scouts.length} ON THE PROSPECT BOARD →
+          </Link>
+        )}
+      </div>
     </div>
   )
 }

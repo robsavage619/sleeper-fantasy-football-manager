@@ -243,7 +243,7 @@ export function Waivers() {
                   key={c.player_id}
                   initial={{ opacity: 0, x: -6 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.014 }}
+                  transition={{ delay: Math.min(i, 15) * 0.014 }}
                   onClick={() => setSelectedPlayerId(c.player_id)}
                   style={{ cursor: 'pointer' }}
                 >

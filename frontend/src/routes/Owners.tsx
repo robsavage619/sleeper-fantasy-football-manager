@@ -22,7 +22,7 @@ import {
   type TransactionValue,
   type DraftProfile,
 } from '@/lib/api'
-import { POS_COLOR } from '@/components/viz'
+import { Loading, POS_COLOR } from '@/components/viz'
 
 function useMyRosterId(): number | null {
   const { data } = useQuery({ queryKey: ['me'], queryFn: api.me, staleTime: 5 * 60 * 1000 })
@@ -164,81 +164,156 @@ function Stat({ value, label, color = C.text }: { value: React.ReactNode; label:
 }
 
 // ── card (grid) ──────────────────────────────────────────────────────────────
-function CardMetricRow({ label, value, barPct, barColor, note }: {
-  label: string; value: string; barPct: number; barColor: string; note?: string
-}) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ fontFamily: barlow, fontSize: 10, letterSpacing: '0.15em', color: '#4a6080', textTransform: 'uppercase', width: 80, flexShrink: 0 }}>{label}</span>
-      <div style={{ flex: 1, height: 3, background: C.border, borderRadius: 1, position: 'relative' }}>
-        <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${Math.min(barPct * 100, 100)}%`, background: barColor, borderRadius: 1, transition: 'width 0.4s ease' }} />
-      </div>
-      <span style={{ fontFamily: mono, fontSize: 11, color: barPct > 0.05 ? barColor : '#4a6080', width: 54, textAlign: 'right', flexShrink: 0 }}>{value}</span>
-      {note && <span style={{ fontFamily: mono, fontSize: 9, color: C.dim }}>{note}</span>}
-    </div>
-  )
-}
-
-function OwnerCard({ profile, index, skill, history, faab, onClick }: {
-  profile: OwnerProfile; index: number; skill?: OwnerSkillIndex; history?: OwnerHistory; faab?: FaabEntry; onClick: () => void
+/**
+ * Collectible-style GM card.
+ *
+ * The behavioral engine already names every manager (THE FAAB BULLY, THE PICK
+ * HOARDER) and grades them — characterful data that read as plain rows before.
+ * Here the nickname is the hero, the skill score is the card's power number,
+ * and the archetype tints the whole frame.
+ */
+function OwnerCard({ profile, skill, history, faab, onClick }: {
+  profile: OwnerProfile; skill?: OwnerSkillIndex; history?: OwnerHistory; faab?: FaabEntry; onClick: () => void
 }) {
   const [hovered, setHovered] = useState(false)
   const displayName = profile.display_name ?? profile.user_id
   const isMe = profile.is_me
-  const rvRaw = skill?.roster_value_pct ?? 1
+  const arch = ARCH_BORDER[profile.archetype]
   const nickname = history?.behavioral_type
+  const tierColor = skill ? TIER_COLOR[skill.skill_tier] : C.dim
+
+  const stats: Array<{ label: string; value: string; color: string }> = [
+    { label: 'PICKS', value: String(profile.picks_owned), color: C.amber },
+    { label: 'TRADES', value: history ? String(history.trade_count) : '—', color: C.text },
+    { label: 'FAAB', value: faab ? `$${faab.faab_remaining}` : '—', color: C.green },
+  ]
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }}
-      onClick={onClick} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick()
+        }
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className="war-card-sheen"
       style={{
-        background: hovered ? '#0f1d30' : C.panel, border: `1px solid ${hovered ? C.borderHi : C.border}`,
-        boxShadow: `inset 3px 0 0 ${ARCH_BORDER[profile.archetype]}`, borderRadius: 2,
-        padding: '14px 16px 14px 18px', display: 'flex', flexDirection: 'column', gap: 10,
-        cursor: 'pointer', transition: 'background 0.12s, border-color 0.12s',
+        position: 'relative',
+        overflow: 'hidden',
+        // Tinted toward the archetype hue rather than a flat panel — the frame
+        // itself carries the manager's identity.
+        background: `linear-gradient(158deg, ${arch}14 0%, ${C.panel} 42%, ${C.deep} 100%)`,
+        border: `1px solid ${hovered ? `${arch}88` : C.border}`,
+        borderRadius: 3,
+        padding: '16px 16px 14px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        cursor: 'pointer',
+        transform: hovered ? 'translateY(-2px)' : 'none',
+        boxShadow: hovered ? `0 6px 22px -12px ${arch}, inset 0 1px 0 ${arch}33` : `inset 0 1px 0 ${arch}22`,
+        transition: 'transform 0.16s ease-out, border-color 0.16s, box-shadow 0.16s',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <Avatar avatar={profile.avatar} name={displayName} size={40} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-            <span style={{ fontFamily: barlow, fontSize: 18, fontWeight: 700, color: C.text, letterSpacing: '0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</span>
-            <ArchetypeBadge archetype={profile.archetype} />
-            {isMe && <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.25em', padding: '2px 6px', color: C.cyan, background: 'rgba(0,184,204,0.1)', border: '1px solid rgba(0,184,204,0.3)', borderRadius: 1, textTransform: 'uppercase' }}>YOUR TEAM</span>}
-          </div>
-          {nickname && <div style={{ fontFamily: barlow, fontSize: 11, letterSpacing: '0.14em', color: '#5a7ba0', textTransform: 'uppercase', marginTop: 2 }}>{nickname}</div>}
+      {/* Corner crest — a clipped archetype-tinted notch, the card's foil edge.
+          Deliberately wordless: the archetype badge already names it. */}
+      <span
+        aria-hidden
+        style={{
+          position: 'absolute', top: 0, right: 0, width: 76, height: 76,
+          background: `linear-gradient(225deg, ${arch}2e 0%, transparent 62%)`,
+          pointerEvents: 'none',
+        }}
+      />
+
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <Avatar avatar={profile.avatar} name={displayName} size={52} />
+          {skill && (
+            <span
+              title={`${skill.skill_tier} · skill ${Math.round(skill.skill_score)}`}
+              style={{
+                position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)',
+                fontFamily: mono, fontSize: 12, fontWeight: 700, color: tierColor,
+                background: C.bg, border: `1px solid ${tierColor}66`, borderRadius: 10,
+                padding: '1px 8px', lineHeight: 1.4, whiteSpace: 'nowrap',
+              }}
+            >
+              {Math.round(skill.skill_score)}
+            </span>
+          )}
         </div>
-        {skill && (
-          <div style={{ textAlign: 'right', flexShrink: 0 }}>
-            <div style={{ fontFamily: mono, fontSize: 20, fontWeight: 700, color: TIER_COLOR[skill.skill_tier], lineHeight: 1 }}>{Math.round(skill.skill_score)}</div>
-            <div style={{ fontFamily: barlow, fontSize: 9, letterSpacing: '0.15em', color: '#4a6080', textTransform: 'uppercase' }}>SKILL</div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Nickname leads — it's the most characterful thing the engine knows */}
+          <div
+            style={{
+              fontFamily: barlow, fontSize: 21, fontWeight: 800, lineHeight: 1.05,
+              letterSpacing: '0.03em', color: nickname ? C.text : C.muted, textTransform: 'uppercase',
+            }}
+          >
+            {nickname ?? 'UNREAD'}
           </div>
-        )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 5 }}>
+            <span
+              style={{
+                fontSize: 12, color: C.muted, overflow: 'hidden',
+                textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130,
+              }}
+            >
+              {displayName}
+            </span>
+            <ArchetypeBadge archetype={profile.archetype} />
+            {isMe && (
+              <span style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.2em', padding: '2px 6px', color: C.cyan, background: 'rgba(0,184,204,0.1)', border: '1px solid rgba(0,184,204,0.3)', borderRadius: 1, textTransform: 'uppercase' }}>YOU</span>
+            )}
+          </div>
+        </div>
       </div>
+
+      {history?.behavioral_summary && (
+        <p
+          style={{
+            fontSize: 11.5, color: C.muted, lineHeight: 1.5, margin: 0,
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+          }}
+        >
+          {history.behavioral_summary}
+        </p>
+      )}
 
       <PosPills positions={profile.positions} />
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <span style={{ fontFamily: mono, fontSize: 11, color: C.amber }}>{profile.picks_owned} picks</span>
-          {history && <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>{history.trade_count} trades</span>}
-          {faab && <span style={{ fontFamily: mono, fontSize: 11, color: C.green }}>${faab.faab_remaining} FAAB</span>}
-        </div>
-        <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>{profile.player_count}p · {profile.taxi_count} taxi</span>
+      {/* Signature stat line — the card's back-of-pack numbers */}
+      <div
+        style={{
+          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6,
+          borderTop: `1px solid ${C.border}`, paddingTop: 10,
+        }}
+      >
+        {stats.map((s) => (
+          <div key={s.label}>
+            <div style={{ fontFamily: mono, fontSize: 15, fontWeight: 700, color: s.color, lineHeight: 1 }}>
+              {s.value}
+            </div>
+            <div style={{ fontFamily: barlow, fontSize: 8.5, letterSpacing: '0.18em', color: '#4a6080', textTransform: 'uppercase', marginTop: 3 }}>
+              {s.label}
+            </div>
+          </div>
+        ))}
       </div>
 
-      {skill && (
-        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <CardMetricRow label="LINEUP EFF" barPct={skill.lineup_efficiency} barColor={C.green} value={`${Math.round(skill.lineup_efficiency * 100)}%`} />
-          <CardMetricRow label="ROSTER VAL" barPct={Math.min(rvRaw / 2, 1)} barColor={rvRaw >= 1 ? C.green : C.amber} value={`${rvRaw >= 1 ? '+' : ''}${Math.round((rvRaw - 1) * 100)}%`} />
-        </div>
-      )}
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -4 }}>
-        <span style={{ fontFamily: barlow, fontSize: 9, letterSpacing: '0.2em', color: hovered ? '#3a7cc0' : '#2d4a5a', textTransform: 'uppercase', transition: 'color 0.12s' }}>SCOUTING REPORT →</span>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <span style={{ fontFamily: barlow, fontSize: 9, letterSpacing: '0.2em', color: hovered ? arch : '#2d4a5a', textTransform: 'uppercase', transition: 'color 0.16s' }}>
+          SCOUTING REPORT →
+        </span>
       </div>
-    </motion.div>
+    </div>
   )
 }
 
@@ -1518,8 +1593,8 @@ export function Owners() {
 
   if (isLoading) {
     return (
-      <div style={{ padding: '40px 20px', textAlign: 'center' }}>
-        <span style={{ fontFamily: barlow, fontSize: 14, letterSpacing: '0.3em', color: C.dim, textTransform: 'uppercase' }}>LOADING GM PROFILES…</span>
+      <div style={{ padding: '20px 0' }}>
+        <Loading label="Reading GM profiles" rows={5} />
       </div>
     )
   }
@@ -1542,7 +1617,33 @@ export function Owners() {
         </div>
       </div>
 
-      <div className="p-5 flex flex-col gap-4">
+      {/* League personalities lead the page — who these managers are, before
+          the charts explain how they've performed. */}
+      <div className="px-5 pt-5">
+        <div className="flex items-baseline gap-3 mb-3">
+          <h2 style={{ fontFamily: barlow, fontSize: 20, fontWeight: 800, color: C.text, letterSpacing: '0.06em', textTransform: 'uppercase', margin: 0 }}>
+            The League
+          </h2>
+          <span className="tracking-[0.2em] uppercase" style={{ fontSize: 10, color: C.dim }}>
+            {(profiles ?? []).length} MANAGERS · BEHAVIORAL READ
+          </span>
+        </div>
+      </div>
+
+      <div className="px-5 pb-5 grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }}>
+        {(profiles ?? []).map((profile) => (
+          <OwnerCard
+            key={profile.user_id}
+            profile={profile}
+            skill={skillByRosterId.get(profile.roster_id)}
+            history={historyByRosterId.get(profile.roster_id)}
+            faab={faabByRosterId.get(profile.roster_id)}
+            onClick={() => setSelectedRosterId(profile.roster_id)}
+          />
+        ))}
+      </div>
+
+      <div className="px-5 pb-5 flex flex-col gap-4">
         {skillData && profiles && (
           <SkillLuckQuadrant
             skills={skillData}
@@ -1557,20 +1658,6 @@ export function Owners() {
             onSelect={setSelectedRosterId}
           />
         )}
-      </div>
-
-      <div className="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {(profiles ?? []).map((profile, i) => (
-          <OwnerCard
-            key={profile.user_id}
-            profile={profile}
-            index={i}
-            skill={skillByRosterId.get(profile.roster_id)}
-            history={historyByRosterId.get(profile.roster_id)}
-            faab={faabByRosterId.get(profile.roster_id)}
-            onClick={() => setSelectedRosterId(profile.roster_id)}
-          />
-        ))}
       </div>
 
       <AnimatePresence>

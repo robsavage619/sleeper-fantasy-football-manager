@@ -830,18 +830,142 @@ export function ColHead({ children, color }: { children: import('react').ReactNo
   )
 }
 
-/** Centered loading label for a table/section still fetching. */
-export function Loading({ label }: { label: string }) {
+/**
+ * Loading state for a section still fetching — a labelled set of skeleton bars
+ * that shimmer like a terminal acquiring signal. `rows` should roughly match
+ * the shape of the content being awaited so the layout doesn't jump.
+ */
+export function Loading({ label, rows = 3 }: { label: string; rows?: number }) {
+  // Staggered widths read as content rather than a progress bar.
+  const widths = ['92%', '76%', '84%', '68%', '88%', '72%']
   return (
-    <div className="py-6 text-center tracking-widest uppercase" style={{ color: INK.dim, fontSize: 12 }}>
-      {label}
+    <div className="px-5 py-4" role="status" aria-live="polite">
+      <div
+        className="tracking-[0.22em] uppercase mb-3 flex items-center gap-2"
+        style={{ color: INK.dim, fontSize: 10, fontFamily: "'DM Mono', monospace" }}
+      >
+        <span className="war-pulse" style={{ color: STATUS.info }}>
+          ▮
+        </span>
+        {label}
+      </div>
+      <div className="flex flex-col gap-2">
+        {Array.from({ length: rows }, (_, i) => (
+          <div
+            key={i}
+            className="war-skeleton"
+            style={{ height: 10, width: widths[i % widths.length] }}
+          />
+        ))}
+      </div>
     </div>
   )
 }
 
-/** Left-aligned empty-state note inside a section. */
-export function Empty({ children }: { children: import('react').ReactNode }) {
-  return <div style={{ color: INK.dim, fontSize: 12, padding: '10px 20px' }}>{children}</div>
+/**
+ * Empty state inside a section. Optional `title` gives the blank space a
+ * war-room voice ("ALL QUIET ON THE WIRE") instead of a bare dim sentence.
+ */
+export function Empty({
+  children,
+  title,
+  action,
+}: {
+  children: import('react').ReactNode
+  title?: string
+  action?: import('react').ReactNode
+}) {
+  if (!title) {
+    return <div style={{ color: INK.dim, fontSize: 12, padding: '10px 20px' }}>{children}</div>
+  }
+  return (
+    <div
+      className="mx-5 my-4 px-4 py-5"
+      style={{
+        border: `1px dashed ${SURFACE.border2}`,
+        borderRadius: 2,
+        background: 'rgba(12, 22, 37, 0.4)',
+      }}
+    >
+      <div
+        className="tracking-[0.18em] uppercase mb-1.5"
+        style={{
+          fontFamily: "'Barlow Condensed', sans-serif",
+          fontSize: 13,
+          fontWeight: 800,
+          color: INK.muted,
+        }}
+      >
+        {title}
+      </div>
+      <div style={{ color: INK.dim, fontSize: 12, lineHeight: 1.6 }}>{children}</div>
+      {action && <div className="mt-3">{action}</div>}
+    </div>
+  )
+}
+
+/** Verdict vocabularies the engines emit, mapped to their status hue. */
+const VERDICT_COLOR: Record<string, string> = {
+  ELITE: STATUS.info,
+  STARTER: STATUS.good,
+  BUY: STATUS.good,
+  'BUY-LOW': STATUS.good,
+  STEAL: STATUS.good,
+  PRIORITY: STATUS.good,
+  DEPTH: STATUS.ok,
+  HOLD: INK.muted,
+  FAIR: INK.muted,
+  SPECULATIVE: STATUS.warn,
+  STASH: STATUS.warn,
+  SELL: STATUS.warn,
+  'SELL-HIGH': STATUS.warn,
+  REACH: STATUS.bad,
+  AVOID: STATUS.bad,
+  HIGH: STATUS.bad,
+  MED: STATUS.warn,
+  LOW: INK.muted,
+}
+
+/** Color for a verdict/urgency token, falling back to the neutral ink. */
+export function verdictColor(verdict: string): string {
+  return VERDICT_COLOR[verdict.toUpperCase()] ?? INK.muted
+}
+
+/**
+ * Rubber-stamp chip for an engine verdict (BUY / STASH / AVOID / HIGH …).
+ * `stamped` gives it the tilted, heavier treatment used for headline calls.
+ */
+export function VerdictStamp({
+  verdict,
+  stamped = false,
+  size = 'sm',
+}: {
+  verdict: string
+  stamped?: boolean
+  size?: 'sm' | 'lg'
+}) {
+  const text = verdict.toUpperCase()
+  const color = verdictColor(text)
+  const lg = size === 'lg'
+  return (
+    <span
+      className="inline-flex items-center uppercase shrink-0"
+      style={{
+        fontFamily: "'Barlow Condensed', sans-serif",
+        fontWeight: 800,
+        fontSize: lg ? 15 : 11,
+        letterSpacing: lg ? '0.14em' : '0.16em',
+        color,
+        border: `${stamped ? 2 : 1}px solid ${color}${stamped ? '99' : '55'}`,
+        background: `${color}${stamped ? '18' : '12'}`,
+        padding: lg ? '3px 11px' : '1px 7px',
+        borderRadius: 2,
+        transform: stamped ? 'rotate(-1.5deg)' : undefined,
+      }}
+    >
+      {text}
+    </span>
+  )
 }
 
 /** Minimal inline-SVG line sparkline for a price/value series over time. */
