@@ -1,8 +1,27 @@
 """Start/sit optimizer: pick the optimal lineup from Rob's roster.
 
-Projects each skill-position player on the roster using nflverse weekly FPAR,
-falling back to dynasty-value proxy or a 5.0 default for players without data.
 Solves the 1QB/3RB/3WR/1TE/2FLEX lineup and surfaces changes vs current starters.
+
+Projection sources, best first:
+
+1. **provider** (:mod:`sleeper_ffm.model.projections`) — rotowire's weekly projection,
+   re-scored under this league's rules. Measured most accurate of the available options:
+   MAE 4.497 vs 4.768 for a season-to-date average over 4,069 out-of-sample player-weeks
+   (``evals/backtest.py::run_forecast_backtest``). Roughly a 6% accuracy gain on the
+   numbers this optimizer actually sorts by.
+2. **nflverse_avg** — last-4 or season-to-date average. The previous top source, kept as
+   the fallback because the provider rides an undocumented endpoint.
+3. **dynasty_value_proxy**, then a 5.0 default.
+
+Every projection also carries a ``floor``/``ceiling`` from
+:mod:`sleeper_ffm.model.forecast`'s simulation, recentred on whichever point estimate was
+used. The provider ships one number per player; a lineup decision needs the spread, and a
+Monte-Carlo distribution is the only honest way to price the league's threshold bonuses.
+
+One correctness note worth keeping in view: the Vegas environment multiplier
+(:func:`~sleeper_ffm.model.vegas.environment_multiplier`) is applied to the *fallback*
+sources only. The provider's projection is already game-specific and already prices the
+matchup and the total, so scaling it again would double-count the same information.
 """
 
 from __future__ import annotations
@@ -37,8 +56,12 @@ class PlayerProjection:
     team: str
     projected_pts: float
     confidence: str  # "HIGH" | "MED" | "LOW"
-    source: str  # "nflverse_avg" | "dynasty_value_proxy" | "default"
+    source: str  # "provider" | "nflverse_avg" | "dynasty_value_proxy" | "default"
     notes: str
+    # Simulated p10/p90 around projected_pts. Both 0.0 when no distribution could be
+    # built (no box-score history for the player) — check before ranking on them.
+    floor: float = 0.0
+    ceiling: float = 0.0
 
 
 @dataclass
@@ -151,6 +174,120 @@ def _load_weekly_fp_map(season: int, up_to_week: int) -> dict[str, dict]:
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class _WeekEstimate:
+    """A provider point estimate and/or a simulated shape for one player-week."""
+
+    points: float | None = None
+    floor: float = 0.0
+    ceiling: float = 0.0
+
+
+def _week_estimates(
+    season: int,
+    week: int,
+    skill_ids: list[str],
+    sleeper_players: dict[str, dict],
+) -> tuple[dict[str, _WeekEstimate], str | None]:
+    """Provider projections plus simulated floor/ceiling for the rostered players.
+
+    Both halves are best-effort. The provider rides an undocumented endpoint and the
+    simulation needs cached nflverse history; either can be missing, and the caller
+    degrades to the nflverse-average path rather than failing.
+
+    Args:
+        season: NFL season being projected.
+        week: NFL week being projected.
+        skill_ids: Sleeper player_ids to estimate.
+        sleeper_players: Full Sleeper player dump, for position lookup.
+
+    Returns:
+        ``(estimates_by_player_id, warning)`` — ``warning`` is a human-readable note when
+        the provider feed could not be reached, else None.
+    """
+    from sleeper_ffm.model.forecast import build_priors, forecast_player
+    from sleeper_ffm.model.projections import ProjectionsUnavailableError, week_projections
+    from sleeper_ffm.sleeper.graphql import SleeperGraphQLError
+
+    out: dict[str, _WeekEstimate] = {}
+    warning: str | None = None
+
+    try:
+        provider = week_projections(str(season), week)
+    except (ProjectionsUnavailableError, SleeperGraphQLError, OSError) as exc:
+        log.warning("startsit: provider projections unavailable (%s)", exc)
+        provider = {}
+        warning = "Provider projections unavailable; fell back to nflverse averages."
+
+    for pid in skill_ids:
+        if (p := provider.get(pid)) is not None:
+            out[pid] = _WeekEstimate(points=p.league_points)
+
+    # Simulated shape, from this player's own box scores. Only the rostered players are
+    # simulated (tens, not thousands), so the Monte-Carlo cost here is trivial.
+    try:
+        priors = build_priors(season)
+        history, meta = _player_history(season, week)
+    except (FileNotFoundError, OSError) as exc:
+        log.warning("startsit: no history for simulated floor/ceiling (%s)", exc)
+        return out, warning
+
+    scoring = load_scoring()
+    id_map = load_id_map()
+    gsis_by_sleeper: dict[str, str] = {}
+    if {"sleeper_id", "gsis_id"} <= set(id_map.columns):
+        for r in id_map.select(["sleeper_id", "gsis_id"]).iter_rows(named=True):
+            if r.get("sleeper_id") and r.get("gsis_id"):
+                gsis_by_sleeper[str(r["sleeper_id"]).split(".")[0]] = str(r["gsis_id"])
+
+    for pid in skill_ids:
+        gsis = gsis_by_sleeper.get(pid)
+        if not gsis:
+            continue
+        rows = history.get(gsis)
+        if not rows:
+            continue
+        position = sleeper_players.get(pid, {}).get("position") or ""
+        if position not in SKILL_POSITIONS:
+            continue
+        forecast = forecast_player(
+            rows=rows,
+            player_id=pid,
+            name="",
+            position=position,
+            team=str(meta.get(gsis, {}).get("recent_team") or ""),
+            opponent="",
+            season=season,
+            week=week,
+            priors=priors,
+            scoring=scoring,
+        )
+        estimate = out.get(pid, _WeekEstimate())
+        # Recentre the simulated shape on the provider's mean when there is one; the
+        # provider forecasts the level better, the simulation supplies the spread.
+        shape = forecast.points
+        if estimate.points is not None:
+            shape = shape.recentered_to(estimate.points)
+        out[pid] = _WeekEstimate(points=estimate.points, floor=shape.floor, ceiling=shape.ceiling)
+
+    return out, warning
+
+
+def _player_history(season: int, week: int) -> tuple[dict[str, list[dict]], dict[str, dict]]:
+    """Per-player weekly rows before ``week``, keyed by gsis_id, oldest first."""
+    weekly = load_weekly([season])
+    if weekly.is_empty():
+        return {}, {}
+    weekly = weekly.filter((pl.col("season_type") == "REG") & (pl.col("week") < week))
+    history: dict[str, list[dict]] = {}
+    meta: dict[str, dict] = {}
+    for row in weekly.sort("week").iter_rows(named=True):
+        pid = str(row["player_id"])
+        history.setdefault(pid, []).append(row)
+        meta[pid] = row
+    return history, meta
+
+
 def _project_player(
     pid: str,
     sleeper_players: dict[str, dict],
@@ -158,13 +295,14 @@ def _project_player(
     dynasty_by_id: dict[str, PlayerAsset],
     season: int,
     week: int,
+    estimates: dict[str, _WeekEstimate] | None = None,
 ) -> PlayerProjection:
     """Build a single player's weekly projection.
 
-    Priority: nflverse_avg → dynasty_value_proxy → default 5.0. Every path is then
-    lightly scaled by the team's Vegas-implied scoring environment for this game
-    (:func:`environment_multiplier`) — a team implied to score well above league
-    average nudges its players up, one implied well below nudges them down.
+    Priority: provider → nflverse_avg → dynasty_value_proxy → default 5.0. The three
+    fallback paths are scaled by the team's Vegas-implied scoring environment
+    (:func:`environment_multiplier`); the provider path is not, because a weekly
+    projection already prices the matchup and the game total.
 
     Args:
         pid: Sleeper player_id.
@@ -173,6 +311,8 @@ def _project_player(
         dynasty_by_id: PlayerAsset lookup from build_player_assets.
         season: NFL season year, for the Vegas environment lookup.
         week: NFL week being projected, for the Vegas environment lookup.
+        estimates: Provider points and simulated floor/ceiling from
+            :func:`_week_estimates`. None disables both.
 
     Returns:
         PlayerProjection with best available estimate.
@@ -183,6 +323,28 @@ def _project_player(
     team = meta.get("team") or "FA"
     env_mult = environment_multiplier(season, week, team)
     env_note = f"; vegas env x{env_mult:.2f}" if env_mult != 1.0 else ""
+    estimate = (estimates or {}).get(pid, _WeekEstimate())
+    spread_note = (
+        f"; sim floor {estimate.floor:.1f}/ceil {estimate.ceiling:.1f}"
+        if estimate.ceiling > 0
+        else ""
+    )
+
+    if estimate.points is not None:
+        return PlayerProjection(
+            player_id=pid,
+            name=name,
+            position=position,
+            team=team,
+            projected_pts=max(0.0, round(estimate.points, 1)),
+            confidence="HIGH",
+            source="provider",
+            # No env multiplier here by design: the provider's number is already
+            # game-specific, so applying it again double-counts the matchup.
+            notes=f"provider proj (league-scored): {estimate.points:.1f}{spread_note}",
+            floor=estimate.floor,
+            ceiling=estimate.ceiling,
+        )
 
     if pid in weekly_fp_map:
         fp_data = weekly_fp_map[pid]
@@ -208,7 +370,9 @@ def _project_player(
             projected_pts=max(0.0, pts),
             confidence=confidence,
             source="nflverse_avg",
-            notes=notes,
+            notes=notes + spread_note,
+            floor=estimate.floor,
+            ceiling=estimate.ceiling,
         )
 
     if pid in dynasty_by_id:
@@ -224,6 +388,8 @@ def _project_player(
             confidence="LOW",
             source="dynasty_value_proxy",
             notes=f"dynasty value: {dynasty_val:.1f} (no weekly data){env_note}",
+            floor=estimate.floor,
+            ceiling=estimate.ceiling,
         )
 
     return PlayerProjection(
@@ -508,11 +674,18 @@ def build_startsit(week: int, season: int) -> StartSitRecommendation:
         )
         dynasty_by_id = {}
 
+    # Provider projections + simulated floor/ceiling (both best-effort).
+    estimates, provider_warning = _week_estimates(season, week, skill_ids, sleeper_players)
+    if provider_warning:
+        warnings.append(provider_warning)
+
     # Build projections for all roster players
     projections = [
-        _project_player(pid, sleeper_players, weekly_fp_map, dynasty_by_id, season, week)
+        _project_player(pid, sleeper_players, weekly_fp_map, dynasty_by_id, season, week, estimates)
         for pid in skill_ids
     ]
+    provider_count = sum(1 for p in projections if p.source == "provider")
+    log.info("startsit: %d/%d projections from the provider", provider_count, len(projections))
     default_count = sum(1 for p in projections if p.source == "default")
     proxy_count = sum(1 for p in projections if p.source == "dynasty_value_proxy")
     if default_count:

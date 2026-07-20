@@ -22,6 +22,28 @@ their calibration and the briefing prompt against ground truth.
 - **Monte-Carlo title equity** (`/season-sim`) — a seeded season simulator that turns
   roster strength into playoff and championship probability, re-basing trade
   evaluation onto Δ championship%.
+- **Weekly player projections, and the first forward-looking layer in the engine.**
+  Sleeper's undocumented GraphQL endpoint is the only source of projections (the REST
+  v1 API has none): `model/projections.py` pulls rotowire's weekly component line and
+  re-scores it under the league's own rules rather than trusting the provider's generic
+  `pts_ppr` — measured on 2026 wk1, that generic number runs ~2.2 points high for QBs in
+  this league and ~0 off for RB/WR/TE, so reading it straight would bake a positional
+  bias into every start/sit call. Now the top projection source in the start/sit
+  optimizer, replacing a season-to-date average (MAE 4.497 vs 4.768 out of sample).
+- **In-house forecast engine** (`model/forecast.py`) — volume x efficiency with
+  empirical-Bayes shrinkage toward positional priors (the shrinkage constant
+  `k = within_var/between_var` is estimated from the season's data, not hand-tuned) and
+  a Monte-Carlo simulation that scores every draw with the league's scoring engine.
+  Because each draw is scored individually, threshold bonuses fire at their true
+  probability instead of being rounded away by a mean stat line.
+  **It does not beat the free projection** — MAE 4.739 vs rotowire's 4.497 over 4,069
+  out-of-sample player-weeks, with the two sets of errors correlated at 0.935, so
+  blending buys nothing either. Its value is the *distribution*: the provider ships one
+  number per player, and a lineup decision needs a floor and a ceiling. It also stands
+  as the fallback if the undocumented endpoint disappears (~5% worse, not zero).
+- **Forecast backtest** (`evals/backtest.py::run_forecast_backtest`) — fits priors on
+  one season and scores the next, against a season-to-date baseline, a last-4 baseline,
+  and the provider. The comparison that produced the numbers above.
 - **Contention-window classifier** (`/contention`) — labels every roster
   WIN-NOW / SUSTAIN / RETOOL / REBUILD / HOLD from odds + core age + youth share,
   with per-team buy/sell guidance for trade targeting.

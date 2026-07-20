@@ -14,6 +14,9 @@ dependencies = [
     "fastapi>=0.115",
     "httpx>=0.28",
     "nfl-data-py>=0.3.2",
+    # Vectorized Monte-Carlo for model/forecast.py. Already present transitively via
+    # pandas/polars; declared explicitly because it is imported directly.
+    "numpy>=2.0",
     "pandas>=2.2",
     "playwright>=1.48",
     "polars>=1.10",

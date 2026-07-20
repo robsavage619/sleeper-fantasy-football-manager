@@ -36,7 +36,7 @@ import polars as pl
 from sleeper_ffm.model.regression import _aggregate_rows, compute_td_regression
 from sleeper_ffm.model.valuation import SKILL_POSITIONS
 from sleeper_ffm.nflverse.loader import load_id_map, load_pbp
-from sleeper_ffm.scoring.engine import load_scoring
+from sleeper_ffm.scoring.engine import load_scoring, score
 
 log = logging.getLogger(__name__)
 
@@ -509,9 +509,7 @@ def run_season_sim_backtest(
                 if rid in weekly_points and pts is not None:
                     weekly_points[rid].append(float(pts))
 
-    strength = {
-        rid: (sum(pts) / len(pts) if pts else 0.0) for rid, pts in weekly_points.items()
-    }
+    strength = {rid: (sum(pts) / len(pts) if pts else 0.0) for rid, pts in weekly_points.items()}
     strength = {rid: s for rid, s in strength.items() if s > 0.0}
     if len(strength) < 4:
         raise BacktestUnavailableError(
@@ -552,4 +550,231 @@ def run_season_sim_backtest(
         champion_odds_rank=champion_rank,
         playoff_field_predicted_correctly=overlap,
         mean_title_odds_of_field=round(mean_field_odds, 4),
+    )
+
+
+# --- weekly forecast accuracy -------------------------------------------------------
+
+
+@dataclass
+class ForecastBacktestResult:
+    """Out-of-sample weekly forecast accuracy vs. every cheaper alternative.
+
+    Mean absolute error is in fantasy points per player-week under this league's scoring.
+    ``n_forecasts`` is the number of scored player-weeks, not players.
+    """
+
+    train_season: int
+    eval_season: int
+    n_forecasts: int
+    first_week: int
+    mae_model: float
+    mae_season_to_date: float
+    mae_last4: float
+    mae_provider: float | None  # rotowire, when the feed is reachable
+    n_provider: int
+    rmse_model: float
+    rmse_season_to_date: float
+
+
+def _weekly_actuals(season: int) -> dict[tuple[str, int], float]:
+    """``(player_id, week) -> actual fantasy points`` under league scoring."""
+    from sleeper_ffm.model.valuation import score_weekly
+
+    scored = score_weekly([season])
+    if scored.is_empty():
+        return {}
+    return {
+        (str(r["player_id"]), int(r["week"])): float(r["fp_sffm"])
+        for r in scored.select(["player_id", "week", "fp_sffm"]).iter_rows(named=True)
+    }
+
+
+def _provider_points_by_week(
+    season: int,
+    weeks: list[int],
+    scoring: dict[str, float],
+) -> dict[tuple[str, int], float]:
+    """Rotowire projections re-scored under league rules, keyed by (gsis_id, week).
+
+    The provider feed is keyed by Sleeper player_id, so it is joined back to nflverse
+    gsis_ids through the crosswalk. Returns an empty mapping when the feed is
+    unreachable — the backtest then reports ``mae_provider=None`` rather than failing.
+    """
+    import httpx
+
+    from sleeper_ffm.sleeper.graphql import SleeperGraphQLClient, SleeperGraphQLError
+
+    id_map = load_id_map()
+    sleeper_to_gsis: dict[str, str] = {}
+    if {"sleeper_id", "gsis_id"} <= set(id_map.columns):
+        for r in id_map.select(["sleeper_id", "gsis_id"]).iter_rows(named=True):
+            if r.get("sleeper_id") and r.get("gsis_id"):
+                sleeper_to_gsis[str(r["sleeper_id"]).split(".")[0]] = str(r["gsis_id"])
+    if not sleeper_to_gsis:
+        log.warning("forecast backtest: no sleeper_id->gsis_id crosswalk; skipping provider")
+        return {}
+
+    out: dict[tuple[str, int], float] = {}
+    try:
+        with SleeperGraphQLClient() as client:
+            for week in weeks:
+                for row in client.weekly_stats(season=str(season), week=week, category="proj"):
+                    gsis = sleeper_to_gsis.get(str(row.get("player_id")))
+                    stats = row.get("stats") or {}
+                    if not gsis or not stats:
+                        continue
+                    numeric = {k: float(v) for k, v in stats.items() if isinstance(v, int | float)}
+                    out[(gsis, week)] = score(numeric, scoring)
+    except (httpx.HTTPError, SleeperGraphQLError) as exc:
+        # The provider is a comparison, not an input: an unreachable feed costs the
+        # backtest one column, not the run.
+        log.warning("forecast backtest: provider feed unavailable (%s)", exc)
+        return {}
+    return out
+
+
+def run_forecast_backtest(
+    train_season: int,
+    eval_season: int,
+    first_week: int = 5,
+    min_history: int = 3,
+    n_sims: int = 400,
+    include_provider: bool = True,
+) -> ForecastBacktestResult:
+    """Score :mod:`sleeper_ffm.model.forecast` out-of-sample against cheaper baselines.
+
+    Priors and shrinkage constants are fitted on ``train_season`` and never refitted, so
+    nothing from ``eval_season`` leaks into the model's parameters. Within the evaluation
+    season each forecast is made from that player's *prior* weeks only.
+
+    Four forecasts compete on the same player-weeks:
+
+    * **model** — this repo's :func:`~sleeper_ffm.model.forecast.forecast_player` mean.
+    * **season-to-date** — the player's mean fantasy points so far. Hard to beat.
+    * **last-4** — mean of the four most recent games. The usual "he's hot" heuristic.
+    * **provider** — rotowire's projection for that week, re-scored under league rules,
+      so the comparison is like-for-like and not a scoring-settings artifact.
+
+    Args:
+        train_season: Season used to fit positional priors.
+        eval_season: Season scored against. Must differ from ``train_season``.
+        first_week: First week to forecast (earlier weeks have too little history).
+        min_history: Minimum prior games required to forecast a player-week.
+        n_sims: Monte-Carlo draws per forecast. Lower than production: only the mean is
+            scored here, and the mean converges far faster than the tail quantiles.
+        include_provider: Fetch the rotowire comparison. Requires network.
+
+    Returns:
+        Accuracy for every method on the common set of player-weeks.
+
+    Raises:
+        BacktestUnavailableError: Required nflverse data is not cached, or the seasons
+            are the same (which would leak the answer into the priors).
+    """
+    from sleeper_ffm.model.forecast import build_priors, forecast_player
+    from sleeper_ffm.nflverse.loader import load_weekly
+
+    if train_season == eval_season:
+        raise BacktestUnavailableError(
+            f"train and eval seasons are both {eval_season}; that is an in-sample fit, "
+            "not a backtest"
+        )
+
+    scoring = load_scoring()
+    priors = build_priors(train_season)
+    if not priors.rates:
+        raise BacktestUnavailableError(f"no priors could be fitted on season {train_season}")
+
+    weekly = load_weekly([eval_season])
+    if weekly.is_empty():
+        raise BacktestUnavailableError(f"no weekly data cached for season {eval_season}")
+    weekly = weekly.filter(pl.col("season_type") == "REG")
+
+    actuals = _weekly_actuals(eval_season)
+    if not actuals:
+        raise BacktestUnavailableError(f"could not score weekly actuals for {eval_season}")
+
+    history: dict[str, list[dict]] = {}
+    meta: dict[str, dict] = {}
+    for row in weekly.sort("week").iter_rows(named=True):
+        pid = str(row["player_id"])
+        history.setdefault(pid, []).append(row)
+        meta[pid] = row
+
+    weeks = sorted({int(w) for w in weekly["week"].unique() if int(w) >= first_week})
+    provider = _provider_points_by_week(eval_season, weeks, scoring) if include_provider else {}
+
+    errors: dict[str, list[float]] = {"model": [], "std": [], "last4": [], "provider": []}
+    squared: dict[str, list[float]] = {"model": [], "std": []}
+    n_provider = 0
+
+    for pid, rows in history.items():
+        position = str(meta[pid].get("position") or "")
+        if position not in SKILL_POSITIONS:
+            continue
+        by_week = {int(r["week"]): r for r in rows}
+        for week in weeks:
+            if week not in by_week:
+                continue
+            prior_rows = [by_week[w] for w in sorted(by_week) if w < week]
+            if len(prior_rows) < min_history:
+                continue
+            actual = actuals.get((pid, week))
+            if actual is None:
+                continue
+
+            forecast = forecast_player(
+                rows=prior_rows,
+                player_id=pid,
+                name=str(meta[pid].get("player_display_name") or ""),
+                position=position,
+                team=str(meta[pid].get("recent_team") or ""),
+                opponent=str(by_week[week].get("opponent_team") or ""),
+                season=eval_season,
+                week=week,
+                priors=priors,
+                scoring=scoring,
+                n_sims=n_sims,
+            )
+            prior_points = [actuals.get((pid, int(r["week"])), 0.0) for r in prior_rows]
+            season_to_date = sum(prior_points) / len(prior_points)
+            last4 = sum(prior_points[-4:]) / len(prior_points[-4:])
+
+            errors["model"].append(abs(forecast.points.mean - actual))
+            errors["std"].append(abs(season_to_date - actual))
+            errors["last4"].append(abs(last4 - actual))
+            squared["model"].append((forecast.points.mean - actual) ** 2)
+            squared["std"].append((season_to_date - actual) ** 2)
+
+            provider_points = provider.get((pid, week))
+            if provider_points is not None:
+                errors["provider"].append(abs(provider_points - actual))
+                n_provider += 1
+
+    if not errors["model"]:
+        raise BacktestUnavailableError(
+            f"no forecastable player-weeks in {eval_season} from week {first_week}"
+        )
+
+    def mae(key: str) -> float:
+        vals = errors[key]
+        return round(sum(vals) / len(vals), 3) if vals else 0.0
+
+    def rmse(key: str) -> float:
+        vals = squared[key]
+        return round((sum(vals) / len(vals)) ** 0.5, 3) if vals else 0.0
+
+    return ForecastBacktestResult(
+        train_season=train_season,
+        eval_season=eval_season,
+        n_forecasts=len(errors["model"]),
+        first_week=first_week,
+        mae_model=mae("model"),
+        mae_season_to_date=mae("std"),
+        mae_last4=mae("last4"),
+        mae_provider=mae("provider") if errors["provider"] else None,
+        n_provider=n_provider,
+        rmse_model=rmse("model"),
+        rmse_season_to_date=rmse("std"),
     )

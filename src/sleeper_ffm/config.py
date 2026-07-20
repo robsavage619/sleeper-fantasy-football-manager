@@ -16,6 +16,9 @@ DRAFT_ID = "1335321166155358208"  # annual rookie/offseason draft (4 rounds, lin
 MY_USER_ID = "507751121488523264"  # robsavage on Sleeper
 MY_ROSTER_ID = 2  # Rob's roster in this league
 SLEEPER_BASE = "https://api.sleeper.app/v1"
+# Sleeper's undocumented GraphQL endpoint — the only source of player projections
+# (the REST v1 API has none). See sleeper_ffm.sleeper.graphql for the stability caveats.
+SLEEPER_GRAPHQL = "https://sleeper.app/graphql"
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = PACKAGE_ROOT.parents[1]
