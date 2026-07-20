@@ -31,7 +31,7 @@ from dataclasses import dataclass
 
 import polars as pl
 
-from sleeper_ffm.config import MY_ROSTER_ID
+from sleeper_ffm.config import LATEST_COMPLETED_NFL_SEASON, MY_ROSTER_ID
 from sleeper_ffm.model.dynasty import PlayerAsset, value_player
 from sleeper_ffm.model.valuation import SKILL_POSITIONS, build_player_assets
 from sleeper_ffm.model.vegas import environment_multiplier
@@ -205,7 +205,7 @@ def _week_estimates(
         ``(estimates_by_player_id, warning)`` — ``warning`` is a human-readable note when
         the provider feed could not be reached, else None.
     """
-    from sleeper_ffm.model.forecast import build_priors, forecast_player
+    from sleeper_ffm.model.forecast import PositionalPriors, build_priors, forecast_player
     from sleeper_ffm.model.projections import ProjectionsUnavailableError, week_projections
     from sleeper_ffm.sleeper.graphql import SleeperGraphQLError
 
@@ -225,11 +225,27 @@ def _week_estimates(
 
     # Simulated shape, from this player's own box scores. Only the rostered players are
     # simulated (tens, not thousands), so the Monte-Carlo cost here is trivial.
+    #
+    # Early in a season — and all off-season — the season being projected has no box
+    # scores at all, which is precisely when a floor/ceiling is most wanted. Fall back to
+    # the last completed season rather than returning no distribution.
     try:
-        priors = build_priors(season)
         history, meta = _player_history(season, week)
+        priors = build_priors(season) if history else PositionalPriors(season=season)
+        if not history or not priors.rates:
+            fallback = LATEST_COMPLETED_NFL_SEASON
+            if fallback != season:
+                log.info(
+                    "startsit: no %s box scores yet; simulating spread off %s",
+                    season,
+                    fallback,
+                )
+                history, meta = _player_history(fallback, week=99)
+                priors = build_priors(fallback)
     except (FileNotFoundError, OSError) as exc:
         log.warning("startsit: no history for simulated floor/ceiling (%s)", exc)
+        return out, warning
+    if not history or not priors.rates:
         return out, warning
 
     scoring = load_scoring()
