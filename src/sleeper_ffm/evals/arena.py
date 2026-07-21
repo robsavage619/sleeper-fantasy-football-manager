@@ -65,6 +65,16 @@ What the levers did, and what remains:
   as lookahead in a historical replay. Whether that residual can close further is what the
   waiver/trade/H2H batteries and any future ranking work get measured against.
 
+* **In this league, "3 points below average" means near the bottom.** :func:`run_league_h2h`
+  replays every roster with the engine: it would out-manage only ~1 of 10 managers on
+  points. That is not a contradiction of the small capture gap — it *is* it. The managers
+  here are strong and tightly clustered (~84% capture, low spread), so sitting 3 points
+  under the pack ranks near last, not middle. The availability levers moved the engine from
+  well below the field to just below it; reaching "unbeatable" now requires clearing the
+  ranking bar above ~84%, which is a projection/news problem, not an availability one. The
+  arena is now sharp enough to see a 3-point gap and rank the engine within the league,
+  which is exactly the instrument needed to chase the rest.
+
 Why not simulate the current season
 ------------------------------------
 2026 has not been played — there are no outcomes to be blind about. A blind test needs a
@@ -661,6 +671,288 @@ def _extend_history(history: PointHistory, matchups: list[dict]) -> None:
         for pid, pts in (roster.get("players_points") or {}).items():
             if pid:
                 history.by_player.setdefault(pid, []).append(float(pts))
+
+
+# --- head-to-head counterfactual: would the engine have WON? ------------------------
+
+
+@dataclass
+class H2HResult:
+    """Would-we-have-won verdict for one roster over one season's regular schedule.
+
+    The counterfactual changes only this roster's lineup decisions; every opponent keeps
+    the exact score they really posted. So a flipped win is one this roster would have won
+    purely by setting a better lineup — nothing about the rest of the league moves.
+    """
+
+    season: int
+    league_id: str
+    roster_id: int
+    projector: str
+    n_weeks: int
+    engine_wins: int
+    engine_losses: int
+    actual_wins: int
+    actual_losses: int
+    engine_points_for: float
+    actual_points_for: float
+    # All-play: record vs every other team each week (schedule-luck-free strength).
+    engine_allplay_wins: int
+    actual_allplay_wins: int
+    allplay_games: int
+    # Mean weekly points the engine's lineup gained over the manager's, with a bootstrap CI.
+    points_margin: float
+    points_margin_ci: tuple[float, float]
+    # Two-sided sign-test p-value that the engine outscores the manager != half the time.
+    outscore_pvalue: float
+
+    def summary(self) -> str:
+        """One-line verdict."""
+        lo, hi = self.points_margin_ci
+        return (
+            f"{self.season} roster {self.roster_id} [{self.projector}]: engine "
+            f"{self.engine_wins}-{self.engine_losses} vs manager's "
+            f"{self.actual_wins}-{self.actual_losses} (H2H, {self.n_weeks} wks); "
+            f"all-play {self.engine_allplay_wins}/{self.allplay_games} vs "
+            f"{self.actual_allplay_wins}/{self.allplay_games}; "
+            f"outscored the manager {self.points_margin:+.1f} pts/wk "
+            f"[95% CI {lo:+.1f}, {hi:+.1f}], p={self.outscore_pvalue}"
+        )
+
+
+def run_h2h(
+    season: int,
+    roster_id: int | None = None,
+    projector: Projector | None = None,
+    projector_name: str = "engine",
+    min_week: int = _DEFAULT_MIN_WEEK,
+    league_id: str | None = None,
+) -> H2HResult:
+    """Replay one roster's season with engine lineups; would its record have improved?
+
+    Restricted to the regular season (``playoff_week_start - 1``), where ``matchup_id``
+    gives a real head-to-head opponent. Each week the target roster's blind engine lineup
+    is scored on realized points and compared to the opponent's actual total (the opponent
+    is untouched). All-play compares the roster's score to every other team's actual score
+    that week — a schedule-luck-free read.
+
+    Args:
+        season: Completed season to replay.
+        roster_id: Which roster to manage with the engine. Defaults to
+            :data:`~sleeper_ffm.config.MY_ROSTER_ID`.
+        projector: Lineup strategy. Defaults to :func:`make_engine_projector` for ``season``.
+        projector_name: Label for the result.
+        min_week: First week counted (earlier weeks warm the projection history).
+        league_id: Override the league; defaults to the season's entry in this dynasty.
+
+    Returns:
+        An :class:`H2HResult`.
+
+    Raises:
+        ArenaUnavailableError: League/matchups unavailable, or the roster never appears.
+    """
+    from sleeper_ffm.config import MY_ROSTER_ID
+    from sleeper_ffm.evals.stats import paired_diff_ci, sign_test_pvalue
+    from sleeper_ffm.sleeper.client import SleeperClient
+
+    target = roster_id if roster_id is not None else MY_ROSTER_ID
+
+    with SleeperClient() as client:
+        lid = league_id or _resolve_league_id(client, season)
+        if lid is None:
+            raise ArenaUnavailableError(f"no league in this dynasty's history for season {season}")
+        league = client.league(lid)
+        roster_positions = list(league.roster_positions or [])
+        if not roster_positions:
+            raise ArenaUnavailableError(f"league {lid} has no roster_positions")
+        regular_weeks = int(league.settings.get("playoff_week_start", 15)) - 1
+        positions = _player_positions(client)
+        proj = projector or make_engine_projector(season)
+
+        history = PointHistory()
+        engine_pf = actual_pf = 0.0
+        e_wins = e_losses = a_wins = a_losses = 0
+        e_ap = a_ap = ap_games = 0
+        engine_series: list[float] = []
+        actual_series: list[float] = []
+
+        for week in range(1, regular_weeks + 1):
+            try:
+                matchups = client.matchups(week, league_id=lid)
+            except Exception as exc:
+                log.warning("h2h: %s week %s unavailable: %s", season, week, exc)
+                matchups = []
+            if not matchups:
+                continue
+
+            if week >= min_week:
+                verdict = _score_h2h_week(
+                    week, matchups, target, positions, roster_positions, history, proj
+                )
+                if verdict is not None:
+                    engine_pts, actual_pts, opp_pts, others = verdict
+                    engine_pf += engine_pts
+                    actual_pf += actual_pts
+                    engine_series.append(engine_pts)
+                    actual_series.append(actual_pts)
+                    if opp_pts is not None:
+                        e_wins += engine_pts > opp_pts
+                        e_losses += engine_pts < opp_pts
+                        a_wins += actual_pts > opp_pts
+                        a_losses += actual_pts < opp_pts
+                    for o in others:
+                        ap_games += 1
+                        e_ap += engine_pts > o
+                        a_ap += actual_pts > o
+
+            _extend_history(history, matchups)
+
+    if not engine_series:
+        raise ArenaUnavailableError(f"roster {target} produced no scorable weeks in {season}")
+
+    margins = [e - a for e, a in zip(engine_series, actual_series, strict=True)]
+    wins = sum(1 for m in margins if m > 0)
+    return H2HResult(
+        season=season,
+        league_id=lid,
+        roster_id=target,
+        projector=projector_name,
+        n_weeks=len(engine_series),
+        engine_wins=e_wins,
+        engine_losses=e_losses,
+        actual_wins=a_wins,
+        actual_losses=a_losses,
+        engine_points_for=round(engine_pf, 2),
+        actual_points_for=round(actual_pf, 2),
+        engine_allplay_wins=e_ap,
+        actual_allplay_wins=a_ap,
+        allplay_games=ap_games,
+        points_margin=round(statistics.mean(margins), 2),
+        points_margin_ci=paired_diff_ci(engine_series, actual_series),
+        outscore_pvalue=sign_test_pvalue(wins, len(margins)),
+    )
+
+
+@dataclass
+class LeagueH2HResult:
+    """Every roster replayed with the same engine — does it beat the weaker managers?
+
+    Guards against reading too much into a single roster: the engine losing to one strong
+    manager (Rob's, say) and beating five weak ones are both true and both important. This
+    is the league-wide view.
+    """
+
+    season: int
+    league_id: str
+    projector: str
+    per_roster: list[H2HResult]
+
+    @property
+    def rosters_outscored(self) -> int:
+        """How many managers the engine outscored on average over the season."""
+        return sum(1 for r in self.per_roster if r.points_margin > 0)
+
+    @property
+    def rosters_out_allplayed(self) -> int:
+        """How many managers the engine beat on all-play record (schedule-luck-free)."""
+        return sum(1 for r in self.per_roster if r.engine_allplay_wins > r.actual_allplay_wins)
+
+    def summary(self) -> str:
+        """One-line league-wide verdict."""
+        n = len(self.per_roster)
+        return (
+            f"{self.season} [{self.projector}]: engine would out-manage "
+            f"{self.rosters_outscored}/{n} rosters on points, "
+            f"{self.rosters_out_allplayed}/{n} on all-play record"
+        )
+
+
+def run_league_h2h(
+    season: int,
+    projector_name: str = "engine",
+    min_week: int = _DEFAULT_MIN_WEEK,
+    league_id: str | None = None,
+) -> LeagueH2HResult:
+    """Replay every roster in the league with the engine and rank it against each manager.
+
+    The engine projector is built once and shared across all rosters (the per-player
+    forecast cache is reused), so this costs barely more than a single-roster H2H.
+
+    Args:
+        season: Completed season to replay.
+        projector_name: Label for the result.
+        min_week: First week counted.
+        league_id: Override the league.
+
+    Returns:
+        A :class:`LeagueH2HResult` with a per-roster :class:`H2HResult` list.
+
+    Raises:
+        ArenaUnavailableError: League/matchups unavailable.
+    """
+    from sleeper_ffm.sleeper.client import SleeperClient
+
+    with SleeperClient() as client:
+        lid = league_id or _resolve_league_id(client, season)
+        if lid is None:
+            raise ArenaUnavailableError(f"no league in this dynasty's history for season {season}")
+        roster_ids = sorted(int(r.roster_id) for r in client.rosters(lid))
+
+    projector = make_engine_projector(season)
+    per_roster: list[H2HResult] = []
+    for rid in roster_ids:
+        try:
+            per_roster.append(
+                run_h2h(
+                    season,
+                    roster_id=rid,
+                    projector=projector,
+                    projector_name=projector_name,
+                    min_week=min_week,
+                    league_id=lid,
+                )
+            )
+        except ArenaUnavailableError as exc:
+            log.warning("league_h2h: roster %s skipped: %s", rid, exc)
+    if not per_roster:
+        raise ArenaUnavailableError(f"no rosters produced scorable weeks for {season}")
+    return LeagueH2HResult(
+        season=season, league_id=lid, projector=projector_name, per_roster=per_roster
+    )
+
+
+def _score_h2h_week(
+    week: int,
+    matchups: list[dict],
+    target: int,
+    positions: dict[str, str],
+    roster_positions: list[str],
+    history: PointHistory,
+    projector: Projector,
+) -> tuple[float, float, float | None, list[float]] | None:
+    """Engine/actual/opponent points and all other teams' actual points for one week.
+
+    Returns ``None`` if the target roster has no scorable data this week.
+    """
+    by_roster = {int(r.get("roster_id", -1)): r for r in matchups}
+    roster = by_roster.get(target)
+    if roster is None:
+        return None
+    score = _replay_week(week, roster, positions, roster_positions, history, projector)
+    if score is None:
+        return None
+
+    # Head-to-head opponent shares the target's matchup_id.
+    my_mid = roster.get("matchup_id")
+    opp_pts: float | None = None
+    if my_mid is not None:
+        for rid, r in by_roster.items():
+            if rid != target and r.get("matchup_id") == my_mid:
+                opp_pts = float(r.get("points") or 0.0)
+                break
+
+    others = [float(r.get("points") or 0.0) for rid, r in by_roster.items() if rid != target]
+    return score.engine_pts, score.actual_pts, opp_pts, others
 
 
 def _resolve_league_id(client, season: int) -> str | None:

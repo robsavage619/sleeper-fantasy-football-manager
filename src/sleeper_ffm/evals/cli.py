@@ -15,8 +15,13 @@ eval_app = typer.Typer(help="Engine calibration + prompt fine-tuning eval harnes
 
 @eval_app.command("arena")
 def arena_cmd(
-    season: int = typer.Argument(..., help="Completed season to replay (2020-2024)."),
+    season: int = typer.Argument(..., help="Completed season to replay (2020-2025)."),
     projector: str = typer.Option("engine", "--projector", help="engine | season_avg | recency"),
+    h2h: bool = typer.Option(False, "--h2h", help="Head-to-head: would the engine have won more?"),
+    roster_id: int | None = typer.Option(
+        None, "--roster", help="H2H target roster (default: mine)."
+    ),
+    league: bool = typer.Option(False, "--league", help="H2H for every roster in the league."),
 ) -> None:
     """Replay a season's start/sit decisions blind and report engine vs managers vs optimal."""
     from sleeper_ffm.evals.arena import (
@@ -24,11 +29,27 @@ def arena_cmd(
         make_engine_projector,
         recency_projector,
         run_arena,
+        run_h2h,
+        run_league_h2h,
         season_average_projector,
     )
 
+    try:
+        if league:
+            result = run_league_h2h(season)
+            typer.echo(result.summary())
+            for r in sorted(result.per_roster, key=lambda x: -x.points_margin):
+                typer.echo(f"  {r.summary()}")
+            return
+        if h2h:
+            typer.echo(run_h2h(season, roster_id=roster_id).summary())
+            return
+    except ArenaUnavailableError as exc:
+        typer.echo(f"arena unavailable: {exc}")
+        raise typer.Exit(1) from exc
+
     builders = {
-        "engine": lambda: (make_engine_projector(season), "engine_forecast+bye"),
+        "engine": lambda: (make_engine_projector(season), "engine_forecast+avail"),
         "season_avg": lambda: (season_average_projector, "season_avg"),
         "recency": lambda: (recency_projector, "recency_L4"),
     }

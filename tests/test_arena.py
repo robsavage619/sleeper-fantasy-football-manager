@@ -202,3 +202,77 @@ def test_weeks_played_by_team_inverts_the_schedule() -> None:
     assert out["BUF"] == {1, 2}
     assert out["NYJ"] == {1}
     assert out["MIA"] == {2}
+
+
+# --- head-to-head counterfactual ----------------------------------------------------
+
+
+def test_score_h2h_week_pairs_opponent_by_matchup_id() -> None:
+    matchups = [
+        {
+            "roster_id": 2,
+            "matchup_id": 1,
+            "points": 100.0,
+            "players": ["qb1", "rb1", "wr1", "rb2"],
+            "starters": ["qb1", "rb1", "wr1", "rb2"],
+            "players_points": {"qb1": 25, "rb1": 30, "wr1": 15, "rb2": 20},
+        },
+        {"roster_id": 5, "matchup_id": 1, "points": 88.0, "players": [], "players_points": {}},
+        {"roster_id": 7, "matchup_id": 2, "points": 120.0, "players": [], "players_points": {}},
+    ]
+    out = arena._score_h2h_week(
+        6,
+        matchups,
+        2,
+        _POS,
+        _SLOTS,
+        arena.PointHistory(),
+        lambda *a: {"qb1": 25, "rb1": 30, "wr1": 15, "rb2": 20},
+    )
+    assert out is not None
+    _engine_pts, _actual_pts, opp_pts, others = out
+    assert opp_pts == 88.0  # roster 5 shares matchup_id 1
+    assert sorted(others) == [88.0, 120.0]  # every other roster's actual points
+
+
+def test_score_h2h_week_returns_none_when_roster_absent() -> None:
+    matchups = [
+        {"roster_id": 9, "matchup_id": 1, "points": 50.0, "players": [], "players_points": {}}
+    ]
+    assert (
+        arena._score_h2h_week(6, matchups, 2, _POS, _SLOTS, arena.PointHistory(), lambda *a: {})
+        is None
+    )
+
+
+def _h2h(roster_id: int, margin: float, e_ap: int, a_ap: int) -> arena.H2HResult:
+    return arena.H2HResult(
+        season=2024,
+        league_id="L",
+        roster_id=roster_id,
+        projector="engine",
+        n_weeks=11,
+        engine_wins=0,
+        engine_losses=0,
+        actual_wins=0,
+        actual_losses=0,
+        engine_points_for=0.0,
+        actual_points_for=0.0,
+        engine_allplay_wins=e_ap,
+        actual_allplay_wins=a_ap,
+        allplay_games=99,
+        points_margin=margin,
+        points_margin_ci=(0.0, 0.0),
+        outscore_pvalue=1.0,
+    )
+
+
+def test_league_h2h_counts_rosters_the_engine_beats() -> None:
+    result = arena.LeagueH2HResult(
+        season=2024,
+        league_id="L",
+        projector="engine",
+        per_roster=[_h2h(1, 5.0, 60, 50), _h2h(2, -3.0, 40, 55), _h2h(3, 1.0, 50, 50)],
+    )
+    assert result.rosters_outscored == 2  # rosters 1 and 3 have positive margin
+    assert result.rosters_out_allplayed == 1  # only roster 1 has more all-play wins
