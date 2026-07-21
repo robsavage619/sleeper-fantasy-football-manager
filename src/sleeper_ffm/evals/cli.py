@@ -51,7 +51,7 @@ def arena_cmd(
         raise typer.Exit(1) from exc
 
     builders = {
-        "engine": lambda: (make_engine_projector(season), "engine_forecast+avail"),
+        "engine": lambda: (make_engine_projector(season), "engine_forecast+avail+vegas"),
         "season_avg": lambda: (season_average_projector, "season_avg"),
         "recency": lambda: (recency_projector, "recency_L4"),
     }

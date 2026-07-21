@@ -41,13 +41,14 @@ The verdict so far
 ------------------
 Four seasons of this league, weeks 4-17, share of the hindsight-optimal lineup captured.
 The availability levers (injury-report gating + a box-score-absence discount) were the
-predicted fix for the original ~7-9 point gap, and they landed::
+predicted fix for the original ~7-9 point gap; Vegas game-environment (Lever D) then added
+a consistent sliver on top. ``engine`` below is the shipped config (availability + Vegas)::
 
-    season   managers   engine (base)   engine (+availability)   beat rate   dead starters/wk
-    2022      85.2%         76.3%              82.0%                 36%        1.49 -> 0.56
-    2023      85.1%         78.4%              81.8%                 39%        1.17 -> 0.45
-    2024      83.5%         77.4%              81.1%                 38%        1.29 -> 0.44
-    2025      84.2%          —                 81.0%                 39%           -> 0.44
+    season   managers   engine (base)   engine (shipped)   beat rate   dead starters/wk
+    2022      85.2%         76.3%             82.2%             36%        1.49 -> 0.56
+    2023      85.1%         78.4%             82.2%             39%        1.17 -> 0.45
+    2024      83.5%         77.4%             81.4%             38%        1.29 -> 0.44
+    2025      84.2%          —                81.3%             39%           -> 0.44
 
 What the levers did, and what remains:
 
@@ -64,6 +65,15 @@ What the levers did, and what remains:
   raw MAE — measured separately). Rotowire, which would help the ranking side, is excluded
   as lookahead in a historical replay. Whether that residual can close further is what the
   waiver/trade/H2H batteries and any future ranking work get measured against.
+
+* **The ranking side is a hard, grinding 0.3 points at a time.** Three ranking levers were
+  tried against the residual: a forecast/league-last-4 blend (rejected), prior-season DvP
+  matchup (rejected — year-stale noise), and Vegas game-environment (kept, +0.2-0.4pp on all
+  four seasons). Only the market signal helped, and only a little. This is consistent with
+  the forecast measuring ~as accurate as a season average in raw MAE: our point projection is
+  near the naive ceiling, and the manager's remaining edge is information we can't reconstruct
+  historically (late news) rather than a model we haven't written. The lesson is honest —
+  availability was low-hanging fruit worth ~4 points; ranking is a long grind worth tenths.
 
 * **In this league, "3 points below average" means near the bottom.** :func:`run_league_h2h`
   replays every roster with the engine: it would out-manage only ~1 of 10 managers on
@@ -297,7 +307,12 @@ def recency_projector(
     return out
 
 
-def make_engine_projector(season: int, blend_weight: float = 0.0) -> Projector:
+def make_engine_projector(
+    season: int,
+    blend_weight: float = 0.0,
+    use_vegas: bool = True,
+    use_matchup: bool = False,
+) -> Projector:
     """Build a projector backed by our in-house forecast — "our engine" as it ran that week.
 
     This is the real subject of the test. Skill players are projected by
@@ -320,10 +335,25 @@ def make_engine_projector(season: int, blend_weight: float = 0.0) -> Projector:
     once here and closed over; per-player forecasts are cached by ``(gsis_id, week)`` so a
     player is projected at most once per week across the whole replay.
 
+    Ranking levers (D & E), both leakage-safe for lineup ranking, and measured against the
+    residual gap the availability levers left:
+
+    * ``use_vegas`` (Lever D, **on by default — it earned it**) scales a skill player by his
+      team's Vegas-implied scoring environment that week. The implied total comes from lines
+      posted *before* kickoff, and its league-average divisor is shared by every player in the
+      week, so it cancels in within-week ranking — no lookahead. Measured +0.2 to +0.4 points
+      of capture on all four seasons (2022-2025); small but consistent and free, so it stays.
+    * ``use_matchup`` (Lever E, **off — rejected**) scales a skill player by the prior season's
+      defense-vs-position index of his week-``W`` opponent. Prior-season DvP is blind, but it
+      *hurt* (2023: 81.8% → 80.6%) — a year-stale, noisy signal that adds variance without
+      ranking value, and drags Vegas down when combined. Kept as a knob, off.
+
     Args:
         season: The season being replayed.
         blend_weight: Fraction of the projection taken from the player's league-scored
-            last-4 average rather than the forecast (Lever C). 0.0 = pure forecast.
+            last-4 average rather than the forecast (Lever C, rejected). 0.0 = pure forecast.
+        use_vegas: Apply the Vegas game-environment multiplier (Lever D). Default on.
+        use_matchup: Apply the prior-season opponent DvP multiplier (Lever E). Default off.
 
     Returns:
         A :data:`Projector`. If nflverse data is unavailable it degrades to
@@ -371,6 +401,9 @@ def make_engine_projector(season: int, blend_weight: float = 0.0) -> Projector:
         gsis: {int(r["week"]) for r in rows} for gsis, rows in rows_by_gsis.items()
     }
     forecast_cache: dict[tuple[str, int], float] = {}
+    vegas_mult = _vegas_multipliers(season) if use_vegas else {}
+    opp_by_team_week = _opponent_calendar(load_schedules, season) if use_matchup else {}
+    dvp = _prior_season_dvp(season) if use_matchup else {}
 
     def projector(
         wk: int, available: list[str], positions: dict[str, str], history: PointHistory
@@ -394,6 +427,13 @@ def make_engine_projector(season: int, blend_weight: float = 0.0) -> Projector:
                     if league_games:
                         league_l4 = statistics.mean(league_games[-4:])
                         base = (1 - blend_weight) * base + blend_weight * league_l4
+                team = team_by_gsis.get(gsis, "")
+                if use_vegas:
+                    base *= vegas_mult.get((team, wk), 1.0)
+                if use_matchup:
+                    opp = opp_by_team_week.get((team, wk))
+                    if opp is not None:
+                        base *= dvp.get((opp, pos), 1.0)
                 out[pid] = base * _availability_multiplier(
                     gsis, wk, week_injuries, weeks_played, team_by_gsis, box_weeks_by_gsis
                 )
@@ -501,6 +541,66 @@ def _weeks_played_by_team(load_schedules, season: int) -> dict[str, set[int]]:
             if team:
                 out.setdefault(team, set()).add(wk)
     return out
+
+
+def _opponent_calendar(load_schedules, season: int) -> dict[tuple[str, int], str]:
+    """``{(team, week): opponent}`` for the regular season."""
+    import polars as pl
+
+    sched = load_schedules([season])
+    if sched.is_empty():
+        return {}
+    reg = sched.filter((pl.col("season") == season) & (pl.col("game_type") == "REG"))
+    out: dict[tuple[str, int], str] = {}
+    for row in reg.iter_rows(named=True):
+        wk = int(row["week"])
+        home, away = row.get("home_team"), row.get("away_team")
+        if home and away:
+            out[(home, wk)] = away
+            out[(away, wk)] = home
+    return out
+
+
+def _vegas_multipliers(season: int) -> dict[tuple[str, int], float]:
+    """``{(team, week): environment multiplier}`` from the Vegas implied totals (Lever D).
+
+    Best-effort: an unavailable schedule degrades to an empty map (no adjustment).
+    """
+    try:
+        from sleeper_ffm.model.vegas import build_environment_index
+    except Exception:  # pragma: no cover - import guard
+        return {}
+    try:
+        env = build_environment_index(season)
+    except Exception as exc:
+        log.warning("arena: Vegas environment for %s unavailable (%s)", season, exc)
+        return {}
+    league_avg = env.league_avg_implied_total
+    if not league_avg:
+        return {}
+    out: dict[tuple[str, int], float] = {}
+    for game in env.games:
+        if game.implied_total is not None:
+            raw = game.implied_total / league_avg
+            out[(game.team, game.week)] = round(min(1.30, max(0.75, raw)), 3)
+    return out
+
+
+def _prior_season_dvp(season: int) -> dict[tuple[str, str], float]:
+    """Prior-season defense-vs-position index by ``(defense_team, position)`` (Lever E).
+
+    Fitted on ``season - 1`` — fully known before the replayed season, so blind. Best-effort:
+    missing prior-season data degrades to an empty map (every matchup neutral at 1.0).
+    """
+    try:
+        from sleeper_ffm.model.schedule_strength import compute_dvp
+        from sleeper_ffm.model.valuation import score_weekly
+
+        scored = score_weekly(seasons=[season - 1])
+        return compute_dvp(scored)
+    except Exception as exc:
+        log.warning("arena: prior-season DvP for %s unavailable (%s)", season, exc)
+        return {}
 
 
 def _injury_calendar(season: int) -> dict[int, dict[str, str]]:

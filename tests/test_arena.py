@@ -282,3 +282,28 @@ def test_engine_projector_accepts_blend_weight_knob() -> None:
     # Lever C was measured and rejected, but the knob must still build a valid projector.
     proj = arena.make_engine_projector(2024, blend_weight=0.5)
     assert callable(proj)
+
+
+def test_engine_projector_accepts_ranking_lever_knobs() -> None:
+    # Levers D (Vegas, default on) and E (matchup, rejected) must both build valid projectors.
+    assert callable(arena.make_engine_projector(2024, use_vegas=True, use_matchup=True))
+    assert callable(arena.make_engine_projector(2024, use_vegas=False, use_matchup=False))
+
+
+def test_opponent_calendar_maps_both_directions() -> None:
+    import polars as pl
+
+    def fake_load(_seasons):
+        return pl.DataFrame(
+            {
+                "season": [2024, 2024],
+                "game_type": ["REG", "REG"],
+                "week": [1, 2],
+                "home_team": ["BUF", "KC"],
+                "away_team": ["NYJ", "LAC"],
+            }
+        )
+
+    out = arena._opponent_calendar(fake_load, 2024)
+    assert out[("BUF", 1)] == "NYJ" and out[("NYJ", 1)] == "BUF"
+    assert out[("KC", 2)] == "LAC"
