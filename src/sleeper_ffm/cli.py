@@ -348,7 +348,7 @@ def trends_cmd(
 @app.command()
 def serve(
     host: str = typer.Option("127.0.0.1", help="Bind host"),
-    port: int = typer.Option(8000, help="Bind port"),
+    port: int = typer.Option(8001, help="Bind port"),
     reload: bool = typer.Option(False, "--reload", help="Hot-reload on file changes"),
 ) -> None:
     """Start the FastAPI development server."""

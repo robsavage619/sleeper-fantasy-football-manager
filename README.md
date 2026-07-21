@@ -206,7 +206,7 @@ uv sync
 uv run pytest                 # 334 tests
 uv run sffm eval run --tier 1 --split train   # 87 deterministic calibration scenarios
 uv run sffm ingest            # seed nflverse parquet (2014–2025) → data/nflverse/
-uv run sffm serve             # FastAPI on http://127.0.0.1:8000
+uv run sffm serve             # FastAPI on http://127.0.0.1:8001 (the port vite proxies to)
 
 # Frontend (proxies /api → backend)
 cd frontend && npm install
