@@ -125,3 +125,80 @@ def test_aggregate_computes_capture_and_beat_rate() -> None:
     assert result.engine_mean == 90.0 and result.actual_mean == 100.0
     assert result.engine_vs_actual_margin == -10.0
     assert result.engine_capture == round(90.0 / 125.0, 4)
+
+
+# --- availability levers (A: injury gating, B: DNP discount) -------------------------
+
+
+def test_availability_out_and_doubtful_are_zeroed() -> None:
+    for status in ("Out", "Doubtful"):
+        m = arena._availability_multiplier(
+            "g1", 5, {"g1": status}, {"BUF": {1, 2, 3, 4}}, {"g1": "BUF"}, {"g1": {1, 2, 3, 4}}
+        )
+        assert m == 0.0
+
+
+def test_availability_questionable_is_shaded_not_cut() -> None:
+    m = arena._availability_multiplier(
+        "g1", 5, {"g1": "Questionable"}, {"BUF": {1, 2, 3, 4}}, {"g1": "BUF"}, {"g1": {1, 2, 3, 4}}
+    )
+    assert m == arena._QUESTIONABLE_FACTOR
+
+
+def test_availability_healthy_active_player_is_untouched() -> None:
+    m = arena._availability_multiplier(
+        "g1", 5, {}, {"BUF": {1, 2, 3, 4}}, {"g1": "BUF"}, {"g1": {1, 2, 3, 4}}
+    )
+    assert m == 1.0
+
+
+def test_dnp_discount_when_player_missed_teams_last_game() -> None:
+    # Team played weeks 1-4; player has box scores only through week 3 → missed week 4.
+    m = arena._availability_multiplier(
+        "g1", 5, {}, {"BUF": {1, 2, 3, 4}}, {"g1": "BUF"}, {"g1": {1, 2, 3}}
+    )
+    assert m == arena._DNP_FACTOR
+
+
+def test_dnp_and_questionable_compound() -> None:
+    m = arena._availability_multiplier(
+        "g1", 5, {"g1": "Questionable"}, {"BUF": {1, 2, 3, 4}}, {"g1": "BUF"}, {"g1": {1, 2, 3}}
+    )
+    assert m == arena._QUESTIONABLE_FACTOR * arena._DNP_FACTOR
+
+
+def test_no_dnp_penalty_before_a_team_has_played() -> None:
+    # Week 1: no prior team games, so absence can't be judged — no penalty.
+    m = arena._availability_multiplier("g1", 1, {}, {"BUF": {1}}, {"g1": "BUF"}, {"g1": set()})
+    assert m == 1.0
+
+
+def test_injury_calendar_only_reads_the_projected_week(monkeypatch) -> None:
+    """Leakage guard: the multiplier is keyed by week, so a future Out can't leak back."""
+    injuries = {5: {"g1": "Out"}, 6: {"g1": "Questionable"}}  # g1 is Out in wk5, Q in wk6
+    # Projecting week 6 must see the wk6 status, never wk5's.
+    week6 = injuries.get(6, {})
+    m = arena._availability_multiplier(
+        "g1", 6, week6, {"BUF": {1, 2, 3, 4, 5}}, {"g1": "BUF"}, {"g1": {1, 2, 3, 4, 5}}
+    )
+    assert m == arena._QUESTIONABLE_FACTOR  # wk6 designation, not wk5's Out
+
+
+def test_weeks_played_by_team_inverts_the_schedule() -> None:
+    import polars as pl
+
+    def fake_load(_seasons):
+        return pl.DataFrame(
+            {
+                "season": [2024, 2024, 2024],
+                "game_type": ["REG", "REG", "REG"],
+                "week": [1, 1, 2],
+                "home_team": ["BUF", "KC", "BUF"],
+                "away_team": ["NYJ", "LAC", "MIA"],
+            }
+        )
+
+    out = arena._weeks_played_by_team(fake_load, 2024)
+    assert out["BUF"] == {1, 2}
+    assert out["NYJ"] == {1}
+    assert out["MIA"] == {2}

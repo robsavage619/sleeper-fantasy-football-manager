@@ -39,27 +39,31 @@ lookahead. The arena tests only what was reconstructable point-in-time.
 
 The verdict so far
 ------------------
-Three seasons of this league, weeks 4-17, share of the hindsight-optimal lineup captured::
+Four seasons of this league, weeks 4-17, share of the hindsight-optimal lineup captured.
+The availability levers (injury-report gating + a box-score-absence discount) were the
+predicted fix for the original ~7-9 point gap, and they landed::
 
-    season   managers   engine   season-avg   engine beat managers
-    2022      85.2%      76.3%      72.5%           19% of weeks
-    2023      85.1%      78.4%      73.8%           29%
-    2024      83.5%      77.4%      72.3%           25%
+    season   managers   engine (base)   engine (+availability)   beat rate   dead starters/wk
+    2022      85.2%         76.3%              82.0%                 36%        1.49 -> 0.56
+    2023      85.1%         78.4%              81.8%                 39%        1.17 -> 0.45
+    2024      83.5%         77.4%              81.1%                 38%        1.29 -> 0.44
+    2025      84.2%          —                 81.0%                 39%           -> 0.44
 
-Two stable, load-bearing conclusions:
+What the levers did, and what remains:
 
-* **The engine is directionally right.** Every season it beats the naive controls by 4-5
-  points of capture (forecast + bye-awareness > recency > season-average), so the tools we
-  built add real lineup value over a dumb heuristic.
-* **It does not yet beat good managers.** It trails the humans by ~7-9 points of capture
-  every season and wins only a quarter of roster-weeks. The managers here capture ~84% —
-  they are strong. The gap is dominated by *availability*: the engine zeroes byes but has
-  no point-in-time injury feed, so it still starts players who were questionable/out on
-  news a manager had. Closing that (an nflverse injury-report join) is the clear next lever,
-  and this harness is how we'll know if it worked.
-
-That is the honest answer to "are we going in the right direction": yes on the model, not
-yet on the outcome, and now we can measure every step toward it.
+* **Availability was the gap, and it was measurable.** The base engine started ~1.2-1.5
+  dead (0.0-point) starters per week; managers started ~0.3. Gating Out/Doubtful players to
+  zero, shading Questionable ones, and discounting anyone who missed his team's last game
+  cut that to ~0.45-0.56 — near the human rate — and lifted capture 3-6 points and the
+  beat-rate from ~25% to ~38% on every season. The tools now do most of what a manager
+  does before lock.
+* **A ~2-3 point residual remains, and it is honest.** The engine still trails the managers
+  by 2-3 points of capture. That gap is the reconstructable-information ceiling: late
+  Sunday-morning inactive news the weekly injury report doesn't carry, plus ordinary
+  ranking misses among healthy players (the forecast is ~as accurate as a season average in
+  raw MAE — measured separately). Rotowire, which would help the ranking side, is excluded
+  as lookahead in a historical replay. Whether that residual can close further is what the
+  waiver/trade/H2H batteries and any future ranking work get measured against.
 
 Why not simulate the current season
 ------------------------------------
@@ -96,6 +100,16 @@ _DEFAULT_MIN_WEEK = 4
 _DEFAULT_MAX_WEEK = 17
 
 _DEDICATED = ("QB", "RB", "WR", "TE", "K", "DEF")
+
+# Availability multipliers (Levers A & B). A player designated Out/Doubtful is zeroed; a
+# Questionable one plays ~75-80% of the time historically, so his projection is shaded
+# rather than cut. A player who missed his team's most recent game (no box-score row) is
+# heavily discounted but not zeroed — he may be returning, and the absence of an Out
+# designation this week is the "he's back" signal. Constants are documented, not tuned
+# per season; the arena is what tells us whether they help.
+_QUESTIONABLE_FACTOR = 0.8
+_OUT_STATUSES = frozenset({"Out", "Doubtful"})
+_DNP_FACTOR = 0.3
 
 
 class ArenaUnavailableError(RuntimeError):
@@ -137,6 +151,11 @@ class WeekScore:
     engine_pts: float
     actual_pts: float
     optimal_pts: float
+    # Starters that scored exactly 0.0 — the fingerprint of a bye/inactive/out player who
+    # should never have been in the lineup. The whole availability thesis is that the
+    # engine's count is higher than the managers'.
+    engine_zero_starters: int = 0
+    actual_zero_starters: int = 0
 
     @property
     def engine_beat_actual(self) -> bool:
@@ -162,6 +181,9 @@ class ArenaResult:
     # Share of the hindsight ceiling each side captured (higher = better lineup-setting).
     engine_capture: float
     actual_capture: float
+    # Mean 0.0-point starters per lineup — the availability fingerprint (see WeekScore).
+    engine_zero_starter_rate: float = 0.0
+    actual_zero_starter_rate: float = 0.0
     weeks_scored: tuple[int, ...] = ()
 
     def summary(self) -> str:
@@ -171,7 +193,9 @@ class ArenaResult:
             f"{self.season} [{self.projector}]: engine {verb} managers by "
             f"{self.engine_vs_actual_margin:+.1f} pts/wk "
             f"({self.engine_beats_actual_rate:.0%} of roster-weeks); "
-            f"captured {self.engine_capture:.1%} of optimal vs managers' {self.actual_capture:.1%}"
+            f"captured {self.engine_capture:.1%} vs managers' {self.actual_capture:.1%}; "
+            f"dead starters {self.engine_zero_starter_rate:.2f}/wk vs "
+            f"{self.actual_zero_starter_rate:.2f}"
         )
 
 
@@ -318,14 +342,22 @@ def make_engine_projector(season: int) -> Projector:
         rows_by_gsis.setdefault(str(row["player_id"]), []).append(row)
 
     bye_teams = _bye_calendar(load_schedules, season)
+    weeks_played = _weeks_played_by_team(load_schedules, season)
+    injuries = _injury_calendar(season)
     team_by_gsis = {
         gsis: (rows[-1].get("recent_team") or "") for gsis, rows in rows_by_gsis.items()
+    }
+    box_weeks_by_gsis = {
+        gsis: {int(r["week"]) for r in rows} for gsis, rows in rows_by_gsis.items()
     }
     forecast_cache: dict[tuple[str, int], float] = {}
 
     def projector(
         wk: int, available: list[str], positions: dict[str, str], history: PointHistory
     ) -> dict[str, float]:
+        # Only this week's injury report is ever consulted — the lookup is keyed by wk, so
+        # no future week's designations can leak in.
+        week_injuries = injuries.get(wk, {})
         out: dict[str, float] = {}
         for pid in available:
             pos = positions.get(pid)
@@ -334,14 +366,46 @@ def make_engine_projector(season: int) -> Projector:
                 if team_by_gsis.get(gsis) in bye_teams.get(wk, frozenset()):
                     out[pid] = 0.0  # on bye — a manager would never start him
                     continue
-                out[pid] = _cached_forecast(
+                base = _cached_forecast(
                     gsis, wk, pos, rows_by_gsis, priors, scoring, forecast_cache, forecast_player
+                )
+                out[pid] = base * _availability_multiplier(
+                    gsis, wk, week_injuries, weeks_played, team_by_gsis, box_weeks_by_gsis
                 )
             else:
                 out[pid] = history.average(pid) or 0.0
         return out
 
     return projector
+
+
+def _availability_multiplier(
+    gsis: str,
+    wk: int,
+    week_injuries: dict[str, str],
+    weeks_played: dict[str, set[int]],
+    team_by_gsis: dict[str, str],
+    box_weeks_by_gsis: dict[str, set[int]],
+) -> float:
+    """Point-in-time availability shade for a skill player (Levers A & B).
+
+    Lever A — this week's injury designation: Out/Doubtful zeroes the projection,
+    Questionable shades it. Lever B — if the player has no box score for his team's most
+    recent completed game, he was inactive and is heavily discounted (he may be returning,
+    so not zeroed). Returns 1.0 when nothing flags him.
+    """
+    status = week_injuries.get(gsis)
+    if status in _OUT_STATUSES:
+        return 0.0
+    factor = _QUESTIONABLE_FACTOR if status == "Questionable" else 1.0
+
+    team = team_by_gsis.get(gsis, "")
+    prior_team_weeks = [w for w in weeks_played.get(team, ()) if w < wk]
+    if prior_team_weeks:
+        last_team_week = max(prior_team_weeks)
+        if last_team_week not in box_weeks_by_gsis.get(gsis, set()):
+            factor *= _DNP_FACTOR  # missed the team's last game — inactive/scratched
+    return factor
 
 
 def _cached_forecast(
@@ -397,6 +461,54 @@ def _bye_calendar(load_schedules, season: int) -> dict[int, frozenset[str]]:
     return out
 
 
+def _weeks_played_by_team(load_schedules, season: int) -> dict[str, set[int]]:
+    """``{team: {weeks that team played}}`` — the inverse of the bye calendar."""
+    import polars as pl
+
+    sched = load_schedules([season])
+    if sched.is_empty():
+        return {}
+    reg = sched.filter((pl.col("season") == season) & (pl.col("game_type") == "REG"))
+    out: dict[str, set[int]] = {}
+    for row in reg.iter_rows(named=True):
+        wk = int(row["week"])
+        for team in (row.get("home_team"), row.get("away_team")):
+            if team:
+                out.setdefault(team, set()).add(wk)
+    return out
+
+
+def _injury_calendar(season: int) -> dict[int, dict[str, str]]:
+    """``{week: {gsis_id: report_status}}`` from the nflverse injury reports.
+
+    Best-effort: a fetch failure (or a season nflverse never published) degrades to an
+    empty calendar, so the arena runs on Lever B alone rather than aborting. Practice-only
+    rows carry a null ``report_status`` and are dropped — only the pregame game designation
+    (Out/Doubtful/Questionable) is kept. Using it is not lookahead: it is the report that
+    stood before kickoff, exactly what a manager saw.
+    """
+    import polars as pl
+
+    from sleeper_ffm.nflverse.loader import load_injuries
+
+    try:
+        inj = load_injuries([season])
+    except Exception as exc:  # availability is a best-effort companion, never fatal
+        log.warning("arena: injuries for %s unavailable (%s); running Lever B only", season, exc)
+        return {}
+    needed = {"week", "gsis_id", "report_status", "game_type"}
+    if inj.is_empty() or not needed.issubset(inj.columns):
+        return {}
+    reg = inj.filter((pl.col("game_type") == "REG") & pl.col("report_status").is_not_null())
+    out: dict[int, dict[str, str]] = {}
+    for row in reg.select(["week", "gsis_id", "report_status"]).iter_rows(named=True):
+        gsis = row.get("gsis_id")
+        status = row.get("report_status")
+        if gsis and status:
+            out.setdefault(int(row["week"]), {})[str(gsis)] = str(status)
+    return out
+
+
 # --- replay -------------------------------------------------------------------------
 
 
@@ -439,6 +551,10 @@ def _replay_week(
         engine_pts=round(engine_pts, 2),
         actual_pts=round(actual_pts, 2),
         optimal_pts=round(optimal_pts, 2),
+        engine_zero_starters=sum(1 for pid in engine_ids if actual_points.get(pid, 0.0) == 0.0),
+        actual_zero_starters=sum(
+            1 for pid in actual_starters if actual_points.get(pid, 0.0) == 0.0
+        ),
     )
 
 
@@ -533,6 +649,8 @@ def _aggregate(
         engine_vs_actual_margin=round(engine_mean - actual_mean, 2),
         engine_capture=round(engine_mean / optimal_mean, 4) if optimal_mean else 0.0,
         actual_capture=round(actual_mean / optimal_mean, 4) if optimal_mean else 0.0,
+        engine_zero_starter_rate=round(statistics.mean(s.engine_zero_starters for s in scores), 3),
+        actual_zero_starter_rate=round(statistics.mean(s.actual_zero_starters for s in scores), 3),
         weeks_scored=weeks_scored,
     )
 
