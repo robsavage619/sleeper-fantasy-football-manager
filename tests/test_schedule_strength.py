@@ -79,3 +79,50 @@ def test_schedule_softness_playoff_weeks_filter() -> None:
 
 def test_compute_dvp_empty_input() -> None:
     assert compute_dvp(_scored([])) == {}
+
+
+# --- Elo strength-of-schedule (pure helper — no network) ----------------------------
+
+
+def test_elo_sos_rates_playoff_opponent_strength(monkeypatch) -> None:
+    from sleeper_ffm.model import schedule_strength as ss
+    from sleeper_ffm.model.elo import EloBoard, TeamRating
+
+    board = EloBoard(
+        ratings=[
+            TeamRating("AAA", 1500.0, 10, 2025, 18),
+            TeamRating("STRONG", 1700.0, 10, 2025, 18),
+            TeamRating("WEAK", 1300.0, 10, 2025, 18),
+        ]
+    )
+    monkeypatch.setattr("sleeper_ffm.model.elo.build_elo", lambda *a, **k: board)
+
+    # AAA plays WEAK in the regular weeks and STRONG in every playoff week.
+    scheds = {"AAA": [(14, "WEAK"), (15, "STRONG"), (16, "STRONG"), (17, "STRONG")]}
+    out = ss._elo_schedule_strength(scheds)
+    assert len(out) == 1
+    entry = out[0]
+    assert entry.team == "AAA" and entry.elo == 1500.0
+    assert entry.playoff_opp_elo == 1700.0  # all three playoff opponents are STRONG
+    assert entry.playoff_weeks_counted == 3
+    assert entry.playoff_difficulty > 1.0  # tougher than the league mean
+    # Full-season mean pulls in the WEAK regular-week game, so it sits below the playoff mean.
+    assert entry.full_season_opp_elo < entry.playoff_opp_elo
+
+
+def test_elo_sos_returns_empty_when_board_is_empty(monkeypatch) -> None:
+    from sleeper_ffm.model import schedule_strength as ss
+    from sleeper_ffm.model.elo import EloBoard
+
+    monkeypatch.setattr("sleeper_ffm.model.elo.build_elo", lambda *a, **k: EloBoard())
+    assert ss._elo_schedule_strength({"AAA": [(15, "BBB")]}) == []
+
+
+def test_elo_sos_survives_a_build_failure(monkeypatch) -> None:
+    from sleeper_ffm.model import schedule_strength as ss
+
+    def _boom(*a, **k):
+        raise RuntimeError("schedule cache missing")
+
+    monkeypatch.setattr("sleeper_ffm.model.elo.build_elo", _boom)
+    assert ss._elo_schedule_strength({"AAA": [(15, "BBB")]}) == []

@@ -54,6 +54,24 @@ class TeamPositionSoS:
 
 
 @dataclass
+class TeamEloSoS:
+    """One team's schedule difficulty by opponent *team strength* (Elo), not defense.
+
+    Complements the position-specific DvP SoS with the one thing it can't see: how strong
+    the opposing *teams* are, on a live-updating rating, in the weeks Vegas hasn't posted
+    lines for yet. See :mod:`sleeper_ffm.model.elo` for why this is the only surface team
+    Elo is wired into — Vegas beats it wherever a line exists.
+    """
+
+    team: str
+    elo: float  # the team's own current rating (end of the latest completed season)
+    full_season_opp_elo: float  # mean opponent Elo over all scheduled weeks
+    playoff_opp_elo: float  # mean opponent Elo over PLAYOFF_WEEKS
+    playoff_difficulty: float  # playoff_opp_elo / league mean; > 1 = tougher than average
+    playoff_weeks_counted: int
+
+
+@dataclass
 class ScheduleStrength:
     """Full DvP + SoS surface for a season."""
 
@@ -61,6 +79,7 @@ class ScheduleStrength:
     schedule_season: int
     dvp: dict[str, float]  # "TEAM|POS" -> index (JSON-safe flat key)
     sos: list[TeamPositionSoS]
+    elo_sos: list[TeamEloSoS] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -141,6 +160,52 @@ def schedule_softness(
     return round(statistics.mean(indices), 3), len(indices)
 
 
+def _elo_schedule_strength(
+    team_scheds: dict[str, list[tuple[int, str]]],
+) -> list[TeamEloSoS]:
+    """Rate each team's schedule by mean opponent Elo, over the full slate and playoffs.
+
+    The opponent ratings are a snapshot at the latest completed season — the best
+    available forward prior for a schedule that hasn't been played, and the reason team
+    Elo is worth having here at all (the playoff weeks have no Vegas line to defer to).
+
+    Args:
+        team_scheds: ``{team: [(week, opponent), ...]}`` from :func:`_team_schedules`.
+
+    Returns:
+        One :class:`TeamEloSoS` per team, or an empty list if Elo could not be built.
+    """
+    from sleeper_ffm.model.elo import build_elo
+
+    try:
+        board = build_elo()
+    except Exception as exc:  # elo is a best-effort companion, never fatal to DvP SoS
+        log.warning("schedule_strength: Elo SoS unavailable: %s", exc)
+        return []
+    if not board.ratings:
+        return []
+
+    mean = board.params.mean
+    out: list[TeamEloSoS] = []
+    for team, weekly_opps in sorted(team_scheds.items()):
+        full = [board.rating(opp) for _wk, opp in weekly_opps if opp]
+        playoff = [board.rating(opp) for wk, opp in weekly_opps if opp and wk in PLAYOFF_WEEKS]
+        if not full:
+            continue
+        playoff_mean = statistics.mean(playoff) if playoff else mean
+        out.append(
+            TeamEloSoS(
+                team=team,
+                elo=round(board.rating(team), 1),
+                full_season_opp_elo=round(statistics.mean(full), 1),
+                playoff_opp_elo=round(playoff_mean, 1),
+                playoff_difficulty=round(playoff_mean / mean, 3),
+                playoff_weeks_counted=len(playoff),
+            )
+        )
+    return out
+
+
 def _team_schedules(schedule_season: int) -> dict[str, list[tuple[int, str]]]:
     """Return ``{team: [(week, opponent), ...]}`` for a season, or {} if unavailable."""
     try:
@@ -216,10 +281,15 @@ def build_schedule_strength(
                 )
             )
 
+    elo_sos = _elo_schedule_strength(team_scheds) if team_scheds else []
+    if team_scheds and not elo_sos:
+        warnings.append("Elo strength-of-schedule unavailable (schedule graded on DvP only).")
+
     return ScheduleStrength(
         dvp_season=dvp_season,
         schedule_season=schedule_season,
         dvp={f"{team}|{pos}": idx for (team, pos), idx in dvp.items()},
         sos=sos,
+        elo_sos=elo_sos,
         warnings=warnings,
     )

@@ -467,13 +467,22 @@ def _schedule_outlook_section(my_roster_id: int) -> str:
         return f"  (schedule outlook unavailable — {note})"
 
     sos_map = {(s.team, s.position): s for s in ss.sos}
+    elo_map = {e.team: e for e in ss.elo_sos}
     lines: list[str] = []
     for _pid, (name, pos, team) in mine.items():
         s = sos_map.get((team, pos))
         if s and s.playoff_weeks_counted:
+            # Opponent team-strength (Elo) is a forward read for the playoff weeks Vegas
+            # hasn't priced; DvP is the position-specific defensive read.
+            elo = elo_map.get(team)
+            elo_note = (
+                f", playoff opp-strength {elo.playoff_difficulty:.2f}x"
+                if elo and elo.playoff_weeks_counted
+                else ""
+            )
             lines.append(
-                f"  {name} ({pos} {team}): playoff SoS {s.playoff_index:.2f}, "
-                f"full-season {s.full_season_index:.2f}"
+                f"  {name} ({pos} {team}): playoff DvP {s.playoff_index:.2f}, "
+                f"full-season {s.full_season_index:.2f}{elo_note}"
             )
     lines.sort(key=lambda ln: ln)
     return "\n".join(lines) if lines else "  (no playoff schedule data for rostered players)"
