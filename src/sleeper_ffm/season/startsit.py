@@ -501,6 +501,14 @@ def _apply_availability(
             continue
         proj.injury_status = status
         factor = availability_factor(status)
+        # Measured 2026-wk1: the rotowire provider already prices injuries — Out-class
+        # players project ~0.3 and Questionables are already faded — so re-applying the
+        # Questionable x0.8 on the provider path would double-count. Only the hard-zero
+        # is kept there, as a safety net for the occasional stale feed that still lists an
+        # Out player at a real number (seen up to 6.5). The injury-BLIND fallback sources
+        # (nflverse avg / proxy / default) get the full discount.
+        if proj.source == "provider" and factor > 0.0:
+            continue
         if factor < 1.0:
             proj.projected_pts = round(proj.projected_pts * factor, 1)
             verb = "OUT->0" if factor == 0.0 else f"x{factor:g}"

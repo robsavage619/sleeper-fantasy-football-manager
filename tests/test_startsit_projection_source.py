@@ -76,11 +76,12 @@ def test_availability_factor_tiers() -> None:
     assert availability_factor("Probable") == 1.0  # unknown/benign → no discount
 
 
-def test_apply_availability_zeroes_out_players_and_warns() -> None:
+def test_apply_availability_fallback_source_gets_full_discount_and_warns() -> None:
+    # nflverse_avg is injury-blind, so it gets the full Out->0 / Questionable->0.8 discount.
     projections = [
-        ss.PlayerProjection("hurt", "Hurt Star", "RB", "BAL", 22.0, "HIGH", "provider", "x"),
-        ss.PlayerProjection("q", "Iffy Guy", "WR", "KC", 15.0, "HIGH", "provider", "y"),
-        ss.PlayerProjection("ok", "Healthy", "WR", "SF", 12.0, "HIGH", "provider", "z"),
+        ss.PlayerProjection("hurt", "Hurt Star", "RB", "BAL", 22.0, "HIGH", "nflverse_avg", "x"),
+        ss.PlayerProjection("q", "Iffy Guy", "WR", "KC", 15.0, "HIGH", "nflverse_avg", "y"),
+        ss.PlayerProjection("ok", "Healthy", "WR", "SF", 12.0, "HIGH", "nflverse_avg", "z"),
     ]
     dump = {
         "hurt": {"injury_status": "Out"},
@@ -95,6 +96,23 @@ def test_apply_availability_zeroes_out_players_and_warns() -> None:
     assert projections[1].projected_pts == 12.0  # 15 * 0.8
     assert projections[2].projected_pts == 12.0  # untouched
     assert len(warnings) == 1 and "Hurt Star" in warnings[0] and "Iffy Guy" in warnings[0]
+
+
+def test_apply_availability_trusts_the_provider_for_soft_designations() -> None:
+    # Rotowire already prices injuries, so a provider Questionable is NOT re-discounted...
+    projections = [
+        ss.PlayerProjection("q", "Iffy Guy", "WR", "KC", 15.0, "HIGH", "provider", "y"),
+        ss.PlayerProjection("out", "Ghost", "RB", "BAL", 6.5, "HIGH", "provider", "z"),
+    ]
+    dump = {"q": {"injury_status": "Questionable"}, "out": {"injury_status": "Out"}}
+    warnings: list[str] = []
+    ss._apply_availability(projections, dump, warnings)
+
+    assert projections[0].projected_pts == 15.0  # provider Questionable left as-is
+    assert projections[0].injury_status == "Questionable"  # status still recorded
+    # ...but a hard-out is still zeroed even on the provider path (stale-feed safety net).
+    assert projections[1].projected_pts == 0.0
+    assert "Ghost" in warnings[0] and "Iffy Guy" not in warnings[0]
 
 
 def test_apply_availability_no_warning_when_everyone_is_healthy() -> None:
