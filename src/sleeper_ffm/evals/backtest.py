@@ -28,6 +28,7 @@ trade-acceptance formula against, so no backtest is attempted for it. See its do
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 
@@ -777,4 +778,108 @@ def run_forecast_backtest(
         n_provider=n_provider,
         rmse_model=rmse("model"),
         rmse_season_to_date=rmse("std"),
+    )
+
+
+# --- Elo game prediction ------------------------------------------------------------
+
+
+@dataclass
+class EloBacktestResult:
+    """Out-of-sample NFL game-prediction accuracy for each Elo variant vs baselines.
+
+    Brier score is mean squared error of the home-win probability against the 0/1 outcome
+    (lower is better; 0.25 is a coinflip). Accuracy is the share of games whose favorite
+    (prob > 0.5) won. Ties are excluded from both.
+    """
+
+    first_eval_season: int
+    last_eval_season: int
+    n_games: int
+    brier_team_elo: float
+    brier_qb_elo: float
+    brier_home_bias: float  # always predict the home team at its base rate
+    brier_vegas: float | None
+    acc_team_elo: float
+    acc_qb_elo: float
+    acc_vegas: float | None
+    n_vegas: int
+
+
+def run_elo_backtest(
+    through_season: int,
+    first_eval_season: int,
+) -> EloBacktestResult:
+    """Score the Elo variants' pregame predictions against realized game outcomes.
+
+    Every prediction from :func:`sleeper_ffm.model.elo.walk_predictions` is recorded
+    before that game updates any rating, so this is out-of-sample by construction. The
+    first few seasons are used only to warm the ratings up (predictions before
+    ``first_eval_season`` are discarded), because a from-cold Elo is meaningfully worse
+    than a steady-state one and scoring the warm-up would flatter the baselines.
+
+    Args:
+        through_season: Latest season to include.
+        first_eval_season: First season whose predictions are scored. Seasons before it
+            warm the ratings.
+
+    Returns:
+        Per-variant Brier scores and accuracies on the common set of decided games.
+
+    Raises:
+        BacktestUnavailableError: No schedule/QB data is cached, or no games fall in the
+            evaluation window.
+    """
+    from sleeper_ffm.model.elo import GamePrediction, load_qb_values, walk_predictions
+
+    qb_values = load_qb_values(through_season)
+    if not qb_values:
+        raise BacktestUnavailableError(
+            f"no cached weekly QB data through {through_season}; run 'sffm ingest'"
+        )
+    predictions = walk_predictions(through_season=through_season, qb_values=qb_values)
+    scored = [p for p in predictions if not p.tie and p.season >= first_eval_season]
+    if not scored:
+        raise BacktestUnavailableError(
+            f"no decided games in {first_eval_season}-{through_season} to score"
+        )
+
+    def brier(prob_of: Callable[[GamePrediction], float | None]) -> tuple[float, int]:
+        errs = [
+            (prob - (1.0 if p.home_won else 0.0)) ** 2
+            for p in scored
+            if (prob := prob_of(p)) is not None
+        ]
+        return (sum(errs) / len(errs), len(errs)) if errs else (0.0, 0)
+
+    def accuracy(prob_of: Callable[[GamePrediction], float | None]) -> tuple[float, int]:
+        hits = [
+            (prob > 0.5) == p.home_won
+            for p in scored
+            if (prob := prob_of(p)) is not None and prob != 0.5
+        ]
+        return (sum(hits) / len(hits), len(hits)) if hits else (0.0, 0)
+
+    home_base_rate = sum(1 for p in scored if p.home_won) / len(scored)
+
+    brier_team, _ = brier(lambda p: p.team_elo_prob)
+    brier_qb, _ = brier(lambda p: p.qb_elo_prob)
+    brier_home, _ = brier(lambda _p: home_base_rate)
+    brier_vegas, n_vegas = brier(lambda p: p.vegas_prob)
+    acc_team, _ = accuracy(lambda p: p.team_elo_prob)
+    acc_qb, _ = accuracy(lambda p: p.qb_elo_prob)
+    acc_vegas, _ = accuracy(lambda p: p.vegas_prob)
+
+    return EloBacktestResult(
+        first_eval_season=first_eval_season,
+        last_eval_season=through_season,
+        n_games=len(scored),
+        brier_team_elo=round(brier_team, 4),
+        brier_qb_elo=round(brier_qb, 4),
+        brier_home_bias=round(brier_home, 4),
+        brier_vegas=round(brier_vegas, 4) if n_vegas else None,
+        acc_team_elo=round(acc_team, 4),
+        acc_qb_elo=round(acc_qb, 4),
+        acc_vegas=round(acc_vegas, 4) if n_vegas else None,
+        n_vegas=n_vegas,
     )

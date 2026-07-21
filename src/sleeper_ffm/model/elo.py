@@ -32,18 +32,50 @@ Elo points (the modern NFL value; zeroed at neutral sites), and a ``1/3`` regres
 toward the 1505 league mean each new season so a team's rating carries over between years
 without ossifying.
 
+QB adjustment
+-------------
+:func:`walk_predictions` also runs a QB-adjusted track, 538's insight that a team is only
+as strong as who is under center this week. Each start produces a box-score VALUE
+(:func:`qb_game_value`, 538's coefficient formula); a per-QB rolling value tracks form; a
+per-team rolling baseline tracks what the team has been getting from the position. The
+pregame adjustment is ``(starter_value - team_baseline) / value_per_elo`` — start a QB
+better than the team's norm and the rating rises, bench him for a backup and it falls.
+Whether this actually predicts games better than plain team Elo is an empirical question,
+not an assumption; :func:`sleeper_ffm.evals.backtest.run_elo_backtest` answers it — and the
+answer is *barely*. Measured
+----------------------------------------------------------------------------------------
+``run_elo_backtest(through_season=2024, first_eval_season=2018)``, 1,935 decided games,
+Brier score (lower better) and straight-up accuracy::
+
+    home base-rate    0.2480      —
+    team Elo          0.2226   63.3%
+    QB-adjusted Elo   0.2219   63.5%
+    Vegas (de-vigged) 0.2107   66.4%
+
+Two verdicts fall out of that, and both are load-bearing:
+
+* **Team Elo is real.** It beats the home base-rate comfortably and lands within ~5.7%
+  (Brier) of the closing Vegas line — respectable for a model that sees only scores.
+* **The QB adjustment is not worth it.** +0.31% Brier over team Elo is a rounding error,
+  not the 1-2% 538 reported. It is kept because it is built, tested, and costs nothing to
+  leave available, but it is **not** promoted as the default and nothing should depend on
+  it beating the team track. Same lesson as the in-house forecast that lost to rotowire:
+  measure, then don't oversell.
+
+Because Vegas wins wherever a line exists, team Elo earns its keep only where Vegas is
+*absent* — future weeks with no posted line, i.e. the fantasy-playoff strength of
+schedule. That, and only that, is where it is wired in.
+
 What this is and isn't
 ----------------------
-* It rates **teams**, not players. It is a team-strength prior, and its natural consumers
-  are the surfaces that reason about game outcomes and future schedule: playoff-weeks
-  strength of schedule (where Vegas has posted no lines yet), the season simulation's team
-  strengths, and opponent adjustment of historical player production.
-* It is **not** a fantasy-points model and must not be wired in as one. Team strength maps
-  to player scoring only indirectly.
-* **QB-adjusted Elo is deliberately not built here.** 538's QB adjustment is a genuine
-  modeling project (rolling per-QB value, rookie priors, in-game replacement), not a
-  parameter tweak. The schedule carries ``home_qb_id`` / ``away_qb_id``, so the door is
-  open — but half-building it would be worse than leaving it clearly unbuilt.
+* It rates **teams**, not players. Its natural consumer is playoff-weeks strength of
+  schedule — the one place a live, forward-looking opponent-strength read beats what's
+  already here (Vegas posts no lines that far out, and DvP there leans on last year).
+* **Not** a valid input to the fantasy season simulation, despite an earlier claim of
+  mine: that sim rates *fantasy* rosters keyed by ``roster_id``, a different domain from
+  NFL team strength. Nor is it an obvious win for opponent adjustment, which already uses
+  the more targeted defense-vs-position. Team strength maps to player scoring only
+  indirectly; it is not a fantasy-points model.
 
 Honest limits
 -------------
@@ -77,6 +109,15 @@ class EloParams:
     # Fraction of the gap to the league mean that is regressed away each new season.
     season_regression: float = 1.0 / 3.0
     mean: float = _MEAN_ELO
+    # --- QB adjustment ---
+    # Weight on the latest start when updating a QB's rolling value (~10-game memory).
+    qb_weight: float = 0.1
+    # Box-score VALUE points per Elo point (538's scale).
+    qb_value_per_elo: float = 3.3
+    # Starting value for a QB with no history — a below-average-starter prior.
+    qb_rookie_value: float = 40.0
+    # How fast a team's own QB baseline tracks its recent starters.
+    qb_baseline_weight: float = 0.1
 
 
 @dataclass(frozen=True)
@@ -269,6 +310,226 @@ def build_elo(
         through_week=last_week,
         params=params,
     )
+
+
+# 538's QB game-VALUE coefficients (points). A neutral start lands near the league mean
+# starter value; elite games run higher, disasters go negative.
+_QB_VALUE = {
+    "attempts": -2.2,
+    "completions": 3.7,
+    "passing_yards": 1.0 / 5.0,
+    "passing_tds": 11.3,
+    "interceptions": -14.1,
+    "sacks_suffered": -8.0,
+    "sack_yards_lost": -1.1,
+    "rushing_yards": 0.6,
+    "rushing_tds": 15.9,
+}
+
+
+def qb_game_value(stats: dict[str, float]) -> float:
+    """538's single-game quarterback VALUE from a box-score line.
+
+    Args:
+        stats: nflverse weekly stat keys for one QB-game. Missing keys count as zero.
+
+    Returns:
+        The VALUE in 538's points. Roughly centered on the league starter average; a
+        clean multi-TD game runs well above it, a multi-pick game below zero.
+    """
+    return sum(coef * float(stats.get(key, 0.0) or 0.0) for key, coef in _QB_VALUE.items())
+
+
+@dataclass(frozen=True)
+class GamePrediction:
+    """One game's pregame win probabilities under each Elo variant, plus the outcome."""
+
+    season: int
+    week: int
+    home_team: str
+    away_team: str
+    team_elo_prob: float  # home win prob, team Elo only
+    qb_elo_prob: float  # home win prob, QB-adjusted Elo
+    vegas_prob: float | None  # home win prob implied by the moneyline, when present
+    home_won: bool
+    tie: bool
+
+
+def walk_predictions(
+    through_season: int | None = None,
+    params: EloParams | None = None,
+    qb_values: dict[tuple[str, int, int], float] | None = None,
+) -> list[GamePrediction]:
+    """Replay the schedule and record each game's *pregame* prediction under each variant.
+
+    This is the substrate for :func:`sleeper_ffm.evals.backtest.run_elo_backtest`: every
+    probability is recorded strictly before the game's result is used to update any
+    rating, so scoring these against outcomes is a genuine out-of-sample test.
+
+    Args:
+        through_season: Include games up to and including this season.
+        params: Elo parameters.
+        qb_values: ``{(qb_id, season, week): value}`` from :func:`load_qb_values`. When
+            None, the QB track mirrors the team track (no adjustment).
+
+    Returns:
+        One :class:`GamePrediction` per completed game, in chronological order.
+    """
+    from sleeper_ffm.nflverse.loader import load_schedules
+
+    params = params or EloParams()
+    through_season = through_season or DEFAULT_VALUE_SEASON
+    qb_values = qb_values or {}
+
+    schedule = load_schedules()
+    if schedule.is_empty():
+        return []
+    games = _completed_games(schedule, through_season, None)
+
+    team_elo: dict[str, float] = {}
+    qb_elo: dict[str, float] = {}  # team base for the QB-adjusted track
+    qb_value: dict[str, float] = {}  # per-QB rolling value
+    team_qb_baseline: dict[str, float] = {}  # per-team rolling QB value
+    prev_season: int | None = None
+    predictions: list[GamePrediction] = []
+
+    for row in games.iter_rows(named=True):
+        season = int(row["season"])
+        week = int(row["week"])
+        if prev_season is not None and season != prev_season:
+            for team in team_elo:
+                team_elo[team] = _regress_to_mean(team_elo[team], params)
+            for team in qb_elo:
+                qb_elo[team] = _regress_to_mean(qb_elo[team], params)
+        prev_season = season
+
+        home, away = row["home_team"], row["away_team"]
+        for store in (team_elo, qb_elo):
+            store.setdefault(home, params.mean)
+            store.setdefault(away, params.mean)
+        team_qb_baseline.setdefault(home, params.qb_rookie_value)
+        team_qb_baseline.setdefault(away, params.qb_rookie_value)
+
+        neutral = str(row.get("location") or "").lower() == "neutral"
+        hfa = 0.0 if neutral else params.home_advantage
+
+        team_prob = expected_score(team_elo[home] + hfa, team_elo[away])
+
+        home_qb, away_qb = row.get("home_qb_id"), row.get("away_qb_id")
+        home_qb_val = qb_value.get(home_qb, params.qb_rookie_value) if home_qb else None
+        away_qb_val = qb_value.get(away_qb, params.qb_rookie_value) if away_qb else None
+        home_adj = _qb_adjustment(home_qb_val, team_qb_baseline[home], params)
+        away_adj = _qb_adjustment(away_qb_val, team_qb_baseline[away], params)
+        qb_prob = expected_score(qb_elo[home] + hfa + home_adj, qb_elo[away] + away_adj)
+
+        home_score, away_score = float(row["home_score"]), float(row["away_score"])
+        tie = home_score == away_score
+        home_won = home_score > away_score
+
+        predictions.append(
+            GamePrediction(
+                season=season,
+                week=week,
+                home_team=home,
+                away_team=away,
+                team_elo_prob=round(team_prob, 4),
+                qb_elo_prob=round(qb_prob, 4),
+                vegas_prob=_moneyline_prob(row),
+                home_won=home_won,
+                tie=tie,
+            )
+        )
+
+        # Post-game updates (never before the prediction is recorded).
+        team_elo[home], team_elo[away] = update_pair(
+            team_elo[home], team_elo[away], home_score, away_score, params, neutral=neutral
+        )
+        qb_elo[home], qb_elo[away] = update_pair(
+            qb_elo[home], qb_elo[away], home_score, away_score, params, neutral=neutral
+        )
+        _update_qb(home_qb, home, season, week, qb_value, team_qb_baseline, qb_values, params)
+        _update_qb(away_qb, away, season, week, qb_value, team_qb_baseline, qb_values, params)
+
+    return predictions
+
+
+def _qb_adjustment(qb_val: float | None, team_baseline: float, params: EloParams) -> float:
+    """Elo points to add for a starter whose value differs from his team's norm."""
+    if qb_val is None:
+        return 0.0
+    return (qb_val - team_baseline) / params.qb_value_per_elo
+
+
+def _update_qb(
+    qb_id: str | None,
+    team: str,
+    season: int,
+    week: int,
+    qb_value: dict[str, float],
+    team_qb_baseline: dict[str, float],
+    qb_values: dict[tuple[str, int, int], float],
+    params: EloParams,
+) -> None:
+    """Roll a starter's value and his team's baseline forward after a start."""
+    if not qb_id:
+        return
+    game_value = qb_values.get((qb_id, season, week))
+    if game_value is None:
+        return
+    prior = qb_value.get(qb_id, params.qb_rookie_value)
+    qb_value[qb_id] = prior * (1 - params.qb_weight) + game_value * params.qb_weight
+    base = team_qb_baseline.get(team, params.qb_rookie_value)
+    team_qb_baseline[team] = (
+        base * (1 - params.qb_baseline_weight) + qb_value[qb_id] * params.qb_baseline_weight
+    )
+
+
+def _moneyline_prob(row: dict) -> float | None:
+    """Vig-free home win probability from the two moneylines, or None if absent."""
+    home_ml, away_ml = row.get("home_moneyline"), row.get("away_moneyline")
+    if home_ml is None or away_ml is None:
+        return None
+    home_imp, away_imp = _american_to_prob(home_ml), _american_to_prob(away_ml)
+    total = home_imp + away_imp
+    if total <= 0:
+        return None
+    return round(home_imp / total, 4)  # de-vig by normalizing the two implied probs
+
+
+def _american_to_prob(moneyline: float) -> float:
+    """Implied probability from an American moneyline (with the vig still in)."""
+    ml = float(moneyline)
+    if ml < 0:
+        return -ml / (-ml + 100.0)
+    return 100.0 / (ml + 100.0)
+
+
+def load_qb_values(through_season: int) -> dict[tuple[str, int, int], float]:
+    """Per-start QB VALUE keyed by ``(qb_id, season, week)`` from cached weekly stats.
+
+    Args:
+        through_season: Latest season to load (from 2014).
+
+    Returns:
+        A lookup usable as :func:`walk_predictions`' ``qb_values`` argument. Empty when no
+        weekly data is cached.
+    """
+    from sleeper_ffm.nflverse.loader import load_weekly
+
+    seasons = list(range(_FIRST_SCHEDULE_SEASON, through_season + 1))
+    weekly = load_weekly(seasons)
+    if weekly.is_empty() or "position" not in weekly.columns:
+        return {}
+    qbs = weekly.filter(pl.col("position") == "QB")
+    keys = [*_QB_VALUE, "player_id", "season", "week"]
+    present = [c for c in keys if c in qbs.columns]
+    out: dict[tuple[str, int, int], float] = {}
+    for row in qbs.select(present).iter_rows(named=True):
+        pid = row.get("player_id")
+        if not pid:
+            continue
+        out[(str(pid), int(row["season"]), int(row["week"]))] = qb_game_value(row)
+    return out
 
 
 def _completed_games(

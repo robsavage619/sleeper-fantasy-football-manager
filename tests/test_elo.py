@@ -96,3 +96,65 @@ def test_board_win_probability_uses_home_advantage() -> None:
     )
     assert board.win_probability("KC", "DEN") > 0.5
     assert board.win_probability("KC", "DEN", neutral=True) == pytest.approx(0.5)
+
+
+# --- QB adjustment ------------------------------------------------------------------
+
+
+def test_qb_value_rewards_a_clean_game_and_punishes_a_bad_one() -> None:
+    clean = elo.qb_game_value(
+        {
+            "attempts": 30,
+            "completions": 22,
+            "passing_yards": 300,
+            "passing_tds": 3,
+            "interceptions": 0,
+            "sacks_suffered": 1,
+            "rushing_yards": 20,
+        }
+    )
+    ugly = elo.qb_game_value(
+        {
+            "attempts": 35,
+            "completions": 15,
+            "passing_yards": 140,
+            "passing_tds": 0,
+            "interceptions": 4,
+            "sacks_suffered": 6,
+        }
+    )
+    assert clean > ugly
+    assert ugly < 0  # a 4-INT, 6-sack line is genuinely negative value
+
+
+def test_qb_value_ignores_missing_keys() -> None:
+    assert elo.qb_game_value({}) == 0.0
+    assert elo.qb_game_value({"passing_tds": 2}) == pytest.approx(22.6)
+
+
+def test_qb_adjustment_raises_for_above_baseline_starter() -> None:
+    p = elo.EloParams(qb_value_per_elo=3.3)
+    better = elo._qb_adjustment(qb_val=120.0, team_baseline=60.0, params=p)
+    worse = elo._qb_adjustment(qb_val=20.0, team_baseline=60.0, params=p)
+    assert better > 0 > worse
+    assert elo._qb_adjustment(None, 60.0, p) == 0.0  # unknown QB → no adjustment
+
+
+def test_moneyline_prob_is_devigged_and_favors_the_minus_side() -> None:
+    prob = elo._moneyline_prob({"home_moneyline": -200, "away_moneyline": +170})
+    assert prob is not None and prob > 0.5
+    assert elo._moneyline_prob({"home_moneyline": None, "away_moneyline": 100}) is None
+
+
+def test_devig_normalizes_to_one() -> None:
+    row = {"home_moneyline": -150, "away_moneyline": +130}
+    home = elo._moneyline_prob(row)
+    away = elo._moneyline_prob({"home_moneyline": 130, "away_moneyline": -150})
+    assert home is not None and away is not None
+    assert home + away == pytest.approx(1.0, abs=1e-3)
+
+
+def test_american_to_prob_endpoints() -> None:
+    assert elo._american_to_prob(-100) == pytest.approx(0.5)
+    assert elo._american_to_prob(100) == pytest.approx(0.5)
+    assert elo._american_to_prob(-300) == pytest.approx(0.75)
