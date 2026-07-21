@@ -501,19 +501,23 @@ def _apply_availability(
             continue
         proj.injury_status = status
         factor = availability_factor(status)
+        if factor == 1.0:  # a benign designation (e.g. Probable) — recorded, not acted on
+            continue
         # Measured 2026-wk1: the rotowire provider already prices injuries — Out-class
         # players project ~0.3 and Questionables are already faded — so re-applying the
         # Questionable x0.8 on the provider path would double-count. Only the hard-zero
         # is kept there, as a safety net for the occasional stale feed that still lists an
         # Out player at a real number (seen up to 6.5). The injury-BLIND fallback sources
-        # (nflverse avg / proxy / default) get the full discount.
-        if proj.source == "provider" and factor > 0.0:
-            continue
-        if factor < 1.0:
-            proj.projected_pts = round(proj.projected_pts * factor, 1)
-            verb = "OUT->0" if factor == 0.0 else f"x{factor:g}"
+        # (nflverse avg / proxy / default) get the full discount. Either way the status is
+        # annotated so the downstream LLM GM sees it and can apply news judgment.
+        discount = factor if (factor == 0.0 or proj.source != "provider") else 1.0
+        if discount < 1.0:
+            proj.projected_pts = round(proj.projected_pts * discount, 1)
+            verb = "OUT->0" if discount == 0.0 else f"x{discount:g}"
             proj.notes += f"; injury {status} ({verb})"
             hit.append(f"{proj.name} ({status})")
+        else:
+            proj.notes += f"; injury {status} (provider-priced)"
     if hit:
         warnings.append(f"Injury-discounted {len(hit)} player(s): {', '.join(hit)}.")
 
@@ -630,15 +634,25 @@ def _build_prompt(
             f" | {p.source} | {p.notes} |"
         )
 
-    # Optimal lineup table
-    opt_rows = ["| Slot | Player | Pos | Projected |", "|------|--------|-----|-----------|"]
+    # Optimal lineup table. The Injury column surfaces the live designation so the GM can
+    # apply the news judgment the projection can't — a Questionable start it might sit given
+    # a plus matchup for the backup, etc.
+    opt_rows = [
+        "| Slot | Player | Pos | Projected | Injury |",
+        "|------|--------|-----|-----------|--------|",
+    ]
     for slot, p in zip(_SLOT_LABELS, optimal, strict=False):
-        opt_rows.append(f"| {slot} | {p.name} | {p.position} | {p.projected_pts:.1f} |")
+        inj = p.injury_status or ""
+        opt_rows.append(f"| {slot} | {p.name} | {p.position} | {p.projected_pts:.1f} | {inj} |")
 
     # Current lineup table
-    cur_rows = ["| Slot | Player | Pos | Projected |", "|------|--------|-----|-----------|"]
+    cur_rows = [
+        "| Slot | Player | Pos | Projected | Injury |",
+        "|------|--------|-----|-----------|--------|",
+    ]
     for slot, p in zip(_SLOT_LABELS, current, strict=False):
-        cur_rows.append(f"| {slot} | {p.name} | {p.position} | {p.projected_pts:.1f} |")
+        inj = p.injury_status or ""
+        cur_rows.append(f"| {slot} | {p.name} | {p.position} | {p.projected_pts:.1f} | {inj} |")
 
     # Changes section
     if changes:
