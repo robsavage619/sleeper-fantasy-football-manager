@@ -297,7 +297,7 @@ def recency_projector(
     return out
 
 
-def make_engine_projector(season: int) -> Projector:
+def make_engine_projector(season: int, blend_weight: float = 0.0) -> Projector:
     """Build a projector backed by our in-house forecast — "our engine" as it ran that week.
 
     This is the real subject of the test. Skill players are projected by
@@ -308,12 +308,22 @@ def make_engine_projector(season: int) -> Projector:
     that week are zeroed — a bye is public schedule information, so using it is not
     lookahead; failing to would just restart the naive control's biggest mistake.
 
+    ``blend_weight`` (Lever C) mixes the forecast with the player's own league-scored last-4
+    average from ``history`` — ``blend_weight`` of the latter, ``1 - blend_weight`` of the
+    forecast. It defaults off because a sweep (0.25/0.5/0.75) *rejected* it: capture was
+    flat-to-worse on every weight and season (e.g. 2023: 81.8% at 0.0 → 80.5% at 0.75). The
+    league last-4 is a noisier ranking signal than the forecast, so blending it in does not
+    sharpen lineups. The knob stays for future ranking experiments run through the arena, not
+    because it helps today.
+
     Heavy data (weekly box scores, priors, the id crosswalk, the bye calendar) is loaded
     once here and closed over; per-player forecasts are cached by ``(gsis_id, week)`` so a
     player is projected at most once per week across the whole replay.
 
     Args:
         season: The season being replayed.
+        blend_weight: Fraction of the projection taken from the player's league-scored
+            last-4 average rather than the forecast (Lever C). 0.0 = pure forecast.
 
     Returns:
         A :data:`Projector`. If nflverse data is unavailable it degrades to
@@ -379,6 +389,11 @@ def make_engine_projector(season: int) -> Projector:
                 base = _cached_forecast(
                     gsis, wk, pos, rows_by_gsis, priors, scoring, forecast_cache, forecast_player
                 )
+                if blend_weight > 0:
+                    league_games = history.by_player.get(pid) or []
+                    if league_games:
+                        league_l4 = statistics.mean(league_games[-4:])
+                        base = (1 - blend_weight) * base + blend_weight * league_l4
                 out[pid] = base * _availability_multiplier(
                     gsis, wk, week_injuries, weeks_played, team_by_gsis, box_weeks_by_gsis
                 )

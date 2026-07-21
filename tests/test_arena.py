@@ -276,3 +276,9 @@ def test_league_h2h_counts_rosters_the_engine_beats() -> None:
     )
     assert result.rosters_outscored == 2  # rosters 1 and 3 have positive margin
     assert result.rosters_out_allplayed == 1  # only roster 1 has more all-play wins
+
+
+def test_engine_projector_accepts_blend_weight_knob() -> None:
+    # Lever C was measured and rejected, but the knob must still build a valid projector.
+    proj = arena.make_engine_projector(2024, blend_weight=0.5)
+    assert callable(proj)
