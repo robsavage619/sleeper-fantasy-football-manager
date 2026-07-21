@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+from sleeper_ffm.evals import arena
+
+# A simple 1QB/1RB/1WR/1FLEX lineup for the pure-logic tests.
+_SLOTS = ["QB", "RB", "WR", "FLEX", "BN", "BN"]
+_POS = {
+    "qb1": "QB",
+    "qb2": "QB",
+    "rb1": "RB",
+    "rb2": "RB",
+    "wr1": "WR",
+    "wr2": "WR",
+    "te1": "TE",
+}
+
+
+def test_select_lineup_fills_dedicated_slots_then_flex() -> None:
+    scores = {"qb1": 25, "qb2": 10, "rb1": 20, "rb2": 18, "wr1": 15, "wr2": 5, "te1": 12}
+    chosen = arena.select_lineup(scores, _POS, _SLOTS)
+    assert set(chosen) == {
+        "qb1",
+        "rb1",
+        "wr1",
+        "rb2",
+    }  # FLEX takes the best leftover (rb2 18 > te1 12)
+    assert len(chosen) == 4
+
+
+def test_select_lineup_leaves_a_slot_empty_when_no_eligible_player() -> None:
+    # No QB on the roster → the QB slot goes unfilled rather than starting an ineligible player.
+    chosen = arena.select_lineup({"rb1": 20, "wr1": 15}, _POS, _SLOTS)
+    assert "qb" not in " ".join(chosen)
+    assert set(chosen) == {"rb1", "wr1"}
+
+
+def test_the_lineup_that_scores_a_blind_pick_uses_projected_ranks() -> None:
+    # The FLEX decision is between te1 and wr2. The projection prefers wr2, but te1 actually
+    # erupts — the blind pick eats that miss; the hindsight-optimal lineup does not.
+    projected = {"qb1": 25, "rb1": 20, "wr1": 15, "te1": 5, "wr2": 12}
+    actual = {"qb1": 25, "rb1": 20, "wr1": 15, "te1": 40, "wr2": 12}
+    picked = arena.select_lineup(projected, _POS, _SLOTS)
+    engine_pts = sum(actual[p] for p in picked)
+    optimal = arena.select_lineup(actual, _POS, _SLOTS)
+    optimal_pts = sum(actual[p] for p in optimal)
+    assert "te1" not in picked  # projection benched the player who erupted
+    assert engine_pts == 72.0 and optimal_pts == 100.0
+    assert engine_pts < optimal_pts
+
+
+def test_point_history_average_and_games() -> None:
+    h = arena.PointHistory({"a": [10.0, 20.0], "b": []})
+    assert h.average("a") == 15.0
+    assert h.average("b") is None
+    assert h.average("missing") is None
+    assert h.games("a") == 2 and h.games("missing") == 0
+
+
+def test_season_average_projector_is_leak_free_and_covers_all_positions() -> None:
+    hist = arena.PointHistory({"rb1": [10.0, 14.0], "k1": [8.0]})
+    proj = arena.season_average_projector(5, ["rb1", "k1", "new"], {"rb1": "RB", "k1": "K"}, hist)
+    assert proj["rb1"] == 12.0
+    assert proj["k1"] == 8.0
+    assert proj["new"] == 0.0  # no prior game — the blind spot a manager also had
+
+
+def test_recency_projector_weights_recent_games() -> None:
+    hist = arena.PointHistory({"wr1": [2.0, 2.0, 2.0, 2.0, 30.0]})  # cold then hot
+    season_avg = arena.season_average_projector(6, ["wr1"], {"wr1": "WR"}, hist)
+    last4 = arena.recency_projector(6, ["wr1"], {"wr1": "WR"}, hist)
+    assert last4["wr1"] > season_avg["wr1"]  # recency catches the breakout
+
+
+def test_replay_week_scores_three_ways_without_leakage() -> None:
+    roster = {
+        "roster_id": 3,
+        "players": ["qb1", "rb1", "rb2", "wr1", "bench1"],
+        "starters": ["qb1", "rb1", "wr1", "rb2"],  # what the "manager" did
+        "players_points": {"qb1": 25, "rb1": 30, "rb2": 5, "wr1": 15, "bench1": 40},
+    }
+
+    # A projector that would (wrongly) bench the high-scorer, proving actuals aren't leaking in.
+    def blind(_w, avail, _pos, _h):
+        return {"qb1": 25, "rb1": 10, "rb2": 20, "wr1": 15, "bench1": 1}
+
+    pos = {**_POS, "bench1": "RB"}
+    score = arena._replay_week(5, roster, pos, _SLOTS, arena.PointHistory(), blind)
+    assert score is not None
+    # optimal uses actuals: qb1(25)+rb1(30)+wr1(15)+bench1-as-flex(40) = 110
+    assert score.optimal_pts == 110.0
+    # engine picked by projection (bench1 projected 1, so it's benched) → misses the 40.
+    assert score.engine_pts < score.optimal_pts
+    # actual = the manager's starters scored on actuals: 25+30+15+5 = 75
+    assert score.actual_pts == 75.0
+
+
+def test_replay_week_skips_a_roster_with_no_points() -> None:
+    roster = {"roster_id": 1, "players": ["a"], "starters": ["a"], "players_points": {}}
+    assert (
+        arena._replay_week(5, roster, {"a": "RB"}, _SLOTS, arena.PointHistory(), lambda *a: {})
+        is None
+    )
+
+
+def test_extend_history_accumulates_across_weeks() -> None:
+    hist = arena.PointHistory()
+    arena._extend_history(hist, [{"players_points": {"a": 10.0}}, {"players_points": {"a": 12.0}}])
+    arena._extend_history(hist, [{"players_points": {"a": 8.0}}])
+    assert hist.by_player["a"] == [10.0, 12.0, 8.0]
+
+
+def test_engine_beat_actual_flag() -> None:
+    assert arena.WeekScore(5, 1, 100.0, 90.0, 120.0).engine_beat_actual
+    assert not arena.WeekScore(5, 1, 80.0, 90.0, 120.0).engine_beat_actual
+
+
+def test_aggregate_computes_capture_and_beat_rate() -> None:
+    scores = [
+        arena.WeekScore(4, 1, 100.0, 90.0, 120.0),  # engine beats human
+        arena.WeekScore(4, 2, 80.0, 110.0, 130.0),  # engine loses
+    ]
+    result = arena._aggregate(2024, "L", "p", scores, (4,))
+    assert result.n_roster_weeks == 2
+    assert result.engine_beats_actual_rate == 0.5
+    assert result.engine_mean == 90.0 and result.actual_mean == 100.0
+    assert result.engine_vs_actual_margin == -10.0
+    assert result.engine_capture == round(90.0 / 125.0, 4)

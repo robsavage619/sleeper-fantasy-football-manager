@@ -13,6 +13,43 @@ from sleeper_ffm.evals.scenarios import RUNS_DIR
 eval_app = typer.Typer(help="Engine calibration + prompt fine-tuning eval harness.")
 
 
+@eval_app.command("arena")
+def arena_cmd(
+    season: int = typer.Argument(..., help="Completed season to replay (2020-2024)."),
+    projector: str = typer.Option("engine", "--projector", help="engine | season_avg | recency"),
+) -> None:
+    """Replay a season's start/sit decisions blind and report engine vs managers vs optimal."""
+    from sleeper_ffm.evals.arena import (
+        ArenaUnavailableError,
+        make_engine_projector,
+        recency_projector,
+        run_arena,
+        season_average_projector,
+    )
+
+    builders = {
+        "engine": lambda: (make_engine_projector(season), "engine_forecast+bye"),
+        "season_avg": lambda: (season_average_projector, "season_avg"),
+        "recency": lambda: (recency_projector, "recency_L4"),
+    }
+    if projector not in builders:
+        typer.echo(f"unknown projector '{projector}' (choose: {', '.join(builders)})")
+        raise typer.Exit(1)
+
+    proj, name = builders[projector]()
+    try:
+        result = run_arena(season, proj, name)
+    except ArenaUnavailableError as exc:
+        typer.echo(f"arena unavailable: {exc}")
+        raise typer.Exit(1) from exc
+
+    typer.echo(result.summary())
+    typer.echo(
+        f"  engine {result.engine_mean:.1f}  |  managers {result.actual_mean:.1f}  |  "
+        f"optimal {result.optimal_mean:.1f} pts/wk  ({result.n_roster_weeks} roster-weeks)"
+    )
+
+
 @eval_app.command("run")
 def run_cmd(
     split: str = typer.Option("train", "--split", help="train | holdout"),
