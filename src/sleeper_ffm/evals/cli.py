@@ -71,6 +71,41 @@ def arena_cmd(
     )
 
 
+@eval_app.command("waivers")
+def waivers_cmd(
+    season: int = typer.Argument(..., help="Completed season to replay."),
+    horizon: int = typer.Option(4, "--horizon", help="Weeks of realized value per pickup."),
+    top_k: int = typer.Option(3, "--top-k", help="Top-ranked adds the engine 'makes' weekly."),
+) -> None:
+    """Blind waiver-wire replay: how well does the engine rank the week's pickups?"""
+    from sleeper_ffm.evals.arena import ArenaUnavailableError
+    from sleeper_ffm.evals.waiver_arena import run_waiver_arena
+
+    try:
+        typer.echo(run_waiver_arena(season, horizon=horizon, top_k=top_k).summary())
+    except ArenaUnavailableError as exc:
+        typer.echo(f"waiver arena unavailable: {exc}")
+        raise typer.Exit(1) from exc
+
+
+@eval_app.command("trades")
+def trades_cmd(
+    seasons: list[int] = typer.Argument(
+        ..., help="Completed seasons to pool (e.g. 2022 2023 2024)."
+    ),
+) -> None:
+    """Trade retrospective: did the engine prefer the more-productive side (win-now lens)?"""
+    from sleeper_ffm.evals.arena import ArenaUnavailableError
+    from sleeper_ffm.evals.trade_retro import run_trade_retro
+
+    try:
+        result = run_trade_retro(tuple(seasons))
+    except ArenaUnavailableError as exc:
+        typer.echo(f"trade retro unavailable: {exc}")
+        raise typer.Exit(1) from exc
+    typer.echo(result.summary())
+
+
 @eval_app.command("run")
 def run_cmd(
     split: str = typer.Option("train", "--split", help="train | holdout"),
