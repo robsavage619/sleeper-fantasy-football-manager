@@ -33,6 +33,7 @@ import polars as pl
 
 from sleeper_ffm.config import LATEST_COMPLETED_NFL_SEASON, MY_ROSTER_ID
 from sleeper_ffm.model.dynasty import PlayerAsset, value_player
+from sleeper_ffm.model.news_feed import availability_factor
 from sleeper_ffm.model.valuation import SKILL_POSITIONS, build_player_assets
 from sleeper_ffm.model.vegas import environment_multiplier
 from sleeper_ffm.nflverse.loader import load_id_map, load_weekly
@@ -62,6 +63,9 @@ class PlayerProjection:
     # built (no box-score history for the player) — check before ranking on them.
     floor: float = 0.0
     ceiling: float = 0.0
+    # Live Sleeper injury designation, if any. When it forced a discount, projected_pts
+    # already reflects it (see the availability pass in build_startsit).
+    injury_status: str | None = None
 
 
 @dataclass
@@ -467,6 +471,46 @@ def _solve_lineup(projections: list[PlayerProjection]) -> list[PlayerProjection]
 
 
 # ---------------------------------------------------------------------------
+# Availability
+# ---------------------------------------------------------------------------
+
+
+def _apply_availability(
+    projections: list[PlayerProjection],
+    sleeper_players: dict[str, dict],
+    warnings: list[str],
+) -> None:
+    """Discount each projection by the player's live Sleeper injury status, in place.
+
+    The single place availability enters the live lineup solve. Reuses the canonical
+    :func:`sleeper_ffm.model.news_feed.availability_factor` so start/sit shades identically
+    to the intel feed and briefing. Records the injury status on each projection and appends
+    a one-line warning naming the players that were zeroed or faded, so a discount never
+    happens silently.
+
+    Args:
+        projections: The roster's projections (mutated: ``projected_pts``, ``notes``,
+            ``injury_status``).
+        sleeper_players: The live Sleeper player dump (source of ``injury_status``).
+        warnings: The recommendation's warning list, appended to when players are discounted.
+    """
+    hit: list[str] = []
+    for proj in projections:
+        status = sleeper_players.get(proj.player_id, {}).get("injury_status")
+        if not status:
+            continue
+        proj.injury_status = status
+        factor = availability_factor(status)
+        if factor < 1.0:
+            proj.projected_pts = round(proj.projected_pts * factor, 1)
+            verb = "OUT->0" if factor == 0.0 else f"x{factor:g}"
+            proj.notes += f"; injury {status} ({verb})"
+            hit.append(f"{proj.name} ({status})")
+    if hit:
+        warnings.append(f"Injury-discounted {len(hit)} player(s): {', '.join(hit)}.")
+
+
+# ---------------------------------------------------------------------------
 # Changes computation
 # ---------------------------------------------------------------------------
 
@@ -700,6 +744,14 @@ def build_startsit(week: int, season: int) -> StartSitRecommendation:
         _project_player(pid, sleeper_players, weekly_fp_map, dynasty_by_id, season, week, estimates)
         for pid in skill_ids
     ]
+
+    # Availability pass — the arena's biggest, validated lever, ported live. None of the
+    # four projection sources consults injury status, so an Out/IR player would rank like a
+    # healthy one; here every projection is discounted by his live Sleeper designation
+    # (Out/IR/Doubtful -> 0, Questionable -> 0.8) before the lineup is solved. Applied
+    # uniformly after the fact so it covers provider/nflverse/proxy/default alike.
+    _apply_availability(projections, sleeper_players, warnings)
+
     provider_count = sum(1 for p in projections if p.source == "provider")
     log.info("startsit: %d/%d projections from the provider", provider_count, len(projections))
     default_count = sum(1 for p in projections if p.source == "default")

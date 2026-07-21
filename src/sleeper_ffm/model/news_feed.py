@@ -55,6 +55,34 @@ def _players() -> dict[str, dict]:
         return c.players()
 
 
+# Questionable players suit up ~75-80% of the time; a Doubtful designation is nearly an
+# Out. The 0.8 shade for Questionable is the value the arena validated out-of-sample
+# (evals/arena.py: injury gating lifted lineup capture ~4 points).
+_QUESTIONABLE_PLAY_FACTOR = 0.8
+
+
+def availability_factor(injury_status: str | None) -> float:
+    """Multiplier for a player's projection given his Sleeper injury designation.
+
+    The canonical availability shade, owned here beside the status vocabulary it uses so
+    every surface (start/sit, intel, briefings) discounts identically. Out-class statuses
+    and Doubtful zero the projection; Questionable shades it; everything else is unchanged.
+
+    Args:
+        injury_status: The Sleeper ``injury_status`` value, or None for healthy/unknown.
+
+    Returns:
+        A multiplier in ``[0.0, 1.0]``.
+    """
+    if not injury_status:
+        return 1.0
+    if injury_status in _OUT_STATUSES or injury_status == "Doubtful":
+        return 0.0
+    if injury_status == "Questionable":
+        return _QUESTIONABLE_PLAY_FACTOR
+    return 1.0
+
+
 def _injury_alert(player: dict) -> PlayerAlert | None:
     """Build an injury alert from a Sleeper player record, if noteworthy."""
     status = player.get("injury_status")

@@ -60,3 +60,58 @@ def test_unknown_player_still_gets_the_default_projection() -> None:
     out = ss._project_player("ghost", _PLAYERS, {}, {}, 2025, 6, None)
     assert out.source == "default"
     assert out.projected_pts == pytest.approx(6.0)  # 5.0 * 1.20
+
+
+# --- availability discount (the arena's validated lever, ported live) ----------------
+
+
+def test_availability_factor_tiers() -> None:
+    from sleeper_ffm.model.news_feed import availability_factor
+
+    assert availability_factor(None) == 1.0
+    assert availability_factor("Out") == 0.0
+    assert availability_factor("IR") == 0.0
+    assert availability_factor("Doubtful") == 0.0  # nearly-out, zeroed like the arena
+    assert availability_factor("Questionable") == 0.8
+    assert availability_factor("Probable") == 1.0  # unknown/benign → no discount
+
+
+def test_apply_availability_zeroes_out_players_and_warns() -> None:
+    projections = [
+        ss.PlayerProjection("hurt", "Hurt Star", "RB", "BAL", 22.0, "HIGH", "provider", "x"),
+        ss.PlayerProjection("q", "Iffy Guy", "WR", "KC", 15.0, "HIGH", "provider", "y"),
+        ss.PlayerProjection("ok", "Healthy", "WR", "SF", 12.0, "HIGH", "provider", "z"),
+    ]
+    dump = {
+        "hurt": {"injury_status": "Out"},
+        "q": {"injury_status": "Questionable"},
+        "ok": {"injury_status": None},
+    }
+    warnings: list[str] = []
+    ss._apply_availability(projections, dump, warnings)
+
+    assert projections[0].projected_pts == 0.0  # Out zeroed
+    assert projections[0].injury_status == "Out"
+    assert projections[1].projected_pts == 12.0  # 15 * 0.8
+    assert projections[2].projected_pts == 12.0  # untouched
+    assert len(warnings) == 1 and "Hurt Star" in warnings[0] and "Iffy Guy" in warnings[0]
+
+
+def test_apply_availability_no_warning_when_everyone_is_healthy() -> None:
+    projections = [ss.PlayerProjection("a", "A", "RB", "BAL", 10.0, "HIGH", "provider", "")]
+    warnings: list[str] = []
+    ss._apply_availability(projections, {"a": {"injury_status": None}}, warnings)
+    assert warnings == []
+    assert projections[0].projected_pts == 10.0
+
+
+def test_out_player_falls_out_of_the_optimal_lineup() -> None:
+    """End-to-end intent: zeroing an Out star drops him below a healthy bench player."""
+    projections = [
+        ss.PlayerProjection("star", "Out Star", "RB", "BAL", 25.0, "HIGH", "provider", ""),
+        ss.PlayerProjection("bench", "Healthy Backup", "RB", "SF", 9.0, "MED", "nflverse_avg", ""),
+    ]
+    ss._apply_availability(projections, {"star": {"injury_status": "IR"}}, [])
+    # After the discount, the healthy backup outranks the zeroed star.
+    assert projections[0].projected_pts == 0.0
+    assert projections[1].projected_pts > projections[0].projected_pts
