@@ -753,13 +753,6 @@ def build_startsit(week: int, season: int) -> StartSitRecommendation:
         for pid in skill_ids
     ]
 
-    # Availability pass — the arena's biggest, validated lever, ported live. None of the
-    # four projection sources consults injury status, so an Out/IR player would rank like a
-    # healthy one; here every projection is discounted by his live Sleeper designation
-    # (Out/IR/Doubtful -> 0, Questionable -> 0.8) before the lineup is solved. Applied
-    # uniformly after the fact so it covers provider/nflverse/proxy/default alike.
-    _apply_availability(projections, sleeper_players, warnings)
-
     provider_count = sum(1 for p in projections if p.source == "provider")
     log.info("startsit: %d/%d projections from the provider", provider_count, len(projections))
     default_count = sum(1 for p in projections if p.source == "default")
@@ -768,7 +761,18 @@ def build_startsit(week: int, season: int) -> StartSitRecommendation:
         warnings.append(f"{default_count} player projection(s) used the 5.0 point default.")
     if proxy_count:
         warnings.append(f"{proxy_count} player projection(s) used dynasty-value proxy fallback.")
+    # data_quality reflects DATA problems (missing/fallback projections), not injuries —
+    # computed before the availability pass so a routine Questionable player can't flip a
+    # fully-sourced lineup to DEGRADED.
     data_quality = "FULL" if not warnings else "DEGRADED"
+
+    # Availability pass — the arena's biggest, validated lever, ported live. None of the
+    # four projection sources consults injury status, so an Out/IR player would rank like a
+    # healthy one; here each projection is discounted by his live Sleeper designation before
+    # the lineup is solved (injury-blind sources: Out/IR/Doubtful -> 0, Questionable -> 0.8;
+    # the injury-aware provider keeps only the hard-zero). Its warnings inform without
+    # degrading quality.
+    _apply_availability(projections, sleeper_players, warnings)
 
     # Optimal lineup
     optimal = _solve_lineup(projections)

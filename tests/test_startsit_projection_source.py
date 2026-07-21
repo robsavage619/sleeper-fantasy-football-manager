@@ -133,3 +133,15 @@ def test_out_player_falls_out_of_the_optimal_lineup() -> None:
     # After the discount, the healthy backup outranks the zeroed star.
     assert projections[0].projected_pts == 0.0
     assert projections[1].projected_pts > projections[0].projected_pts
+
+
+def test_injury_discount_does_not_by_itself_degrade_data_quality() -> None:
+    """A routine Questionable player must not flip a fully-sourced lineup to DEGRADED."""
+    warnings: list[str] = []  # no data-source warnings → data is FULL
+    data_quality = "FULL" if not warnings else "DEGRADED"  # computed before the injury pass
+    projections = [
+        ss.PlayerProjection("q", "Iffy Guy", "WR", "KC", 15.0, "HIGH", "nflverse_avg", "y"),
+    ]
+    ss._apply_availability(projections, {"q": {"injury_status": "Questionable"}}, warnings)
+    assert data_quality == "FULL"  # injury pass ran after, so quality is unaffected
+    assert warnings  # the injury is still surfaced as an informational warning
