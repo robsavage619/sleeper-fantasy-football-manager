@@ -65,6 +65,7 @@ class BriefingContext:
     regression: str = ""
     handcuffs: str = ""
     wire_watch: str = ""
+    best_available: str = ""
     track_record: str = ""
     data_freshness: str = ""
 
@@ -160,6 +161,12 @@ Players whose offensive snap share is trending up sharply and who are unrostered
 league — emerging roles to claim before the points show up and the herd bids.
 {context.wire_watch}
 
+## Best Available (ranked by projected value)
+The highest-projected unrostered players this week, league-scored — the pickup ranking the
+engine measures best at (arena waiver capture 37-60%). Snap risers above lead the box
+score; these price it. A trending count means the herd has already noticed.
+{context.best_available}
+
 ## Waiver Candidates
 {context.waiver_candidates}
 
@@ -240,6 +247,7 @@ def gather_briefing_context(my_roster_id: int = MY_ROSTER_ID) -> BriefingContext
         regression=_regression_section(),
         handcuffs=_handcuff_section(my_roster_id),
         wire_watch=_wire_watch_section(my_roster_id),
+        best_available=_best_available_section(),
         track_record=_track_record_section(),
         data_freshness=_data_freshness_section(),
     )
@@ -303,6 +311,29 @@ def _wire_watch_section(my_roster_id: int, top: int = 8) -> str:
         note = "; ".join(watch.warnings) or "no risers cleared the bar"
         return f"  (no available risers — {note})"
     return "\n".join(f"  {a.name} ({a.position} {a.team}): {a.note}" for a in available)
+
+
+def _best_available_section(top: int = 10) -> str:
+    """Highest-projected unrostered players — the projection-ranked free-agent board."""
+    try:
+        from sleeper_ffm.model.free_agents import build_free_agent_board
+
+        board = build_free_agent_board(top_n=top)
+    except Exception as exc:
+        log.warning("master: free-agent board unavailable: %s", exc)
+        return "(degraded — free-agent board unavailable)"
+
+    if not board.overall:
+        note = "; ".join(board.warnings) or "no available players cleared the bar"
+        return f"  (no ranked free agents — {note})"
+    lines: list[str] = []
+    for fa in board.overall:
+        inj = f" [{fa.injury_status}]" if fa.injury_status else ""
+        trend = f" (herd +{fa.trending_add_count})" if fa.trending_add_count else ""
+        lines.append(
+            f"  {fa.name} ({fa.position} {fa.team}): {fa.projected_pts:.1f} proj{inj}{trend}"
+        )
+    return "\n".join(lines)
 
 
 def _handcuff_section(my_roster_id: int) -> str:
