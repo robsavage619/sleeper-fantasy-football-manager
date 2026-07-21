@@ -22,10 +22,12 @@ def arena_cmd(
         None, "--roster", help="H2H target roster (default: mine)."
     ),
     league: bool = typer.Option(False, "--league", help="H2H for every roster in the league."),
+    ledger: bool = typer.Option(False, "--ledger", help="Append the result to the arena ledger."),
 ) -> None:
     """Replay a season's start/sit decisions blind and report engine vs managers vs optimal."""
     from sleeper_ffm.evals.arena import (
         ArenaUnavailableError,
+        append_arena_ledger,
         make_engine_projector,
         recency_projector,
         run_arena,
@@ -69,6 +71,9 @@ def arena_cmd(
         f"  engine {result.engine_mean:.1f}  |  managers {result.actual_mean:.1f}  |  "
         f"optimal {result.optimal_mean:.1f} pts/wk  ({result.n_roster_weeks} roster-weeks)"
     )
+    if ledger:
+        path = append_arena_ledger(result)
+        typer.echo(f"  logged to {path}")
 
 
 @eval_app.command("waivers")

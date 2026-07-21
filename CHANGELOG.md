@@ -15,6 +15,32 @@ their calibration and the briefing prompt against ground truth.
 
 ### Added
 
+- **The arena — blind historical replay of every decision the engine makes.** The one
+  eval that scores the whole product rather than a component, by replaying this league's
+  real Sleeper history with no knowledge of the outcome at pick time. Ground truth needs
+  zero synthesis: the matchup feed carries each roster, what the manager started, and every
+  player's real points scored under league rules. Three surfaces:
+  - *Start/sit* (`sffm eval arena`): a blind projector picks each lineup from prior weeks
+    only, scored against actuals, vs the manager and the hindsight ceiling. The base engine
+    trailed managers by ~7-9 points of optimal-capture; **availability levers** (injury-
+    report gating from nflverse, and a box-score-absence discount — both point-in-time
+    safe) cut the engine's dead-starter rate from ~1.3/wk to ~0.45 (near the human 0.3) and
+    lifted capture to ~81% vs the managers' ~84%. The residual is a ranking/news ceiling; a
+    forecast/league-last-4 blend was measured and rejected.
+  - *Head-to-head* (`--h2h`, `--league`): would the engine have won more? Against a strong
+    manager it ties at best; league-wide it out-manages ~1 of 10 rosters — because this
+    league is strong and tightly clustered, sitting 3 points below the pack ranks near last.
+  - *Waivers* (`sffm eval waivers`): the engine's top-3 blind pickup targets returned
+    ~50-100% more than a random add (37-60% ranking capture) — real value where the decision
+    is a pure ranking among many options.
+  - *Trades* (`sffm eval trades`): preferred the more-productive side 7/10 (win-now lens,
+    picks excluded, p=0.34 — suggestive, small-n).
+  Every headline ships with a bootstrap CI or a sign-test p-value (`evals/stats.py`), and
+  results append to an arena ledger for regression tracking.
+- **In-house team Elo + QB adjustment** (`model/elo.py`) — computed live from the cached
+  schedule (the FiveThirtyEight dataset is dead), validated out-of-sample (63% game
+  accuracy, within ~5.7% of Vegas), wired into playoff strength-of-schedule where Vegas has
+  no lines. QB-adjusted Elo was measured (+0.31%, marginal) and kept but not promoted.
 - **League-specific mispricing** (`/mispricing`) — re-scores every player under the
   league's exact rules *and* under generic PPR, then ranks the buy/sell gap the
   national market can't see. Position-median normalization cancels league-wide

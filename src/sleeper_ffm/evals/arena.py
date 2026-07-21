@@ -688,6 +688,52 @@ def _extend_history(history: PointHistory, matchups: list[dict]) -> None:
                 history.by_player.setdefault(pid, []).append(float(pts))
 
 
+def append_arena_ledger(result: ArenaResult) -> str:
+    """Append a compact arena result to the shared eval ledger for regression tracking.
+
+    Records the capture gap and dead-starter rate under a git SHA, so a future engine
+    change's arena impact is visible in the same ``sffm eval report`` trail as the tier-1
+    scenarios. Mirrors :mod:`sleeper_ffm.evals.harness`'s ledger shape.
+
+    Args:
+        result: The arena result to log.
+
+    Returns:
+        The ledger path written to.
+    """
+    import json
+    import subprocess
+    from datetime import UTC, datetime
+
+    from sleeper_ffm.evals.scenarios import RUNS_DIR
+
+    try:
+        sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        sha = "unknown"
+
+    RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "kind": "arena",
+        "timestamp": datetime.now(UTC).isoformat(),
+        "git_sha": sha,
+        "season": result.season,
+        "projector": result.projector,
+        "engine_capture": result.engine_capture,
+        "actual_capture": result.actual_capture,
+        "capture_gap": round(result.actual_capture - result.engine_capture, 4),
+        "engine_beats_actual_rate": result.engine_beats_actual_rate,
+        "engine_dead_starters": result.engine_zero_starter_rate,
+        "n_roster_weeks": result.n_roster_weeks,
+    }
+    path = RUNS_DIR / "arena_ledger.jsonl"
+    with path.open("a") as f:
+        f.write(json.dumps(entry) + "\n")
+    return str(path)
+
+
 # --- head-to-head counterfactual: would the engine have WON? ------------------------
 
 
