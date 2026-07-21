@@ -647,7 +647,6 @@ export type StartSitRec = {
   changes: Array<{ start: string; sit: string; gain: number }>
   total_projected_pts: number
   current_projected_pts: number
-  prompt: string
   data_quality: 'FULL' | 'DEGRADED'
   warnings: string[]
 }

@@ -43,8 +43,6 @@ from sleeper_ffm.sleeper.client import SleeperClient
 log = logging.getLogger(__name__)
 
 _FLEX_POSITIONS = frozenset({"RB", "WR", "TE"})
-_POS_ORDER = {"QB": 0, "RB": 1, "WR": 2, "TE": 3}
-_SLOT_LABELS = ["QB", "RB1", "RB2", "RB3", "WR1", "WR2", "WR3", "TE", "FLEX1", "FLEX2"]
 
 
 @dataclass
@@ -79,7 +77,6 @@ class StartSitRecommendation:
     changes: list[dict]  # [{start, sit, gain}]
     total_projected_pts: float
     current_projected_pts: float
-    prompt: str
     data_quality: str
     warnings: list[str]
 
@@ -589,110 +586,6 @@ def _compute_changes(
     return sorted(changes, key=lambda x: x["gain"], reverse=True)
 
 
-# ---------------------------------------------------------------------------
-# Prompt builder
-# ---------------------------------------------------------------------------
-
-
-def _build_prompt(
-    week: int,
-    season: int,
-    all_projections: list[PlayerProjection],
-    optimal: list[PlayerProjection],
-    current: list[PlayerProjection],
-    changes: list[dict],
-    proj_by_id: dict[str, PlayerProjection],
-) -> str:
-    """Build a structured Claude Code prompt for start/sit reasoning.
-
-    Args:
-        week: NFL week being optimized.
-        season: NFL season year.
-        all_projections: All roster players (for full roster table).
-        optimal: Optimal lineup from optimizer.
-        current: Current Sleeper starters.
-        changes: Computed changes list.
-        proj_by_id: Player lookup for name resolution in changes.
-
-    Returns:
-        Formatted prompt string ready to paste into Claude Code.
-    """
-    # Sort all projections: position order then pts desc
-    sorted_proj = sorted(
-        all_projections,
-        key=lambda p: (_POS_ORDER.get(p.position, 9), -p.projected_pts),
-    )
-
-    # Roster projections table
-    roster_rows = [
-        "| Player | Pos | Team | Proj | Source | Notes |",
-        "|--------|-----|------|------|--------|-------|",
-    ]
-    for p in sorted_proj:
-        roster_rows.append(
-            f"| {p.name} | {p.position} | {p.team} | {p.projected_pts:.1f}"
-            f" | {p.source} | {p.notes} |"
-        )
-
-    # Optimal lineup table. The Injury column surfaces the live designation so the GM can
-    # apply the news judgment the projection can't — a Questionable start it might sit given
-    # a plus matchup for the backup, etc.
-    opt_rows = [
-        "| Slot | Player | Pos | Projected | Injury |",
-        "|------|--------|-----|-----------|--------|",
-    ]
-    for slot, p in zip(_SLOT_LABELS, optimal, strict=False):
-        inj = p.injury_status or ""
-        opt_rows.append(f"| {slot} | {p.name} | {p.position} | {p.projected_pts:.1f} | {inj} |")
-
-    # Current lineup table
-    cur_rows = [
-        "| Slot | Player | Pos | Projected | Injury |",
-        "|------|--------|-----|-----------|--------|",
-    ]
-    for slot, p in zip(_SLOT_LABELS, current, strict=False):
-        inj = p.injury_status or ""
-        cur_rows.append(f"| {slot} | {p.name} | {p.position} | {p.projected_pts:.1f} | {inj} |")
-
-    # Changes section
-    if changes:
-        change_lines = []
-        for c in changes:
-            start_p = proj_by_id.get(c["start"])
-            sit_p = proj_by_id.get(c["sit"])
-            start_name = start_p.name if start_p else c["start"]
-            sit_name = sit_p.name if sit_p else c["sit"]
-            change_lines.append(f"- START {start_name} over {sit_name} (+{c['gain']:.1f} pts)")
-        changes_text = "\n".join(change_lines)
-    else:
-        changes_text = "No changes recommended — current lineup is optimal."
-
-    return f"""## START/SIT OPTIMIZER — WEEK {week} {season}
-
-### MY ROSTER PROJECTIONS
-{chr(10).join(roster_rows)}
-
-### OPTIMAL LINEUP (model)
-{chr(10).join(opt_rows)}
-
-### CURRENT STARTERS
-{chr(10).join(cur_rows)}
-
-### RECOMMENDED CHANGES
-{changes_text}
-
-### REQUEST
-Evaluate these start/sit recommendations. Consider:
-- Injury risk, weather, game script
-- Matchup quality (opponent defensive rank by position if you have that context)
-- Boom/bust variance vs. safe floor
-- Any players NOT in nflverse data that I should know about
-
-Respond with: KEEP or CHANGE for each recommendation, plus brief reasoning.
-Post your finding via: `sffm finding startsit --body '<json>'`
-where JSON has keys: `recommendations` (list of {{player_id, decision, reason}}) and `summary`.
-"""
-
 
 # ---------------------------------------------------------------------------
 # Public entry point
@@ -800,10 +693,6 @@ def build_startsit(week: int, season: int) -> StartSitRecommendation:
     total_proj = round(sum(p.projected_pts for p in optimal), 1)
     current_proj = round(sum(p.projected_pts for p in current_starters), 1)
 
-    prompt = _build_prompt(
-        week, season, projections, optimal, current_starters, changes, proj_by_id
-    )
-
     return StartSitRecommendation(
         week=week,
         season=season,
@@ -812,7 +701,6 @@ def build_startsit(week: int, season: int) -> StartSitRecommendation:
         changes=changes,
         total_projected_pts=total_proj,
         current_projected_pts=current_proj,
-        prompt=prompt,
         data_quality=data_quality,
         warnings=warnings,
     )

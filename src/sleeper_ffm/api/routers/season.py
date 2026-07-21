@@ -85,8 +85,9 @@ def startsit(
         season: NFL season year.
 
     Returns:
-        StartSitRecommendation as a dict including projected_starters, current_starters,
-        changes, projected totals, and a Claude Code reasoning prompt.
+        StartSitRecommendation as a dict: projected_starters, current_starters, changes,
+        and projected totals. (No separate LLM prompt — start/sit reasoning is a task in
+        the single master briefing; see prompts/master.py.)
     """
     resolved_week = week
     if resolved_week == 0:
