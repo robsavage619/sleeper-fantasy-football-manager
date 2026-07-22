@@ -312,6 +312,9 @@ def make_engine_projector(
     blend_weight: float = 0.0,
     use_vegas: bool = True,
     use_matchup: bool = False,
+    questionable_factor: float = _QUESTIONABLE_FACTOR,
+    dnp_factor: float = _DNP_FACTOR,
+    forecast_cache: dict[tuple[str, int], float] | None = None,
 ) -> Projector:
     """Build a projector backed by our in-house forecast — "our engine" as it ran that week.
 
@@ -354,6 +357,11 @@ def make_engine_projector(
             last-4 average rather than the forecast (Lever C, rejected). 0.0 = pure forecast.
         use_vegas: Apply the Vegas game-environment multiplier (Lever D). Default on.
         use_matchup: Apply the prior-season opponent DvP multiplier (Lever E). Default off.
+        questionable_factor: Override the Questionable shade (Lever A) for sweeps.
+        dnp_factor: Override the missed-last-game discount (Lever B) for sweeps.
+        forecast_cache: Share one ``(gsis_id, week) -> mean`` cache across several
+            projector instances — the forecast is availability-independent, so a
+            constants sweep pays for it once.
 
     Returns:
         A :data:`Projector`. If nflverse data is unavailable it degrades to
@@ -400,7 +408,7 @@ def make_engine_projector(
     box_weeks_by_gsis = {
         gsis: {int(r["week"]) for r in rows} for gsis, rows in rows_by_gsis.items()
     }
-    forecast_cache: dict[tuple[str, int], float] = {}
+    cache = forecast_cache if forecast_cache is not None else {}
     vegas_mult = _vegas_multipliers(season) if use_vegas else {}
     opp_by_team_week = _opponent_calendar(load_schedules, season) if use_matchup else {}
     dvp = _prior_season_dvp(season) if use_matchup else {}
@@ -420,7 +428,7 @@ def make_engine_projector(
                     out[pid] = 0.0  # on bye — a manager would never start him
                     continue
                 base = _cached_forecast(
-                    gsis, wk, pos, rows_by_gsis, priors, scoring, forecast_cache, forecast_player
+                    gsis, wk, pos, rows_by_gsis, priors, scoring, cache, forecast_player
                 )
                 if blend_weight > 0:
                     league_games = history.by_player.get(pid) or []
@@ -435,7 +443,14 @@ def make_engine_projector(
                     if opp is not None:
                         base *= dvp.get((opp, pos), 1.0)
                 out[pid] = base * _availability_multiplier(
-                    gsis, wk, week_injuries, weeks_played, team_by_gsis, box_weeks_by_gsis
+                    gsis,
+                    wk,
+                    week_injuries,
+                    weeks_played,
+                    team_by_gsis,
+                    box_weeks_by_gsis,
+                    questionable_factor=questionable_factor,
+                    dnp_factor=dnp_factor,
                 )
             else:
                 out[pid] = history.average(pid) or 0.0
@@ -451,6 +466,8 @@ def _availability_multiplier(
     weeks_played: dict[str, set[int]],
     team_by_gsis: dict[str, str],
     box_weeks_by_gsis: dict[str, set[int]],
+    questionable_factor: float = _QUESTIONABLE_FACTOR,
+    dnp_factor: float = _DNP_FACTOR,
 ) -> float:
     """Point-in-time availability shade for a skill player (Levers A & B).
 
@@ -462,14 +479,14 @@ def _availability_multiplier(
     status = week_injuries.get(gsis)
     if status in _OUT_STATUSES:
         return 0.0
-    factor = _QUESTIONABLE_FACTOR if status == "Questionable" else 1.0
+    factor = questionable_factor if status == "Questionable" else 1.0
 
     team = team_by_gsis.get(gsis, "")
     prior_team_weeks = [w for w in weeks_played.get(team, ()) if w < wk]
     if prior_team_weeks:
         last_team_week = max(prior_team_weeks)
         if last_team_week not in box_weeks_by_gsis.get(gsis, set()):
-            factor *= _DNP_FACTOR  # missed the team's last game — inactive/scratched
+            factor *= dnp_factor  # missed the team's last game — inactive/scratched
     return factor
 
 

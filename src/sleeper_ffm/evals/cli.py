@@ -76,6 +76,67 @@ def arena_cmd(
         typer.echo(f"  logged to {path}")
 
 
+@eval_app.command("gap")
+def gap_cmd(
+    seasons: list[int] = typer.Argument(
+        ..., help="Completed seasons to decompose (e.g. 2022 2023 2024)."
+    ),
+    projector: str = typer.Option("engine", "--projector", help="engine | season_avg | recency"),
+) -> None:
+    """Bucket every point of capture loss vs optimal: engine vs managers, side by side."""
+    from sleeper_ffm.evals.arena import (
+        ArenaUnavailableError,
+        make_engine_projector,
+        recency_projector,
+        season_average_projector,
+    )
+    from sleeper_ffm.evals.gap_report import merge_gap_reports, run_gap_report
+
+    builders = {
+        "engine": lambda s: (make_engine_projector(s), "engine_forecast+avail+vegas"),
+        "season_avg": lambda s: (season_average_projector, "season_avg"),
+        "recency": lambda s: (recency_projector, "recency_L4"),
+    }
+    if projector not in builders:
+        typer.echo(f"unknown projector '{projector}' (choose: {', '.join(builders)})")
+        raise typer.Exit(1)
+
+    reports = []
+    for season in seasons:
+        proj, name = builders[projector](season)
+        try:
+            report = run_gap_report(season, proj, name)
+        except ArenaUnavailableError as exc:
+            typer.echo(f"gap report unavailable for {season}: {exc}")
+            raise typer.Exit(1) from exc
+        typer.echo(report.table())
+        reports.append(report)
+    if len(reports) > 1:
+        typer.echo(merge_gap_reports(reports).table())
+
+
+@eval_app.command("avail-sweep")
+def avail_sweep_cmd(
+    seasons: list[int] = typer.Argument(..., help="Seasons to pool (fit set, e.g. 2022 2023)."),
+    q: str = typer.Option("0.5,0.65,0.8,0.9,1.0", "--q", help="Questionable factors to sweep."),
+    dnp: str = typer.Option("0.1,0.2,0.3,0.45,0.6", "--dnp", help="DNP factors to sweep."),
+) -> None:
+    """Sweep the availability shade constants (Levers A/B) against the arena."""
+    from sleeper_ffm.evals.arena import ArenaUnavailableError
+    from sleeper_ffm.evals.avail_sweep import run_avail_sweep
+
+    q_factors = tuple(float(x) for x in q.split(","))
+    dnp_factors = tuple(float(x) for x in dnp.split(","))
+    try:
+        cells = run_avail_sweep(tuple(seasons), q_factors, dnp_factors)
+    except ArenaUnavailableError as exc:
+        typer.echo(f"sweep unavailable: {exc}")
+        raise typer.Exit(1) from exc
+    typer.echo(f"seasons {seasons}: {cells[0].n_roster_weeks} roster-weeks per cell")
+    for cell in cells:
+        typer.echo(f"  {cell.row()}")
+
+
 @eval_app.command("waivers")
 def waivers_cmd(
     season: int = typer.Argument(..., help="Completed season to replay."),
