@@ -168,6 +168,38 @@ def winprob_cmd(
             raise typer.Exit(1) from exc
 
 
+@eval_app.command("earlyclaim")
+def early_claim_cmd(
+    season: int = typer.Argument(..., help="Completed season to replay."),
+    top_k: int = typer.Option(10, "--top-k", help="Size of the engine's blind watchlist."),
+    horizon: int = typer.Option(4, "--horizon", help="Weeks of realized value per pickup."),
+    value_top_n: int = typer.Option(
+        25, "--value-top-n", help="How many top rival value-adds to adjudicate."
+    ),
+    roster_id: int | None = typer.Option(
+        None, "--roster", help="Counterfactual target roster (default: mine)."
+    ),
+) -> None:
+    """Would the engine have flagged a breakout before a rival claimed him?"""
+    from sleeper_ffm.evals.arena import ArenaUnavailableError
+    from sleeper_ffm.evals.early_claim import run_early_claim
+
+    try:
+        result = run_early_claim(
+            season, top_k=top_k, horizon=horizon, value_top_n=value_top_n, my_roster_id=roster_id
+        )
+    except ArenaUnavailableError as exc:
+        typer.echo(f"early claim unavailable: {exc}")
+        raise typer.Exit(1) from exc
+    typer.echo(result.summary())
+    for s in sorted(result.stolen, key=lambda x: -x.realized_value)[:10]:
+        typer.echo(
+            f"  STOLEN {s.player_id}: flagged wk{s.first_flagged_week}, claimed by roster "
+            f"{s.rival_roster_id} wk{s.claim_week} ({s.lead_weeks} wk lead, "
+            f"{s.realized_value:.1f} pts)"
+        )
+
+
 @eval_app.command("waivers")
 def waivers_cmd(
     season: int = typer.Argument(..., help="Completed season to replay."),
@@ -190,9 +222,34 @@ def trades_cmd(
     seasons: list[int] = typer.Argument(
         ..., help="Completed seasons to pool (e.g. 2022 2023 2024)."
     ),
+    roster: bool = typer.Option(
+        False, "--roster", help="Filter to one roster's own trades (default: mine)."
+    ),
+    roster_id: int | None = typer.Option(
+        None, "--roster-id", help="Roster to audit with --roster."
+    ),
 ) -> None:
     """Trade retrospective: did the engine prefer the more-productive side (win-now lens)?"""
     from sleeper_ffm.evals.arena import ArenaUnavailableError
+
+    if roster:
+        from sleeper_ffm.evals.trade_retro import audit_roster_trades
+
+        try:
+            audit = audit_roster_trades(tuple(seasons), roster_id=roster_id)
+        except ArenaUnavailableError as exc:
+            typer.echo(f"trade audit unavailable: {exc}")
+            raise typer.Exit(1) from exc
+        typer.echo(audit.summary())
+        for v in audit.trades:
+            verdict = "endorsed" if v.engine_favored_me else "would decline"
+            outcome = "won" if v.my_side_won else "lost"
+            typer.echo(
+                f"  {v.season} wk{v.week} vs roster {v.partner_roster_id}: engine {verdict}, "
+                f"you {outcome} on production ({v.points_delta:+.1f} pts)"
+            )
+        return
+
     from sleeper_ffm.evals.trade_retro import run_trade_retro
 
     try:
