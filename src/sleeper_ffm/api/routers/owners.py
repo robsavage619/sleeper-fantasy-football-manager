@@ -52,6 +52,18 @@ def get_transaction_value() -> list[dict]:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@router.get("/transaction-grades")
+def get_transaction_grades() -> dict:
+    """Return the graded transaction ledger — every league trade and waiver claim, on the curve."""
+    from sleeper_ffm.model.transaction_grades import build_transaction_grades
+
+    try:
+        return dataclasses.asdict(build_transaction_grades())
+    except Exception as exc:
+        log.exception("build_transaction_grades failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @router.get("/draft-profile")
 def get_draft_profile() -> list[dict]:
     """Return per-manager draft tendencies + best picks across league history."""
