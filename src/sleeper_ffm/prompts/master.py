@@ -351,15 +351,53 @@ def _wire_watch_section(my_roster_id: int, top: int = 8) -> str:
     return "\n".join(f"  {a.name} ({a.position} {a.team}): {a.note}" for a in available)
 
 
+def _fmt_dossier_player(p: dict) -> str:
+    return (
+        f"{p.get('name', '?')} ({p.get('position', '?')} {p.get('team', '?')}, "
+        f"{p.get('dynasty_value', 0):.0f})"
+    )
+
+
+def _dossier_section(roster_id: int) -> str:
+    """Render one rival's full dossier (holdings, needs, window, picks) for reasoning.
+
+    Runs inside a degrade guard so a dataclass field drift downgrades one manager's block
+    to a placeholder rather than failing the whole briefing.
+    """
+    try:
+        from sleeper_ffm.config import DEFAULT_VALUE_SEASON
+        from sleeper_ffm.model.owner_dossier import build_dossier
+
+        d = build_dossier(roster_id, DEFAULT_VALUE_SEASON)
+        pos_val = ", ".join(f"{p.position} {p.value:.0f}" for p in d.value_by_position)
+        ranks = ", ".join(f"{r.position} #{r.rank}/{r.of} ({r.tier})" for r in d.position_ranks)
+        ranked = sorted(d.players, key=lambda x: -float(x.get("dynasty_value", 0) or 0))
+        top_players = ", ".join(_fmt_dossier_player(p) for p in ranked[:10])
+        picks = (
+            ", ".join(f"{p.get('season', '?')} R{p.get('round', '?')}" for p in d.picks_owned)
+            or "none tracked"
+        )
+        return (
+            f"Manager: roster {d.roster_id} ({d.display_name}). Value rank {d.value_rank}, total "
+            f"dynasty value {d.total_dynasty_value:.0f}, avg age {d.avg_age:.1f} "
+            f"(starters {d.avg_starter_age:.1f}), {d.player_count} players.\n"
+            f"Contention: {d.contention.window} — {d.contention.label}. {d.contention.rationale}\n"
+            f"Value by position: {pos_val}\nPositional ranks (low rank = strength, high = need): "
+            f"{ranks}\nTop holdings: {top_players}\nFuture picks owned: {picks}"
+        )
+    except Exception as exc:
+        log.warning("master: dossier unavailable for roster %s: %s", roster_id, exc)
+        return f"(degraded — dossier for roster {roster_id} unavailable)"
+
+
 def _rival_dossiers_section(my_roster_id: int) -> str:
     """One dossier context block per rival manager, for the master run's owner_dossiers.
 
-    Reuses ``surfaces._dossier_section`` (the single source of per-rival context) so the
-    consolidated master run has exactly what the standalone ``/ai/dossier`` prompt had —
-    just for every rival at once. Degrades to a note if the roster list is unavailable.
+    Gives the consolidated master run exactly what the retired standalone ``/ai/dossier``
+    prompt had — just for every rival at once. Degrades to a note if the roster list is
+    unavailable.
     """
     try:
-        from sleeper_ffm.prompts.surfaces import _dossier_section
         from sleeper_ffm.sleeper.client import SleeperClient
 
         with SleeperClient() as client:
@@ -368,9 +406,7 @@ def _rival_dossiers_section(my_roster_id: int) -> str:
         log.warning("master: rival dossiers unavailable: %s", exc)
         return "(degraded — rival dossiers unavailable)"
 
-    blocks = [
-        _dossier_section(rid) for rid in roster_ids if rid != my_roster_id
-    ]
+    blocks = [_dossier_section(rid) for rid in roster_ids if rid != my_roster_id]
     return "\n\n".join(blocks) if blocks else "  (no rival rosters found)"
 
 
