@@ -129,15 +129,14 @@ def standing_findings() -> list[Finding]:
     run_findings = [f for f in _store if f.run_id == latest_run] if latest_run else []
     run_kinds = {f.kind for f in run_findings}
 
-    # Standalone (no run_id) findings of kinds the master run does not produce.
-    standalone: dict[str, Finding] = {}
-    for f in _store:
-        if f.run_id is None and f.kind not in run_kinds:
-            prev = standalone.get(f.kind)
-            if prev is None or f.created_at > prev.created_at:
-                standalone[f.kind] = f
+    # All standalone (no run_id) findings of kinds the master run does not produce — every
+    # one, not newest-per-kind: multi-item kinds like prospect_scout need the full set, and
+    # the caller (buildStanding) does its own per-kind grouping/windowing. Legacy findings
+    # from before run tagging (all run_id=None) fall entirely into this bucket, so a
+    # pre-migration store degrades to plain newest-per-kind — unchanged behavior.
+    standalone = [f for f in _store if f.run_id is None and f.kind not in run_kinds]
 
-    return sorted([*run_findings, *standalone.values()], key=lambda f: f.created_at, reverse=True)
+    return sorted([*run_findings, *standalone], key=lambda f: f.created_at, reverse=True)
 
 
 def _run_seq(run_id: str) -> int:

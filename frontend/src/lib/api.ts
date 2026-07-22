@@ -1397,6 +1397,10 @@ export const api = {
   // players scouted first. Callers here want the full set for matching/badging.
   findings: (kind?: string, limit = 500) =>
     get<Finding[]>(`/findings/?limit=${limit}${kind ? `&kind=${kind}` : ''}`),
+  // The current standing: exactly the latest master run (a new run replaces the old),
+  // plus standalone kinds the run doesn't produce (per-prospect scouts). Authoritative —
+  // uses the run_id the backend stamps, not a client-side time-window heuristic.
+  standing: () => get<Finding[]>('/findings/standing'),
   latestFinding: (kind: string) => get<Finding>(`/findings/latest/${kind}`),
   postFinding: (kind: string, body: Record<string, unknown>) =>
     post<Finding>('/findings/', { kind, body }),

@@ -834,8 +834,8 @@ const KIND_LABEL: Record<string, string> = {
  */
 function FindingsFeed() {
   const { data: findings, isLoading } = useQuery({
-    queryKey: ['findings'],
-    queryFn: () => api.findings(),
+    queryKey: ['standing'],
+    queryFn: () => api.standing(),
     refetchInterval: 60_000,
   })
 
