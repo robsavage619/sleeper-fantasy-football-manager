@@ -32,6 +32,31 @@ def _valid_doc() -> dict[str, Any]:
             {"name": "Rookie WR", "verdict": "STARTER", "rationale": "elite target share"}
         ],
         "lineup_recs": [{"start": "WR2", "sit": "WR4", "rationale": "matchup"}],
+        "trade_plan": {
+            "posture": "BUY",
+            "plan": "Consolidate for a title window.",
+            "trade_recs": [],
+            "sequencing": "A before B",
+        },
+        "market_edge": {
+            "buys": [{"player": "Underpriced RB", "thesis": "TD-regression buy-low"}],
+            "sells": [],
+            "reconciliations": "No board conflicts this week.",
+        },
+        "waiver_plan": {
+            "waiver_recs": [
+                {"player": "Backup RB", "faab_bid": 12, "drop": "Deep stash", "tier": "PRIORITY"}
+            ],
+            "holds": ["Trendy but capped WR"],
+        },
+        "owner_dossiers": [
+            {
+                "target": "roster 3 (Rival B)",
+                "exploit_plan": "Squeeze their RB surplus.",
+                "angles": [],
+                "watch_items": ["their 2027 1st"],
+            }
+        ],
         "generated_at": "2026-07-13T00:00:00+00:00",
         "data_quality_ack": "Snap counts stale by one week.",
     }
@@ -48,12 +73,58 @@ def test_valid_document_stores_per_kind(client: TestClient) -> None:
         "draft": 0,
         "prospect": 1,
         "lineup": 1,
+        "trade_plan": 1,
+        "market_edge": 1,
+        "waiver_plan": 1,
+        "owner_dossier": 1,
     }
-    assert resp.json()["total"] == 6
+    assert resp.json()["total"] == 10
 
     trades = client.get("/findings/", params={"kind": "trade"}).json()
     assert len(trades) == 2
     assert all(t["body"]["generated_at"] == "2026-07-13T00:00:00+00:00" for t in trades)
+
+
+def test_consolidated_sections_fan_out_to_their_kinds(client: TestClient) -> None:
+    """The folded-in analyses store under the same kinds their old /ai/* surfaces used."""
+    client.post("/findings/bulk", json=_valid_doc())
+    edge = client.get("/findings/", params={"kind": "market_edge"}).json()
+    assert len(edge) == 1 and edge[0]["body"]["buys"][0]["player"] == "Underpriced RB"
+    plan = client.get("/findings/", params={"kind": "trade_plan"}).json()
+    assert plan[0]["body"]["posture"] == "BUY"
+    dossiers = client.get("/findings/", params={"kind": "owner_dossier"}).json()
+    assert dossiers[0]["body"]["target"] == "roster 3 (Rival B)"
+
+
+def test_a_new_run_replaces_the_standing_but_history_persists(client: TestClient) -> None:
+    """Two bulk runs → standing shows only the latest; both persist on disk for grading."""
+    import time
+
+    run1 = _valid_doc()
+    run1["narrative"] = "Run one column."
+    client.post("/findings/bulk", json=run1)
+    time.sleep(0.005)
+    run2 = _valid_doc()
+    run2["narrative"] = "Run two column."
+    client.post("/findings/bulk", json=run2)
+
+    standing = client.get("/findings/standing").json()
+    narratives = [f["body"]["narrative"] for f in standing if f["kind"] == "narrative"]
+    assert narratives == ["Run two column."]  # replaced, not appended
+    run_ids = {f["run_id"] for f in standing if f["run_id"]}
+    assert len(run_ids) == 1  # standing is exactly one run
+
+    # Full history is still on the raw list (both runs), so grading past calls survives.
+    all_narr = client.get("/findings/", params={"kind": "narrative"}).json()
+    assert len(all_narr) == 2
+
+
+def test_standalone_finding_persists_across_runs_in_the_standing(client: TestClient) -> None:
+    """A standalone kind the master run doesn't produce (prospect_scout) survives a new run."""
+    client.post("/findings/typed", json={"kind": "prospect_scout", "body": {"name": "Rook"}})
+    client.post("/findings/bulk", json=_valid_doc())
+    standing = client.get("/findings/standing").json()
+    assert any(f["kind"] == "prospect_scout" for f in standing)
 
 
 def test_malformed_document_returns_422_and_stores_nothing(client: TestClient) -> None:

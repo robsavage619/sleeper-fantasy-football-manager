@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
@@ -12,6 +13,7 @@ from sleeper_ffm.reasoning.findings import (
     latest_finding,
     list_findings,
     post_finding,
+    standing_findings,
 )
 
 router = APIRouter(prefix="/findings", tags=["findings"])
@@ -33,6 +35,7 @@ class FindingResponse(BaseModel):
     body: dict[str, Any]
     created_at: float
     prompt_hash: str | None = None
+    run_id: str | None = None
 
     @classmethod
     def from_finding(cls, f: Finding) -> FindingResponse:
@@ -43,6 +46,7 @@ class FindingResponse(BaseModel):
             body=f.body,
             created_at=f.created_at,
             prompt_hash=f.prompt_hash,
+            run_id=f.run_id,
         )
 
 
@@ -57,6 +61,17 @@ def post(req: PostFindingRequest) -> FindingResponse:
 def list_all(kind: str | None = None, limit: int = 50) -> list[FindingResponse]:
     """List recent findings, optionally filtered by kind."""
     return [FindingResponse.from_finding(f) for f in list_findings(kind=kind, limit=limit)]
+
+
+@router.get("/standing", response_model=list[FindingResponse])
+def standing() -> list[FindingResponse]:
+    """Return the current standing — the latest master run plus surviving standalone kinds.
+
+    This is what the app should display: exactly the most recent single run's output (a new
+    run replaces the old), with standalone findings the run doesn't produce (e.g. the
+    per-prospect scout drill-down) persisting across runs.
+    """
+    return [FindingResponse.from_finding(f) for f in standing_findings()]
 
 
 @router.get("/latest/{kind}", response_model=FindingResponse)
@@ -123,6 +138,63 @@ class LineupRec(BaseModel):
     rationale: str = ""
 
 
+# Shared building blocks, defined before both the master document and the typed
+# single-surface docs that also use them.
+class _EdgeThesis(BaseModel):
+    model_config = {"extra": "allow"}
+
+    player: str
+    thesis: str = ""
+    target_partner: str = ""
+
+
+class _WaiverPlanRec(WaiverRec):
+    """WaiverRec plus a bid tier."""
+
+    tier: str = ""
+
+
+class _MasterMarketEdge(BaseModel):
+    """Nested market-edge board inside the master document (fanned to kind ``market_edge``)."""
+
+    model_config = {"extra": "allow"}
+
+    buys: list[_EdgeThesis] = []
+    sells: list[_EdgeThesis] = []
+    reconciliations: str = ""
+
+
+class _MasterWaiverPlan(BaseModel):
+    """Nested FAAB plan inside the master document (fanned to kind ``waiver_plan``)."""
+
+    model_config = {"extra": "allow"}
+
+    waiver_recs: list[_WaiverPlanRec] = []
+    holds: list[str] = []
+
+
+class _MasterTradePlan(BaseModel):
+    """Nested franchise posture inside the master document (fanned to kind ``trade_plan``)."""
+
+    model_config = {"extra": "allow"}
+
+    posture: str = ""
+    plan: str = ""
+    trade_recs: list[TradeRec] = []
+    sequencing: str = ""
+
+
+class _MasterDossier(BaseModel):
+    """One rival exploit plan inside the master document (fanned to kind ``owner_dossier``)."""
+
+    model_config = {"extra": "allow"}
+
+    target: str
+    exploit_plan: str = ""
+    angles: list[TradeRec] = []
+    watch_items: list[str] = []
+
+
 class MasterDocument(BaseModel):
     """The single JSON document Claude Code returns from the master briefing.
 
@@ -132,6 +204,10 @@ class MasterDocument(BaseModel):
     observed (``faab_bid`` as a string, ``send``/``receive`` shape) and left
     loose (``extra=allow``) everywhere else, so an unanticipated extra key
     from the model doesn't get silently dropped or rejected.
+
+    The trade_plan / market_edge / waiver_plan / owner_dossiers sections were
+    folded in when all LLM analysis was consolidated into this single run — each
+    fans out to the same finding kind its standalone ``/ai/*`` surface used to post.
     """
 
     model_config = {"extra": "forbid"}
@@ -142,6 +218,10 @@ class MasterDocument(BaseModel):
     draft_recs: list[DraftRec]
     prospect_notes: list[ProspectNote]
     lineup_recs: list[LineupRec]
+    trade_plan: _MasterTradePlan
+    market_edge: _MasterMarketEdge
+    waiver_plan: _MasterWaiverPlan
+    owner_dossiers: list[_MasterDossier]
     generated_at: str
     data_quality_ack: str
 
@@ -158,14 +238,6 @@ class BulkResponse(BaseModel):
 # ONE cohesive document, unlike the master briefing which fans out per item. Every model
 # is ``extra=allow`` so an unanticipated key survives, but the load-bearing fields are
 # typed so malformed model output is rejected with 422 instead of stored raw.
-
-
-class _EdgeThesis(BaseModel):
-    model_config = {"extra": "allow"}
-
-    player: str
-    thesis: str = ""
-    target_partner: str = ""
 
 
 class OwnerDossierDoc(BaseModel):
@@ -191,12 +263,6 @@ class MarketEdgeDoc(BaseModel):
     reconciliations: str = ""
     generated_at: str
     data_quality_ack: str = ""
-
-
-class _WaiverPlanRec(WaiverRec):
-    """WaiverRec plus a bid tier."""
-
-    tier: str = ""
 
 
 class WaiverPlanDoc(BaseModel):
@@ -285,14 +351,21 @@ def post_typed(req: TypedFindingRequest) -> FindingResponse:
     return FindingResponse.from_finding(finding)
 
 
-# Section name → (finding kind, whether the section is a list fanned out per-item).
-_SECTION_KINDS: list[tuple[str, str, bool]] = [
-    ("narrative", "narrative", False),
-    ("trade_recs", "trade", True),
-    ("waiver_recs", "waiver", True),
-    ("draft_recs", "draft", True),
-    ("prospect_notes", "prospect", True),
-    ("lineup_recs", "lineup", True),
+# Section → (finding kind, fan-out mode). Modes:
+#   "scalar" — store the value wrapped as {section: value} (a bare string like narrative).
+#   "object" — store the nested model's own fields as the finding body (one finding).
+#   "list"   — one finding per item, each item's model fields as its body.
+_SECTION_KINDS: list[tuple[str, str, str]] = [
+    ("narrative", "narrative", "scalar"),
+    ("trade_recs", "trade", "list"),
+    ("waiver_recs", "waiver", "list"),
+    ("draft_recs", "draft", "list"),
+    ("prospect_notes", "prospect", "list"),
+    ("lineup_recs", "lineup", "list"),
+    ("trade_plan", "trade_plan", "object"),
+    ("market_edge", "market_edge", "object"),
+    ("waiver_plan", "waiver_plan", "object"),
+    ("owner_dossiers", "owner_dossier", "list"),
 ]
 
 
@@ -303,12 +376,18 @@ def post_bulk(doc: MasterDocument) -> BulkResponse:
     Pydantic validates ``doc`` before this handler runs, so a malformed or
     incomplete document is rejected with 422 and nothing is stored.
     """
+    # One run_id stamps every finding from this master run, so the "standing" is exactly
+    # the latest run — the requirement that a new run replaces the old.
+    run_id = f"run_{int(time.time() * 1000)}"
     stored: dict[str, int] = {}
-    for section, kind, is_list in _SECTION_KINDS:
+    for section, kind, mode in _SECTION_KINDS:
         value = getattr(doc, section)
-        items: list[dict[str, Any]] = (
-            [rec.model_dump() for rec in value] if is_list else [{section: value}]
-        )
+        if mode == "list":
+            items: list[dict[str, Any]] = [rec.model_dump() for rec in value]
+        elif mode == "object":
+            items = [value.model_dump()]
+        else:  # scalar
+            items = [{section: value}]
         for item in items:
             post_finding(
                 kind=kind,
@@ -317,6 +396,7 @@ def post_bulk(doc: MasterDocument) -> BulkResponse:
                     "generated_at": doc.generated_at,
                     "data_quality_ack": doc.data_quality_ack,
                 },
+                run_id=run_id,
             )
         stored[kind] = len(items)
     return BulkResponse(stored=stored, total=sum(stored.values()))

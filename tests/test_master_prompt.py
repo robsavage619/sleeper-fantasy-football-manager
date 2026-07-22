@@ -64,3 +64,15 @@ def test_every_schema_key_appears_in_output_contract() -> None:
 def test_schema_keys_match_bulk_document_fields() -> None:
     """The advertised schema keys must equal the fields /findings/bulk accepts."""
     assert set(MASTER_SCHEMA) == set(MasterDocument.model_fields)
+
+
+def test_consolidated_analyses_are_in_the_single_prompt() -> None:
+    """The formerly-separate /ai/* analyses are now tasks in the one master prompt."""
+    out = build_master_briefing(_context(), generated_at="t")
+    assert "## Rival Dossiers" in out  # per-rival exploit context, folded in
+    for key in ("trade_plan", "market_edge", "waiver_plan", "owner_dossiers"):
+        assert key in MASTER_SCHEMA
+        assert f'"{key}"' in out  # appears in the output contract
+    # The task enumerates them so the LLM produces each in the single run.
+    assert "franchise BUY/SELL/HOLD posture" in out
+    assert "one exploit plan per rival" in out

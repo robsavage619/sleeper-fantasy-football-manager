@@ -26,7 +26,12 @@ log = logging.getLogger(__name__)
 # Canonical schema advertised at GET /ai/briefing. Keys MUST match the fields
 # accepted by POST /findings/bulk (see api/routers/findings.py::MasterDocument).
 MASTER_SCHEMA: dict[str, str] = {
-    "narrative": "string — league-wide state of the union / weekly outlook (1-3 paragraphs)",
+    "narrative": (
+        "string — the GM's weekly column, 2-4 paragraphs. Not a terse status line: write "
+        "the swaggering, numbers-literate 'State of the Franchise' address in the national "
+        "war-room voice — where the franchise stands, the plan, one bold call, receipts "
+        "included, no unearned hedging. This is meant to be read."
+    ),
     "trade_recs": (
         "array of objects — each {partner, send, receive, rationale, urgency:LOW|MED|HIGH}"
     ),
@@ -37,6 +42,22 @@ MASTER_SCHEMA: dict[str, str] = {
     "draft_recs": "array of objects — each {pick, alternatives, rationale}",
     "prospect_notes": "array of objects — each {name, verdict, rationale}",
     "lineup_recs": "array of objects — each {start, sit, rationale}",
+    "trade_plan": (
+        "object — franchise trade posture: {posture: BUY|SELL|HOLD, plan, "
+        "trade_recs:[{partner,send,receive,rationale,urgency}], sequencing}"
+    ),
+    "market_edge": (
+        "object — reconciled buy/sell board: {buys:[{player,thesis,target_partner}], "
+        "sells:[{player,thesis,target_partner}], reconciliations}"
+    ),
+    "waiver_plan": (
+        "object — disciplined FAAB plan: {waiver_recs:[{player,faab_bid,drop,tier,rationale}] "
+        "with tier PRIORITY|SPECULATIVE|DART, holds:[names to pass on]}"
+    ),
+    "owner_dossiers": (
+        "array of objects — one per rival manager: {target, exploit_plan, "
+        "angles:[{send,receive,rationale,urgency}], watch_items}"
+    ),
     "generated_at": "string — ISO-8601 timestamp you stamp when you answer",
     "data_quality_ack": "string — explicitly acknowledge any stale/missing data you relied on",
 }
@@ -66,6 +87,7 @@ class BriefingContext:
     handcuffs: str = ""
     wire_watch: str = ""
     best_available: str = ""
+    rival_dossiers: str = ""
     track_record: str = ""
     data_freshness: str = ""
 
@@ -190,15 +212,30 @@ Opponent-adjusted schedule softness for my players. Index >1 = soft matchups (go
 <1 = tough. Weight the fantasy-playoff weeks heavily for hold/acquire calls.
 {context.schedule_outlook}
 
+## Rival Dossiers (one exploit plan per manager)
+Everything you need to plan a winning trade against each rival: their window, roster
+holes, positional surplus, pick capital, and top holdings. Produce one dossier per
+manager in `owner_dossiers`.
+{context.rival_dossiers}
+
 ---
 ## Your Task
-Produce a single GM update covering every surface above:
-1. A league-wide narrative: where does this franchise stand and what is the plan.
-2. Concrete trade recommendations grounded in the positional angles.
-3. Waiver moves with FAAB bids ($500 budget) and the drop.
-4. Draft recommendations (if a draft is active or approaching).
-5. Prospect notes for any names worth tracking.
-6. Lineup start/sit calls (in-season only).
+Produce ONE GM update — the single source of truth for the whole app this cycle. Cover
+every surface above:
+1. `narrative`: the GM's weekly column (voice + substance per the schema).
+2. `trade_recs`: concrete trades grounded in the positional angles.
+3. `waiver_recs`: FAAB moves ($500 budget) with the drop.
+4. `draft_recs`: draft calls (if a draft is active or approaching).
+5. `prospect_notes`: names worth tracking (one-line verdicts; deep scouting lives elsewhere).
+6. `lineup_recs`: start/sit calls (in-season only).
+7. `trade_plan`: franchise BUY/SELL/HOLD posture, defended from title equity + window,
+   with the sequenced plan.
+8. `market_edge`: reconcile mispricing + regression + opponent-adjusted into buy/sell
+   theses, resolving where the boards disagree on a player.
+9. `waiver_plan`: a disciplined bid plan — rank claims by tier (PRIORITY/SPECULATIVE/DART),
+   size FAAB, and name the trending players you deliberately hold off on.
+10. `owner_dossiers`: one exploit plan per rival — their holes, and offers framed around
+    what they need and will part with, ranked by likelihood to close.
 
 Acknowledge, in `data_quality_ack`, any section that was empty, stale, or degraded
 so the reader knows what you could NOT ground your reasoning in.
@@ -248,6 +285,7 @@ def gather_briefing_context(my_roster_id: int = MY_ROSTER_ID) -> BriefingContext
         handcuffs=_handcuff_section(my_roster_id),
         wire_watch=_wire_watch_section(my_roster_id),
         best_available=_best_available_section(),
+        rival_dossiers=_rival_dossiers_section(my_roster_id),
         track_record=_track_record_section(),
         data_freshness=_data_freshness_section(),
     )
@@ -311,6 +349,29 @@ def _wire_watch_section(my_roster_id: int, top: int = 8) -> str:
         note = "; ".join(watch.warnings) or "no risers cleared the bar"
         return f"  (no available risers — {note})"
     return "\n".join(f"  {a.name} ({a.position} {a.team}): {a.note}" for a in available)
+
+
+def _rival_dossiers_section(my_roster_id: int) -> str:
+    """One dossier context block per rival manager, for the master run's owner_dossiers.
+
+    Reuses ``surfaces._dossier_section`` (the single source of per-rival context) so the
+    consolidated master run has exactly what the standalone ``/ai/dossier`` prompt had —
+    just for every rival at once. Degrades to a note if the roster list is unavailable.
+    """
+    try:
+        from sleeper_ffm.prompts.surfaces import _dossier_section
+        from sleeper_ffm.sleeper.client import SleeperClient
+
+        with SleeperClient() as client:
+            roster_ids = sorted(int(r.roster_id) for r in client.rosters())
+    except Exception as exc:
+        log.warning("master: rival dossiers unavailable: %s", exc)
+        return "(degraded — rival dossiers unavailable)"
+
+    blocks = [
+        _dossier_section(rid) for rid in roster_ids if rid != my_roster_id
+    ]
+    return "\n\n".join(blocks) if blocks else "  (no rival rosters found)"
 
 
 def _best_available_section(top: int = 10) -> str:
