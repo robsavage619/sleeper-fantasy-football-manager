@@ -248,8 +248,7 @@ def _fixture_startsit_game_script_risk() -> BriefingFixture:
     context = BriefingContext(
         league_state="Week 11. Ten-team 1QB dynasty. In-season, all rosters active.",
         my_roster=(
-            "QB Ezra Wolcott, RB Tomas Reyes, RB Bennett Okafor, WR Silas Vance, "
-            "TE Cormac Doyle."
+            "QB Ezra Wolcott, RB Tomas Reyes, RB Bennett Okafor, WR Silas Vance, TE Cormac Doyle."
         ),
         saber_summary="No red flags on process.",
         intel_feed="No new injury or depth-chart designations this week.",

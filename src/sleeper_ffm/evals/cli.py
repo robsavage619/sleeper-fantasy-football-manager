@@ -51,7 +51,7 @@ def arena_cmd(
         raise typer.Exit(1) from exc
 
     builders = {
-        "engine": lambda: (make_engine_projector(season), "engine_forecast+avail+vegas"),
+        "engine": lambda: (make_engine_projector(season), "engine_forecast+avail+practice+vegas"),
         "season_avg": lambda: (season_average_projector, "season_avg"),
         "recency": lambda: (recency_projector, "recency_L4"),
     }
@@ -93,7 +93,7 @@ def gap_cmd(
     from sleeper_ffm.evals.gap_report import merge_gap_reports, run_gap_report
 
     builders = {
-        "engine": lambda s: (make_engine_projector(s), "engine_forecast+avail+vegas"),
+        "engine": lambda s: (make_engine_projector(s), "engine_forecast+avail+practice+vegas"),
         "season_avg": lambda s: (season_average_projector, "season_avg"),
         "recency": lambda s: (recency_projector, "recency_L4"),
     }
@@ -135,6 +135,21 @@ def avail_sweep_cmd(
     typer.echo(f"seasons {seasons}: {cells[0].n_roster_weeks} roster-weeks per cell")
     for cell in cells:
         typer.echo(f"  {cell.row()}")
+
+
+@eval_app.command("practice")
+def practice_cmd(
+    seasons: list[int] = typer.Argument(..., help="Seasons to pool (e.g. 2022 2023 2024)."),
+) -> None:
+    """Practice-conditioned availability (Lever F) vs the shipped flat constants."""
+    from sleeper_ffm.evals.arena import ArenaUnavailableError
+    from sleeper_ffm.evals.avail_sweep import run_practice_compare
+
+    try:
+        typer.echo(run_practice_compare(tuple(seasons)).summary())
+    except ArenaUnavailableError as exc:
+        typer.echo(f"practice compare unavailable: {exc}")
+        raise typer.Exit(1) from exc
 
 
 @eval_app.command("winprob")

@@ -75,6 +75,16 @@ What the levers did, and what remains:
   historically (late news) rather than a model we haven't written. The lesson is honest —
   availability was low-hanging fruit worth ~4 points; ranking is a long grind worth tenths.
 
+* **The residual was decomposed, and it was availability again.** The gap report
+  (:mod:`sleeper_ffm.evals.gap_report`) bucketed every point of capture loss: of the
+  ~2.6pp manager gap, ~2.4pp was availability (dead starters the engine kept starting,
+  plus flagged players it over-benched who produced) and healthy-player ranking was at
+  manager parity. A flat-constant sweep (:mod:`sleeper_ffm.evals.avail_sweep`) found the
+  shipped 0.8 already optimal; what worked was *conditioning* the shades on the week's
+  final practice participation (Lever F, on by default): +0.35 to +1.34 pts/wk on every
+  season 2022-2025, pooled +0.80 [95% CI +0.30, +1.32], p=0.003 — roughly +0.5pp of
+  capture, a third of the remaining manager gap, from data already in the cache.
+
 * **In this league, "3 points below average" means near the bottom.** :func:`run_league_h2h`
   replays every roster with the engine: it would out-manage only ~1 of 10 managers on
   points. That is not a contradiction of the small capture gap — it *is* it. The managers
@@ -130,6 +140,16 @@ _DEDICATED = ("QB", "RB", "WR", "TE", "K", "DEF")
 _QUESTIONABLE_FACTOR = 0.8
 _OUT_STATUSES = frozenset({"Out", "Doubtful"})
 _DNP_FACTOR = 0.3
+
+# Lever F — practice-trajectory conditioning. The flat Questionable 0.8 was swept and is
+# already at its optimum; what a flat constant cannot do is separate the Questionable who
+# took a full Friday practice (~90%+ to play) from the one who never practiced (a coin
+# flip). Same for a player who missed his team's last game: a full practice this week is
+# the "he's back" signal managers act on, and x0.3 buries him. These factors condition
+# the same two levers on the week's final practice report — point-in-time, it stood
+# before kickoff. First-pass constants, sweepable through the arena like everything else.
+_PRACTICE_Q_FACTORS = {"Full": 0.95, "Limited": 0.8, "DNP": 0.5}
+_PRACTICE_RETURN_FACTORS = {"Full": 0.85, "Limited": 0.6}
 
 
 class ArenaUnavailableError(RuntimeError):
@@ -314,6 +334,7 @@ def make_engine_projector(
     use_matchup: bool = False,
     questionable_factor: float = _QUESTIONABLE_FACTOR,
     dnp_factor: float = _DNP_FACTOR,
+    use_practice: bool = True,
     forecast_cache: dict[tuple[str, int], float] | None = None,
 ) -> Projector:
     """Build a projector backed by our in-house forecast — "our engine" as it ran that week.
@@ -359,6 +380,16 @@ def make_engine_projector(
         use_matchup: Apply the prior-season opponent DvP multiplier (Lever E). Default off.
         questionable_factor: Override the Questionable shade (Lever A) for sweeps.
         dnp_factor: Override the missed-last-game discount (Lever B) for sweeps.
+        use_practice: Condition Levers A/B on the week's final practice participation
+            (Lever F, **on by default — it earned it**): a full-practice Questionable
+            shades ~0.95 instead of 0.8, a no-practice one 0.5; a returning player who
+            practiced fully gets 0.85 instead of the 0.3 DNP discount. Measured
+            +0.35/+0.73/+1.34/+0.73 pts/wk on 2022/23/24/25 (pooled 2022-24: +0.80,
+            95% CI [+0.30, +1.32], p=0.003) — positive every season, and precisely in
+            the ``benched_flagged`` bucket the gap decomposition indicted, with the
+            dead-starter rate flat. The flat-constant sweep found nothing (its optimum
+            was the shipped 0.8); the conditioning is what the flat constant could not
+            express.
         forecast_cache: Share one ``(gsis_id, week) -> mean`` cache across several
             projector instances — the forecast is availability-independent, so a
             constants sweep pays for it once.
@@ -402,6 +433,7 @@ def make_engine_projector(
     bye_teams = _bye_calendar(load_schedules, season)
     weeks_played = _weeks_played_by_team(load_schedules, season)
     injuries = _injury_calendar(season)
+    practice = _practice_calendar(season) if use_practice else {}
     team_by_gsis = {
         gsis: (rows[-1].get("recent_team") or "") for gsis, rows in rows_by_gsis.items()
     }
@@ -419,6 +451,7 @@ def make_engine_projector(
         # Only this week's injury report is ever consulted — the lookup is keyed by wk, so
         # no future week's designations can leak in.
         week_injuries = injuries.get(wk, {})
+        week_practice = practice.get(wk, {})
         out: dict[str, float] = {}
         for pid in available:
             pos = positions.get(pid)
@@ -451,6 +484,7 @@ def make_engine_projector(
                     box_weeks_by_gsis,
                     questionable_factor=questionable_factor,
                     dnp_factor=dnp_factor,
+                    practice=week_practice.get(gsis) if use_practice else None,
                 )
             else:
                 out[pid] = history.average(pid) or 0.0
@@ -468,25 +502,35 @@ def _availability_multiplier(
     box_weeks_by_gsis: dict[str, set[int]],
     questionable_factor: float = _QUESTIONABLE_FACTOR,
     dnp_factor: float = _DNP_FACTOR,
+    practice: str | None = None,
 ) -> float:
-    """Point-in-time availability shade for a skill player (Levers A & B).
+    """Point-in-time availability shade for a skill player (Levers A, B & F).
 
     Lever A — this week's injury designation: Out/Doubtful zeroes the projection,
     Questionable shades it. Lever B — if the player has no box score for his team's most
     recent completed game, he was inactive and is heavily discounted (he may be returning,
-    so not zeroed). Returns 1.0 when nothing flags him.
+    so not zeroed). Lever F — when ``practice`` (the week's final practice participation,
+    ``"Full"``/``"Limited"``/``"DNP"``) is provided, it conditions both shades: a
+    full-practice Questionable is nearly a lock, a no-practice one a coin flip, and a
+    returning player who practiced fully is mostly back. Returns 1.0 when nothing flags
+    him.
     """
     status = week_injuries.get(gsis)
     if status in _OUT_STATUSES:
         return 0.0
-    factor = questionable_factor if status == "Questionable" else 1.0
+    if status == "Questionable":
+        factor = _PRACTICE_Q_FACTORS.get(practice or "", questionable_factor)
+    else:
+        factor = 1.0
 
     team = team_by_gsis.get(gsis, "")
     prior_team_weeks = [w for w in weeks_played.get(team, ()) if w < wk]
     if prior_team_weeks:
         last_team_week = max(prior_team_weeks)
         if last_team_week not in box_weeks_by_gsis.get(gsis, set()):
-            factor *= dnp_factor  # missed the team's last game — inactive/scratched
+            # Missed the team's last game — inactive/scratched, unless this week's
+            # practice says he's working his way back.
+            factor *= _PRACTICE_RETURN_FACTORS.get(practice or "", dnp_factor)
     return factor
 
 
@@ -648,6 +692,45 @@ def _injury_calendar(season: int) -> dict[int, dict[str, str]]:
         status = row.get("report_status")
         if gsis and status:
             out.setdefault(int(row["week"]), {})[str(gsis)] = str(status)
+    return out
+
+
+_PRACTICE_NORMALIZE = {
+    "Full Participation in Practice": "Full",
+    "Limited Participation in Practice": "Limited",
+    "Did Not Participate In Practice": "DNP",
+}
+
+
+def _practice_calendar(season: int) -> dict[int, dict[str, str]]:
+    """``{week: {gsis_id: "Full" | "Limited" | "DNP"}}`` — final practice participation.
+
+    The week's last practice row (by ``date_modified`` when present, report order
+    otherwise) is what stood going into the weekend, the same point-in-time report the
+    game designation comes from. Rows with junk/absent practice status are dropped.
+    Best-effort like :func:`_injury_calendar`: failures degrade to an empty calendar.
+    """
+    import polars as pl
+
+    from sleeper_ffm.nflverse.loader import load_injuries
+
+    try:
+        inj = load_injuries([season])
+    except Exception as exc:
+        log.warning("arena: practice reports for %s unavailable (%s)", season, exc)
+        return {}
+    needed = {"week", "gsis_id", "practice_status", "game_type"}
+    if inj.is_empty() or not needed.issubset(inj.columns):
+        return {}
+    reg = inj.filter(pl.col("game_type") == "REG")
+    if "date_modified" in reg.columns:
+        reg = reg.sort("date_modified", nulls_last=False)
+    out: dict[int, dict[str, str]] = {}
+    for row in reg.select(["week", "gsis_id", "practice_status"]).iter_rows(named=True):
+        gsis = row.get("gsis_id")
+        status = _PRACTICE_NORMALIZE.get(str(row.get("practice_status") or "").strip())
+        if gsis and status:
+            out.setdefault(int(row["week"]), {})[str(gsis)] = status
     return out
 
 

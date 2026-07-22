@@ -204,6 +204,69 @@ def test_weeks_played_by_team_inverts_the_schedule() -> None:
     assert out["MIA"] == {2}
 
 
+# --- practice conditioning (Lever F) ------------------------------------------------
+
+
+def test_practice_full_upgrades_a_questionable() -> None:
+    m = arena._availability_multiplier(
+        "g1",
+        5,
+        {"g1": "Questionable"},
+        {"BUF": {1, 2, 3, 4}},
+        {"g1": "BUF"},
+        {"g1": {1, 2, 3, 4}},
+        practice="Full",
+    )
+    assert m == arena._PRACTICE_Q_FACTORS["Full"] > arena._QUESTIONABLE_FACTOR
+
+
+def test_practice_dnp_downgrades_a_questionable() -> None:
+    m = arena._availability_multiplier(
+        "g1",
+        5,
+        {"g1": "Questionable"},
+        {"BUF": {1, 2, 3, 4}},
+        {"g1": "BUF"},
+        {"g1": {1, 2, 3, 4}},
+        practice="DNP",
+    )
+    assert m == arena._PRACTICE_Q_FACTORS["DNP"] < arena._QUESTIONABLE_FACTOR
+
+
+def test_practice_full_softens_the_missed_game_discount() -> None:
+    # Missed the team's last game, but took a full practice this week — mostly back.
+    m = arena._availability_multiplier(
+        "g1", 5, {}, {"BUF": {1, 2, 3, 4}}, {"g1": "BUF"}, {"g1": {1, 2, 3}}, practice="Full"
+    )
+    assert m == arena._PRACTICE_RETURN_FACTORS["Full"] > arena._DNP_FACTOR
+
+
+def test_no_practice_signal_keeps_the_flat_constants() -> None:
+    m = arena._availability_multiplier(
+        "g1",
+        5,
+        {"g1": "Questionable"},
+        {"BUF": {1, 2, 3, 4}},
+        {"g1": "BUF"},
+        {"g1": {1, 2, 3}},
+        practice=None,
+    )
+    assert m == arena._QUESTIONABLE_FACTOR * arena._DNP_FACTOR
+
+
+def test_practice_never_overrides_an_out_designation() -> None:
+    m = arena._availability_multiplier(
+        "g1",
+        5,
+        {"g1": "Out"},
+        {"BUF": {1, 2, 3, 4}},
+        {"g1": "BUF"},
+        {"g1": {1, 2, 3, 4}},
+        practice="Full",
+    )
+    assert m == 0.0
+
+
 # --- head-to-head counterfactual ----------------------------------------------------
 
 
