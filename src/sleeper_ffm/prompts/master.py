@@ -88,6 +88,7 @@ class BriefingContext:
     wire_watch: str = ""
     early_claims: str = ""
     best_available: str = ""
+    transaction_grades: str = ""
     rival_dossiers: str = ""
     track_record: str = ""
     data_freshness: str = ""
@@ -145,6 +146,15 @@ a high title share argues for pushing chips in now; a low one argues for accumul
 Factor this into every call: don't chase or hold an injured/buried player, and
 jump waiver opportunities before the herd.
 {context.intel_feed}
+
+## Transaction Grades (league moves graded on the curve)
+Every completed trade and waiver claim in league history, letter-graded against every
+other move made the same season — a waiver claim's grade weighs realized points against
+its FAAB cost, a trade side's grade is realized points gained versus given up. Grades
+marked SETTLING are too recent (<4 completed weeks) to trust yet. Use this to read
+opponents: a manager whose grades lean low on trades is an easier partner; one who
+crushes waivers is who you're racing to the wire.
+{context.transaction_grades}
 
 ## Realistic Trade Offers (acceptance-model, grounded in how THIS league trades)
 These are engine-built, value-balanced offers: they trade surplus depth (never a
@@ -296,6 +306,7 @@ def gather_briefing_context(my_roster_id: int = MY_ROSTER_ID) -> BriefingContext
         wire_watch=_wire_watch_section(my_roster_id),
         early_claims=_early_claim_section(my_roster_id),
         best_available=_best_available_section(),
+        transaction_grades=_transaction_grades_section(my_roster_id),
         rival_dossiers=_rival_dossiers_section(my_roster_id),
         track_record=_track_record_section(),
         data_freshness=_data_freshness_section(),
@@ -673,6 +684,53 @@ def _intel_feed(my_roster_id: int) -> str:
         lines.append(f"  [MOVE wk{m.get('week')}] {who} {m.get('type')}: +{adds} / -{drops}")
     body = "\n".join(lines) if lines else "  (no active alerts)"
     return f"{feed.generated_note}\n{body}"
+
+
+def _transaction_grades_section(my_roster_id: int, recent: int = 8) -> str:
+    """League GPA standings plus the most recent graded trades and waiver claims."""
+    try:
+        from sleeper_ffm.model.transaction_grades import build_transaction_grades
+
+        book = build_transaction_grades()
+    except Exception as exc:
+        log.warning("master: transaction grades unavailable: %s", exc)
+        return "(degraded — transaction grades unavailable)"
+
+    if not book.gpa:
+        note = "; ".join(book.warnings) or "no gradeable moves found"
+        return f"  (no transaction grades — {note})"
+
+    lines = ["  GPA standings:"]
+    for g in book.gpa:
+        me = " (you)" if g.roster_id == my_roster_id else ""
+        lines.append(f"    {g.gpa:.2f} {g.owner_name}{me} — {g.n_moves} graded moves")
+
+    moves: list[tuple[str, int, str]] = []
+    for w in book.waiver_grades:
+        settle = " SETTLING" if w.settling else ""
+        moves.append(
+            (
+                w.season,
+                w.week,
+                f"    [{w.grade}{settle}] {w.owner_name}: {w.player_name} (${w.bid}, "
+                f"{w.realized_points:.0f} pts, surplus {w.surplus:+.0f})",
+            )
+        )
+    for t in book.trade_grades:
+        settle = " SETTLING" if t.settling else ""
+        dd = f", dynasty {t.dynasty_delta:+.0f}" if t.dynasty_delta is not None else ""
+        moves.append(
+            (
+                t.season,
+                t.week,
+                f"    [{t.grade}{settle}] {t.owner_name} vs {t.partner_name}: "
+                f"net {t.net_points:+.0f} pts{dd}",
+            )
+        )
+    moves.sort(key=lambda m: (m[0], m[1]), reverse=True)
+    lines.append("  Most recent graded moves:")
+    lines.extend(line for _season, _week, line in moves[:recent])
+    return "\n".join(lines)
 
 
 def _trade_offers(top: int = 6) -> str:

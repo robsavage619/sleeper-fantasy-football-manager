@@ -75,6 +75,15 @@ def test_early_claim_section_renders() -> None:
     assert ctx.early_claims in out
 
 
+def test_transaction_grades_section_renders() -> None:
+    ctx = BriefingContext(
+        **{**_context().__dict__, "transaction_grades": "  GPA standings:\n    4.30 Rob (you)"}
+    )
+    out = build_master_briefing(ctx, generated_at="t")
+    assert "## Transaction Grades" in out
+    assert ctx.transaction_grades in out
+
+
 def test_consolidated_analyses_are_in_the_single_prompt() -> None:
     """The formerly-separate /ai/* analyses are now tasks in the one master prompt."""
     out = build_master_briefing(_context(), generated_at="t")
