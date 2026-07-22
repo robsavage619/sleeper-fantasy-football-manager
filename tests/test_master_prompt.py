@@ -66,6 +66,15 @@ def test_schema_keys_match_bulk_document_fields() -> None:
     assert set(MASTER_SCHEMA) == set(MasterDocument.model_fields)
 
 
+def test_early_claim_section_renders() -> None:
+    ctx = BriefingContext(
+        **{**_context().__dict__, "early_claims": "  Some Guy (WR ATL): 12.1 proj, 0 adds"}
+    )
+    out = build_master_briefing(ctx, generated_at="t")
+    assert "## Early Claims" in out
+    assert ctx.early_claims in out
+
+
 def test_consolidated_analyses_are_in_the_single_prompt() -> None:
     """The formerly-separate /ai/* analyses are now tasks in the one master prompt."""
     out = build_master_briefing(_context(), generated_at="t")

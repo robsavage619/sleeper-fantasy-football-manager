@@ -86,6 +86,7 @@ class BriefingContext:
     regression: str = ""
     handcuffs: str = ""
     wire_watch: str = ""
+    early_claims: str = ""
     best_available: str = ""
     rival_dossiers: str = ""
     track_record: str = ""
@@ -182,6 +183,15 @@ which available backups sit behind rivals' key starters (stashes that create lev
 Players whose offensive snap share is trending up sharply and who are unrostered in this
 league — emerging roles to claim before the points show up and the herd bids.
 {context.wire_watch}
+
+## Early Claims (engine-flagged, market hasn't noticed)
+High-projection free agents with a near-zero Sleeper trending-add count — the engine
+likes them and the league hasn't started bidding yet. Backtesting shows this exact
+ranking flags real value-add pickups roughly 2x as often as chance before a rival claims
+them (`sffm eval earlyclaim`). Reference bids are this league's own median historical
+winning bid for the position, priced before any real trend signal exists — a floor to
+clear, not a precise estimate. Claim quietly; naming one here starts the clock.
+{context.early_claims}
 
 ## Best Available (ranked by projected value)
 The highest-projected unrostered players this week, league-scored — the pickup ranking the
@@ -284,6 +294,7 @@ def gather_briefing_context(my_roster_id: int = MY_ROSTER_ID) -> BriefingContext
         regression=_regression_section(),
         handcuffs=_handcuff_section(my_roster_id),
         wire_watch=_wire_watch_section(my_roster_id),
+        early_claims=_early_claim_section(my_roster_id),
         best_available=_best_available_section(),
         rival_dossiers=_rival_dossiers_section(my_roster_id),
         track_record=_track_record_section(),
@@ -349,6 +360,30 @@ def _wire_watch_section(my_roster_id: int, top: int = 8) -> str:
         note = "; ".join(watch.warnings) or "no risers cleared the bar"
         return f"  (no available risers — {note})"
     return "\n".join(f"  {a.name} ({a.position} {a.team}): {a.note}" for a in available)
+
+
+def _early_claim_section(my_roster_id: int, top: int = 8) -> str:
+    """High-projection free agents the trending board hasn't caught up to yet."""
+    try:
+        from sleeper_ffm.model.early_claim_watch import build_early_claim_watch
+
+        watch = build_early_claim_watch(my_roster_id=my_roster_id, top_n=top)
+    except Exception as exc:
+        log.warning("master: early-claim watch unavailable: %s", exc)
+        return "(degraded — early-claim watch unavailable)"
+
+    if not watch.claims:
+        note = "; ".join(watch.warnings) or "nothing cleared the quiet-market bar this week"
+        return f"  (no early claims — {note})"
+    lines: list[str] = []
+    for c in watch.claims:
+        bid = f", ref bid ${c.suggested_bid}" if c.suggested_bid is not None else ""
+        drop = f", drop {c.drop_candidate}" if c.drop_candidate else ""
+        lines.append(
+            f"  {c.name} ({c.position} {c.team}): {c.projected_pts:.1f} proj, "
+            f"{c.trending_add_count} adds league-wide{bid}{drop}"
+        )
+    return "\n".join(lines)
 
 
 def _fmt_dossier_player(p: dict) -> str:
