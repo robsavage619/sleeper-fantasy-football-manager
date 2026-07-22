@@ -58,15 +58,15 @@ def _http_400(detail: dict) -> HTTPException:
 
 @router.post("/analyze")
 def analyze_trade(req: TradeAnalysisRequest) -> dict:
-    """Score both sides of a trade and return dynasty values + Claude Code prompt.
+    """Score both sides of a trade under this league's dynasty values.
 
-    Returns give_value, get_value, delta, verdict (ACCEPT/CLOSE/DECLINE), and
-    a structured prompt ready to paste into Claude Code for deeper reasoning.
+    Returns give_value, get_value, delta, and the verdict (ACCEPT/CLOSE/DECLINE). Deeper
+    trade reasoning is a task in the single master briefing (prompts/master.py), not a
+    per-trade prompt.
     """
     from sleeper_ffm.model.dynasty import value_player
     from sleeper_ffm.model.valuation import build_player_assets
     from sleeper_ffm.prompts.trade import (
-        build_trade_prompt,
         validate_trade_pick_ids,
         value_trade_pick,
     )
@@ -168,14 +168,6 @@ def analyze_trade(req: TradeAnalysisRequest) -> dict:
     delta = get_value - give_value
     verdict = "ACCEPT" if delta > 10 else "DECLINE" if delta < -10 else "CLOSE"
 
-    prompt = build_trade_prompt(
-        give_player_ids=req.give_player_ids,
-        get_player_ids=req.get_player_ids,
-        give_pick_ids=req.give_pick_ids,
-        get_pick_ids=req.get_pick_ids,
-        seasons=seasons,
-    )
-
     if blend is not None and blend.model_valued_only:
         warnings.append("FantasyCalc market unavailable; values are model-only, not blended.")
     if (req.give_pick_ids or req.get_pick_ids) and not pick_market_available():
@@ -193,7 +185,6 @@ def analyze_trade(req: TradeAnalysisRequest) -> dict:
         "currency": "model-only" if blend is None or blend.model_valued_only else "blended",
         "data_quality": "DEGRADED" if warnings else "FULL",
         "warnings": warnings,
-        "prompt": prompt,
     }
 
 

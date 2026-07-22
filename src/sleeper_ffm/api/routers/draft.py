@@ -200,27 +200,3 @@ def draft_board(top: int = 50, season: int = DEFAULT_VALUE_SEASON) -> dict:
     }
 
 
-@router.get("/prompt")
-def draft_prompt(top: int = 25, season: int = DEFAULT_VALUE_SEASON) -> dict:
-    """Generate a Claude Code prompt for the current pick decision."""
-    from sleeper_ffm.draft.assistant import build_full_pool, build_pick_prompt, sync_board
-
-    try:
-        board = sync_board()
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    if board.is_complete():
-        raise HTTPException(status_code=409, detail="Draft is complete")
-
-    pool = build_full_pool(board, seasons=[season])
-
-    try:
-        from sleeper_ffm.market.fantasycalc import fetch as _fc_fetch
-
-        market_values = _fc_fetch()
-    except Exception:
-        market_values = {}
-
-    prompt = build_pick_prompt(board, pool, top_n=top, market_values=market_values)
-    return {"prompt": prompt, "pick_number": board.current_pick_no}

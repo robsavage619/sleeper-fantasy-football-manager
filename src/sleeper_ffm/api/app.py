@@ -18,7 +18,6 @@ from sleeper_ffm.api.routers import faab_market as faab_market_router
 from sleeper_ffm.api.routers import findings as findings_router
 from sleeper_ffm.api.routers import free_agents as free_agents_router
 from sleeper_ffm.api.routers import gameday as gameday_router
-from sleeper_ffm.api.routers import gm_address as gm_address_router
 from sleeper_ffm.api.routers import handcuff as handcuff_router
 from sleeper_ffm.api.routers import history as history_router
 from sleeper_ffm.api.routers import intel as intel_router
@@ -99,7 +98,6 @@ def create_app() -> FastAPI:
     app.include_router(handcuff_router.router)
     app.include_router(scoreboard_router.router)
     app.include_router(negotiation_router.router)
-    app.include_router(gm_address_router.router)
     app.include_router(wire_watch_router.router)
     app.include_router(free_agents_router.router)
     app.include_router(gameday_router.router)
