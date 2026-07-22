@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import type { Finding, NarrativeContext } from '@/lib/api'
+import type { Finding } from '@/lib/api'
 import { Empty, Loading, VerdictStamp } from '@/components/viz'
 import { buildStanding, evaluationAge, findingTime, stampDate } from '@/lib/standing'
 
@@ -588,148 +588,6 @@ function DataQuality({ standing }: { standing: ReturnType<typeof buildStanding> 
   )
 }
 
-// ── manual fallback (demoted) ────────────────────────────────────────────────
-
-function ManualFallback() {
-  const [ctx, setCtx] = useState<NarrativeContext | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
-  const [open, setOpen] = useState(false)
-
-  async function generate() {
-    setLoading(true)
-    setError(null)
-    try {
-      setCtx(await api.narrative())
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to build context')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  function copyPrompt() {
-    if (!ctx?.prompt) return
-    navigator.clipboard.writeText(ctx.prompt)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  return (
-    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 2 }}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        style={{
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '12px 20px',
-          background: 'transparent',
-          border: 'none',
-          cursor: 'pointer',
-          textAlign: 'left',
-        }}
-      >
-        <span
-          style={{
-            fontFamily: barlow,
-            fontWeight: 800,
-            fontSize: 15,
-            letterSpacing: '0.08em',
-            color: C.muted,
-            textTransform: 'uppercase',
-          }}
-        >
-          Manual fallback
-        </span>
-        <span style={{ flex: 1, height: 1, background: C.border }} />
-        <span style={{ fontFamily: mono, fontSize: 10, color: C.dim }}>
-          NO SELF-CRITIQUE · {open ? 'HIDE' : 'OPEN'}
-        </span>
-      </button>
-
-      {open && (
-        <div style={{ padding: '0 20px 18px' }}>
-          <p style={{ fontSize: 12, color: C.muted, lineHeight: 1.65, margin: '0 0 12px', maxWidth: '80ch' }}>
-            A plain context dump to paste into any LLM by hand when you can't run the skill. It skips the
-            critique pass, so treat anything it produces as a first draft, not a verified call.
-          </p>
-
-          <button
-            onClick={generate}
-            disabled={loading}
-            style={{
-              padding: '9px 18px',
-              background: 'transparent',
-              border: `1px solid ${C.cyan}44`,
-              borderRadius: 2,
-              cursor: loading ? 'default' : 'pointer',
-              fontFamily: barlow,
-              fontWeight: 800,
-              fontSize: 14,
-              letterSpacing: '0.1em',
-              color: loading ? C.muted : C.cyan,
-            }}
-          >
-            {loading ? 'ASSEMBLING…' : ctx ? 'REBUILD CONTEXT' : 'BUILD CONTEXT'}
-          </button>
-
-          {error && (
-            <div style={{ marginTop: 12, color: C.red, fontSize: 12, fontFamily: mono }}>{error}</div>
-          )}
-
-          {ctx && (
-            <div style={{ marginTop: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <span style={{ fontFamily: mono, fontSize: 11, color: C.muted }}>
-                  {ctx.season} · WK {ctx.week} · {ctx.prompt.length.toLocaleString()} chars
-                </span>
-                <button
-                  onClick={copyPrompt}
-                  style={{
-                    background: copied ? `${C.green}22` : 'transparent',
-                    border: `1px solid ${copied ? C.green : C.border2}`,
-                    borderRadius: 2,
-                    padding: '5px 12px',
-                    cursor: 'pointer',
-                    color: copied ? C.green : C.muted,
-                    fontSize: 11,
-                    fontFamily: mono,
-                    letterSpacing: '0.06em',
-                  }}
-                >
-                  {copied ? 'COPIED' : 'COPY PROMPT'}
-                </button>
-              </div>
-              <pre
-                style={{
-                  background: C.bg,
-                  border: `1px solid ${C.border}`,
-                  borderRadius: 2,
-                  padding: 14,
-                  margin: 0,
-                  fontSize: 10,
-                  color: C.muted,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  fontFamily: mono,
-                  lineHeight: 1.6,
-                  maxHeight: 320,
-                  overflowY: 'auto',
-                }}
-              >
-                {ctx.prompt}
-              </pre>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── page ─────────────────────────────────────────────────────────────────────
 
 export function Narrative() {
@@ -836,7 +694,6 @@ export function Narrative() {
         </>
       )}
 
-      <ManualFallback />
     </div>
   )
 }

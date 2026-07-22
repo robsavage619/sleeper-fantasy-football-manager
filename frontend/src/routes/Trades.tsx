@@ -974,8 +974,6 @@ export function Trades() {
   const [analysis, setAnalysis] = useState<TradeAnalysis | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
-  const [showPrompt, setShowPrompt] = useState(false)
-  const [promptCopied, setPromptCopied] = useState(false)
 
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me, staleTime: 5 * 60 * 1000 })
   const myRosterId = me?.roster_id ?? null
@@ -1060,19 +1058,10 @@ export function Trades() {
         get_pick_ids: getPicks.map(p => p.id),
       })
       setAnalysis(result)
-      setShowPrompt(false)
     } catch (e) {
       setAnalyzeError(e instanceof Error ? e.message : 'Analysis failed')
     } finally {
       setAnalyzing(false)
-    }
-  }
-
-  function copyPrompt() {
-    if (analysis?.prompt) {
-      navigator.clipboard.writeText(analysis.prompt)
-      setPromptCopied(true)
-      setTimeout(() => setPromptCopied(false), 2000)
     }
   }
 
@@ -1291,47 +1280,6 @@ export function Trades() {
                 </div>
               )}
 
-              <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontSize: 10, color: C.muted, letterSpacing: '0.08em', fontFamily: "'DM Mono', monospace" }}>
-                    CLAUDE CODE PROMPT
-                  </span>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button
-                      onClick={copyPrompt}
-                      style={{
-                        background: 'none', border: `1px solid ${C.border}`, borderRadius: 2,
-                        padding: '3px 10px', cursor: 'pointer',
-                        color: promptCopied ? C.green : C.muted,
-                        fontSize: 10, letterSpacing: '0.06em', fontFamily: "'DM Mono', monospace",
-                      }}
-                    >
-                      {promptCopied ? 'COPIED' : 'COPY'}
-                    </button>
-                    <button
-                      onClick={() => setShowPrompt(v => !v)}
-                      style={{
-                        background: 'none', border: `1px solid ${C.border}`, borderRadius: 2,
-                        padding: '3px 10px', cursor: 'pointer', color: C.muted,
-                        fontSize: 10, letterSpacing: '0.06em', fontFamily: "'DM Mono', monospace",
-                      }}
-                    >
-                      {showPrompt ? 'HIDE' : 'SHOW'}
-                    </button>
-                  </div>
-                </div>
-                {showPrompt && (
-                  <pre style={{
-                    background: C.bg, border: `1px solid ${C.border}`, borderRadius: 2,
-                    padding: 12, margin: 0, fontSize: 10, color: C.muted,
-                    overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                    fontFamily: "'DM Mono', monospace", lineHeight: 1.6,
-                    maxHeight: 320, overflowY: 'auto',
-                  }}>
-                    {analysis.prompt}
-                  </pre>
-                )}
-              </div>
             </>
           )}
         </div>

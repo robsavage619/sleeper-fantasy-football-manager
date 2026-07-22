@@ -1379,8 +1379,6 @@ export type NegotiationBrief = {
 export const api = {
   draftBoard: (top = 50, season?: number) =>
     get<DraftBoard>(`/draft/board?top=${top}${season ? `&season=${season}` : ''}`),
-  draftPrompt: (top = 25, season?: number) =>
-    get<{ prompt: string; pick_number: number }>(`/draft/prompt?top=${top}${season ? `&season=${season}` : ''}`),
   league: () => get<LeagueMeta>('/league/'),
   me: () => get<Me>('/league/me'),
   refresh: () => post<RefreshStart>('/admin/refresh', {}),
@@ -1489,7 +1487,6 @@ export const api = {
   recommendationEvals: (top = 8) => get<RecommendationEval>(`/evals/recommendations?top=${top}`),
   transactionPlan: (body: { action_id: string; kind: string; command: string }) =>
     post<TransactionPlan>('/war-room/transaction-plan', body),
-  narrative: () => get<NarrativeContext>('/season/narrative'),
   warRoomActions: (top = 12) => get<WarRoomAction[]>(`/war-room/actions?top=${top}`),
   // Edge & matchup surfaces
   mispricing: (top = 15) => get<MispricingBoard>(`/mispricing?top=${top}`),
@@ -1516,7 +1513,6 @@ export const api = {
       `/opponent-adjusted?top=${top}${season ? `&season=${season}` : ''}`,
     ),
   scoreboard: () => get<Scoreboard>('/scoreboard'),
-  gmAddressPrompt: () => get<{ prompt: string; generated_at: string }>('/gm-address'),
   // Real-world intelligence + negotiation copilot (previously computed, never wired to the UI)
   intelFeed: (rosterId?: number) => get<IntelFeed>(`/intel/feed${rosterId ? `?roster_id=${rosterId}` : ''}`),
   negotiation: (playerId: string, ownerRosterId: number) =>
