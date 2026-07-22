@@ -1327,6 +1327,104 @@ function TransactionValuePanel({ rosterId }: { rosterId: number }) {
   )
 }
 
+// ── transaction grades (league moves, letter-graded on the curve) ───────────
+const GRADE_COLOR = (g: string): string => {
+  if (g.startsWith('A')) return C.green
+  if (g.startsWith('B')) return C.cyan
+  if (g.startsWith('C')) return C.amber
+  return C.red
+}
+
+function GradeChip({ grade, settling }: { grade: string; settling: boolean }) {
+  const color = GRADE_COLOR(grade)
+  return (
+    <span
+      title={settling ? 'Settling — fewer than 4 completed weeks since this move' : undefined}
+      style={{
+        fontFamily: barlow, fontSize: 13, fontWeight: 800, color, background: `${color}22`,
+        border: `1px solid ${color}55`, borderRadius: 3, padding: '1px 7px', flexShrink: 0,
+        opacity: settling ? 0.55 : 1,
+      }}
+    >
+      {grade}{settling ? '?' : ''}
+    </span>
+  )
+}
+
+function TransactionGradesPanel({ rosterId }: { rosterId: number }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['transactionGrades'],
+    queryFn: api.transactionGrades,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  if (isLoading && !data)
+    return <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>Grading the transaction ledger…</span>
+  if (!data || (!data.waiver_grades.length && !data.trade_grades.length))
+    return <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>{data?.warnings?.[0] ?? 'No graded moves yet.'}</span>
+
+  const gpaEntry = data.gpa.find((g) => g.roster_id === rosterId)
+  const gpaRank = gpaEntry ? data.gpa.findIndex((g) => g.roster_id === rosterId) + 1 : undefined
+
+  const waiverMoves = data.waiver_grades.filter((w) => w.roster_id === rosterId)
+  const tradeMoves = data.trade_grades.filter((t) => t.roster_id === rosterId)
+  const moves = [
+    ...waiverMoves.map((w, i) => ({ season: w.season, week: w.week, sort: `${w.season}-${w.week}`, node: (
+      // A player can be added/dropped/re-added the same week via separate transactions,
+      // so player+season+week alone isn't unique — the array index disambiguates.
+      <div key={`w-${w.player_id}-${w.season}-${w.week}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <GradeChip grade={w.grade} settling={w.settling} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: mono, fontSize: 12, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {w.player_name} <span style={{ color: C.dim }}>· {w.position} · ${w.bid}</span>
+          </div>
+          <div style={{ fontFamily: mono, fontSize: 9, color: C.dim }}>
+            {w.season} wk{w.week} · {w.realized_points.toFixed(0)} pts · surplus {w.surplus >= 0 ? '+' : ''}{w.surplus.toFixed(0)}
+            {w.bid_percentile != null ? ` · p${Math.round(w.bid_percentile * 100)} bid` : ''}
+          </div>
+        </div>
+      </div>
+    ) })),
+    ...tradeMoves.map((t, i) => ({ season: t.season, week: t.week, sort: `${t.season}-${t.week}`, node: (
+      <div key={`t-${t.season}-${t.week}-${t.partner_roster_id}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <GradeChip grade={t.grade} settling={t.settling} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: mono, fontSize: 12, color: C.text }}>
+            trade vs {t.partner_name}
+          </div>
+          <div style={{ fontFamily: mono, fontSize: 9, color: C.dim }}>
+            {t.season} wk{t.week} · net {t.net_points >= 0 ? '+' : ''}{t.net_points.toFixed(0)} pts
+            {t.dynasty_delta != null ? ` · dynasty ${t.dynasty_delta >= 0 ? '+' : ''}${t.dynasty_delta.toFixed(0)} (today)` : ''}
+          </div>
+        </div>
+      </div>
+    ) })),
+  ].sort((a, b) => b.sort.localeCompare(a.sort))
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <TxBigStat value={gpaEntry ? gpaEntry.gpa.toFixed(2) : '—'} label="transaction GPA" color={C.cyan} rank={gpaRank} />
+        <TxBigStat value={`${waiverMoves.length}`} label="waivers graded" color={C.muted} />
+        <TxBigStat value={`${tradeMoves.length}`} label="trade sides graded" color={C.muted} />
+      </div>
+      <div>
+        <TxSubHead text="Graded moves" />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 320, overflowY: 'auto' }}>
+          {moves.length ? moves.map((m) => m.node) : (
+            <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>No graded moves for this manager yet.</span>
+          )}
+        </div>
+      </div>
+      <div style={{ fontFamily: mono, fontSize: 9, color: C.dim }}>
+        Grades are on this league's own curve, one season at a time — a "D" is the worst
+        move made that season, not an absolute failure. "?" marks a move too recent
+        (&lt;4 completed weeks) to trust yet.
+      </div>
+    </div>
+  )
+}
+
 // ── draft profile (how they draft + best picks) ──────────────────────────────
 function PositionMixBar({ mix }: { mix: Record<string, number> }) {
   const order = ['RB', 'WR', 'TE', 'QB']
@@ -1519,6 +1617,10 @@ function GMDrawer({ profile, skill, allSkills, history, onClose }: {
 
           <Section title="TRANSACTION VALUE" kicker="fantasy points added via waivers & trades" span={2} accent={C.green}>
             <TransactionValuePanel rosterId={profile.roster_id} />
+          </Section>
+
+          <Section title="TRANSACTION GRADES" kicker="every trade & waiver claim, graded on the curve" span={2} accent={C.cyan}>
+            <TransactionGradesPanel rosterId={profile.roster_id} />
           </Section>
 
           <Section title="DRAFT PROFILE" kicker="how they draft · best picks all-time" span={2} accent={C.amber}>

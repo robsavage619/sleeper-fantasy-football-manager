@@ -1008,6 +1008,57 @@ export type TransactionValue = {
   trade_deals: TxTradeDeal[]
 }
 
+export type WaiverGrade = {
+  season: string
+  week: number
+  roster_id: number
+  owner_name: string
+  player_id: string
+  player_name: string
+  position: string
+  bid: number
+  bid_percentile: number | null
+  realized_points: number
+  startable_weeks: number
+  surplus: number
+  grade: string
+  settling: boolean
+}
+
+export type TradeSideGrade = {
+  season: string
+  week: number
+  roster_id: number
+  owner_name: string
+  partner_roster_id: number
+  partner_name: string
+  received: TxTradeAsset[]
+  sent: TxTradeAsset[]
+  picks_received: number
+  picks_sent: number
+  net_points: number
+  dynasty_delta: number | null
+  grade: string
+  settling: boolean
+}
+
+export type OwnerGpa = {
+  roster_id: number
+  owner_name: string
+  gpa: number
+  n_moves: number
+  best_move: string
+  worst_move: string
+}
+
+export type TransactionGradeBook = {
+  seasons_covered: string[]
+  waiver_grades: WaiverGrade[]
+  trade_grades: TradeSideGrade[]
+  gpa: OwnerGpa[]
+  warnings: string[]
+}
+
 export interface RefreshStart {
   status: string
   started_at?: string
@@ -1413,6 +1464,7 @@ export const api = {
   ownersSabermetrics: () => get<OwnerGMMetrics[]>('/owners/sabermetrics'),
   reportCard: () => get<ManagerReportCard[]>('/owners/report-card'),
   transactionValue: () => get<TransactionValue[]>('/owners/transaction-value'),
+  transactionGrades: () => get<TransactionGradeBook>('/owners/transaction-grades'),
   draftProfile: () => get<DraftProfile[]>('/owners/draft-profile'),
   prospects: (year = 2025, top = 50) =>
     get<ProspectProfile[]>(`/draft/prospects?year=${year}&top=${top}`),
