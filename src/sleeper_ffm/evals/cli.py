@@ -137,6 +137,22 @@ def avail_sweep_cmd(
         typer.echo(f"  {cell.row()}")
 
 
+@eval_app.command("winprob")
+def winprob_cmd(
+    seasons: list[int] = typer.Argument(..., help="Seasons to replay (e.g. 2022 2023 2024)."),
+) -> None:
+    """Win-prob selector vs mean selector: does risk-adjusting lineups win more matchups?"""
+    from sleeper_ffm.evals.arena import ArenaUnavailableError
+    from sleeper_ffm.evals.winprob import run_winprob_league
+
+    for season in seasons:
+        try:
+            typer.echo(run_winprob_league(season).summary())
+        except ArenaUnavailableError as exc:
+            typer.echo(f"winprob unavailable for {season}: {exc}")
+            raise typer.Exit(1) from exc
+
+
 @eval_app.command("waivers")
 def waivers_cmd(
     season: int = typer.Argument(..., help="Completed season to replay."),
