@@ -8,9 +8,10 @@ truth. That is a real correctness signal, not just a change detector.
 
 Three validations live in this module:
 
-    * :func:`run_redzone_backtest` — the original: red-zone-opportunity expected-TD
-      model (trained on one season) vs. a flat yardage baseline, scored out-of-sample.
-      Fully hermetic (on-disk nflverse parquet cache only).
+    * :func:`run_redzone_backtest` — the original: the opportunity-priced expected-TD
+      model (trained on one season, each target/carry priced by its yard-line bin) vs.
+      a flat yardage baseline, scored out-of-sample. Fully hermetic (on-disk nflverse
+      parquet cache only).
     * :func:`run_age_curve_backtest` — validates the dynasty age-curve's one-year FPAR
       projection (``model/dynasty.py``'s ``_PEAK_AGE``/``_DECAY_RATE``/``_ASCENT_RATE``)
       against realized next-season FPAR, vs. a "no aging" flat-carry baseline. Fully

@@ -26,9 +26,9 @@ def test_redzone_beats_yardage_out_of_sample() -> None:
         pytest.skip(f"backtest data unavailable: {exc}")
 
     assert result.n_players > 50, "too few players for a meaningful backtest"
-    # The core claim: red-zone-opportunity MAE is strictly lower than the yardage baseline.
+    # The core claim: opportunity-priced MAE is strictly lower than the yardage baseline.
     assert result.mae_redzone < result.mae_yardage
-    assert result.improvement_pct > 5.0  # docstrings cite ~19%; guard well below that
+    assert result.improvement_pct > 5.0  # docstrings cite ~25%; guard well below that
 
 
 # ---------------------------------------------------------------------------

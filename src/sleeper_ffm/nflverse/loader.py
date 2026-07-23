@@ -530,7 +530,7 @@ def load_pbp(
     seasons: list[int] | None = None,
     force: bool = False,
 ) -> pl.DataFrame:
-    """Load play-by-play data, trimmed to the columns red-zone/xFP calibration needs.
+    """Load play-by-play data, trimmed to the columns yard-line/xFP calibration needs.
 
     Full nflverse PBP carries 370+ columns (participation, formations, NGS charting);
     fetching only :data:`_PBP_COLUMNS` and skipping the participation merge

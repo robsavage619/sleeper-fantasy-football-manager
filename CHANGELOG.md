@@ -149,6 +149,22 @@ just its code.
   context, verified to genuinely discriminate sound from unsound reasoning rather
   than rubber-stamping.
 
+### Changed
+
+- **Expected touchdowns are priced by yard line, not by a binary red-zone flag.** The
+  model split every target and carry on `yardline_100 <= 20`, so a carry from the 3 and
+  one from the 18 were worth the same though they convert at roughly 39% and 4%. Each
+  opportunity is now priced in its own yard-line bin (1-5, 6-10, 11-20, 21-40, 41+).
+  Out of sample against the yardage baseline (fit 2024, scored 2025, n=235) the
+  expected-TD MAE gain goes from **19.3% to 24.6%**; on the study's wider protocol
+  (fit 2016-2023, scored 2024-25, n=511) the bins cut error 5.0% overall and 10.2% at
+  running back, where touchdowns are goal-line events and the old bucket cost the most.
+  The tier-1 eval floor is ratcheted from 5% to 20% so a revert to bucketing fails.
+  Eight finer bin sets and three fitted continuous functions of `yardline_100` were
+  scored on all nine consecutive-season splits first; none beat these bins by more than
+  noise, and the smooth fits were clearly worse — see
+  `docs/research/study-s5-yardline-weighting-2026-07-22.md`.
+
 ### Fixed
 
 - **The recommendation scoreboard now actually grades.** Its extraction read the
@@ -160,7 +176,8 @@ just its code.
   The regression docstrings claimed a "~18%" expected-TD MAE improvement with no code
   behind it. A reproducible backtest (`evals/backtest.py`, fit on 2024 / scored on
   2025) measures **19.3%** across 235 players and runs as a tier-1 scenario; the
-  docstrings now cite the eval and the measured figure.
+  docstrings now cite the eval and the measured figure. (That 19.3% was the binary
+  red-zone model; yard-line bins later raised it to 24.6% — see Changed above.)
 - **Refresh coverage holes closed.** Injuries, depth charts, play-by-play, and
   schedules were refreshed by neither `sffm ingest` nor `POST /admin/refresh` and had
   no freshness surface — they could go arbitrarily stale silently. All four are now

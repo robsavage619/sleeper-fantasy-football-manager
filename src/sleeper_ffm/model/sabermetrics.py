@@ -276,21 +276,61 @@ def usage_coefficients(
 
 
 # ---------------------------------------------------------------------------
-# Red-zone-aware calibration (play-by-play) — the fix for xFP's UNCALIBRATED flag
+# Yard-line-aware calibration (play-by-play) — the fix for xFP's UNCALIBRATED flag
 # ---------------------------------------------------------------------------
 
-# Standard red-zone threshold: inside the opponent's 20-yard line.
-REDZONE_YARDLINE_100 = 20
+# Yard-line bins every opportunity is priced in, as (inclusive upper ``yardline_100``,
+# label). These replace the binary red-zone flag this module used to split on
+# (``yardline_100 <= 20``), which priced a carry from the 3 and one from the 18
+# identically though they convert at roughly 39% and 4%. Measured out of sample
+# (fit 2016-2023, score 2024-25, n=511 players with >=30 opportunities) the bins cut
+# expected-touchdown MAE 5.0% overall and 10.2% at running back, where touchdowns are
+# goal-line events and the old bucket cost the most. Bin edges are deliberately coarse:
+# eight finer variants and three fitted continuous functions of ``yardline_100`` were
+# scored on all nine consecutive-season splits and none beat these by more than noise,
+# while finer bins have a worse worst-case split. See
+# docs/research/study-s5-yardline-weighting-2026-07-22.md.
+YARDLINE_BINS: tuple[tuple[int, str], ...] = (
+    (5, "1-5"),
+    (10, "6-10"),
+    (20, "11-20"),
+    (40, "21-40"),
+    (100, "41+"),
+)
+
+# Flat per-opportunity fallbacks, shared with ``usage_coefficients``.
+_FLAT_FP_DEFAULT: dict[str, float] = {"target": 1.7, "carry": 0.55}
+_KIND_PLURAL: dict[str, str] = {"target": "targets", "carry": "carries"}
+
+# Every (kind, bin label, dict key) the coefficient / TD-rate / opportunity dicts share.
+# The key is what ``expected_fp`` multiplies across, so all three must agree on it.
+BUCKET_KEYS: tuple[tuple[str, str, str], ...] = tuple(
+    (kind, label, f"{label}_{plural}")
+    for kind, plural in _KIND_PLURAL.items()
+    for _, label in YARDLINE_BINS
+)
+
+
+def yardline_bin_expr() -> pl.Expr:
+    """Map ``yardline_100`` to its :data:`YARDLINE_BINS` label as a polars expression.
+
+    A play with no recorded yard line gets a null bin, so it drops out of every bucket
+    rather than being priced as if it came from midfield.
+    """
+    expr = pl.when(pl.col("yardline_100").is_null()).then(pl.lit(None, dtype=pl.Utf8))
+    for upper, label in YARDLINE_BINS[:-1]:
+        expr = expr.when(pl.col("yardline_100") <= upper).then(pl.lit(label))
+    return expr.otherwise(pl.lit(YARDLINE_BINS[-1][1])).alias("yardline_bin")
 
 
 def pbp_play_value(pbp: pl.DataFrame, scoring: dict[str, float]) -> pl.DataFrame:
-    """Attach a league-scored FP value and red-zone flag to every target/carry.
+    """Attach a league-scored FP value and yard-line bin to every target/carry.
 
     ``usage_coefficients`` prices every target and every carry at one flat,
-    season-average rate — a red-zone look and a midfield checkdown are worth the
+    season-average rate — a goal-line look and a midfield checkdown are worth the
     same. This recomputes fantasy points directly at the play level (one row per
-    pass target or rush attempt) so red-zone and non-red-zone opportunities can be
-    priced separately.
+    pass target or rush attempt) so opportunities can be priced by where on the field
+    they came from.
 
     Args:
         pbp: Raw play-by-play rows (``nflverse.loader.load_pbp`` output).
@@ -298,13 +338,13 @@ def pbp_play_value(pbp: pl.DataFrame, scoring: dict[str, float]) -> pl.DataFrame
 
     Returns:
         DataFrame with ``player_id`` (gsis_id), ``kind`` ("target"/"carry"),
-        ``is_redzone``, ``fp``, ``touchdown`` (0/1 — this play only, not season total).
+        ``yardline_bin``, ``fp``, ``touchdown`` (0/1 — this play only, not season total).
         Empty (with the right schema) if required PBP columns are missing.
     """
     schema = {
         "player_id": pl.Utf8,
         "kind": pl.Utf8,
-        "is_redzone": pl.Boolean,
+        "yardline_bin": pl.Utf8,
         "fp": pl.Float64,
         "touchdown": pl.Float64,
     }
@@ -325,7 +365,7 @@ def pbp_play_value(pbp: pl.DataFrame, scoring: dict[str, float]) -> pl.DataFrame
             [
                 pl.col("receiver_player_id").alias("player_id"),
                 pl.lit("target").alias("kind"),
-                (pl.col("yardline_100") <= REDZONE_YARDLINE_100).alias("is_redzone"),
+                yardline_bin_expr(),
                 (
                     pl.col("complete_pass").fill_null(0) * scoring.get("rec", 1.0)
                     + pl.col("yards_gained").fill_null(0) * scoring.get("rec_yd", 0.1)
@@ -341,7 +381,7 @@ def pbp_play_value(pbp: pl.DataFrame, scoring: dict[str, float]) -> pl.DataFrame
             [
                 pl.col("rusher_player_id").alias("player_id"),
                 pl.lit("carry").alias("kind"),
-                (pl.col("yardline_100") <= REDZONE_YARDLINE_100).alias("is_redzone"),
+                yardline_bin_expr(),
                 (
                     pl.col("yards_gained").fill_null(0) * scoring.get("rush_yd", 0.1)
                     + pl.col("touchdown").fill_null(0) * scoring.get("rush_td", 6.0)
@@ -353,120 +393,107 @@ def pbp_play_value(pbp: pl.DataFrame, scoring: dict[str, float]) -> pl.DataFrame
     return pl.concat([targets, carries])
 
 
+def _bucket_stats(
+    play_values: pl.DataFrame, position_by_player: dict[str, str], value_col: str
+) -> dict[tuple[str, str, str], float]:
+    """``(position, kind, yardline_bin) -> mean of value_col`` over the skill positions."""
+    with_pos = play_values.with_columns(
+        pl.col("player_id").replace_strict(position_by_player, default=None).alias("position")
+    ).filter(pl.col("position").is_in(list(SKILL_POSITIONS)) & pl.col("yardline_bin").is_not_null())
+    return {
+        (str(r["position"]), str(r["kind"]), str(r["yardline_bin"])): float(r["rate"])
+        for r in with_pos.group_by(["position", "kind", "yardline_bin"])
+        .agg(pl.col(value_col).mean().alias("rate"))
+        .iter_rows(named=True)
+    }
+
+
 def redzone_usage_coefficients(
     play_values: pl.DataFrame, position_by_player: dict[str, str]
 ) -> dict[str, dict[str, float]]:
-    """Four-bucket (red-zone vs other, target vs carry) points-per-opportunity by position.
+    """Points-per-opportunity by position, split by yard-line bin and target vs carry.
 
     Args:
         play_values: Output of :func:`pbp_play_value`.
         position_by_player: ``gsis_id -> position`` lookup (from ``load_id_map``).
 
     Returns:
-        ``{pos: {"rz_targets": x, "targets": x, "rz_carries": x, "carries": x}}``.
-        Falls back to the flat 1.7/0.55 defaults used by ``usage_coefficients`` for
-        buckets with no plays observed.
+        ``{pos: {"<bin>_targets": x, "<bin>_carries": x, ...}}`` — one entry per
+        :data:`YARDLINE_BINS` label and kind (e.g. ``"1-5_carries"``). Falls back to
+        the flat 1.7/0.55 defaults used by ``usage_coefficients`` for buckets with no
+        plays observed.
     """
-    if play_values.is_empty():
-        return {
-            pos: {"rz_targets": 1.7, "targets": 1.7, "rz_carries": 0.55, "carries": 0.55}
-            for pos in SKILL_POSITIONS
+    stats = {} if play_values.is_empty() else _bucket_stats(play_values, position_by_player, "fp")
+    return {
+        pos: {
+            key: round(rate, 4)
+            if (rate := stats.get((pos, kind, label))) is not None
+            else _FLAT_FP_DEFAULT[kind]
+            for kind, label, key in BUCKET_KEYS
         }
-
-    with_pos = play_values.with_columns(
-        pl.col("player_id").replace_strict(position_by_player, default=None).alias("position")
-    ).filter(pl.col("position").is_in(list(SKILL_POSITIONS)))
-
-    coeffs: dict[str, dict[str, float]] = {}
-    for pos in SKILL_POSITIONS:
-        pos_df = with_pos.filter(pl.col("position") == pos)
-        bucket_rates: dict[str, float] = {}
-        for kind, key, default in [
-            ("target", "rz_targets", 1.7),
-            ("target", "targets", 1.7),
-            ("carry", "rz_carries", 0.55),
-            ("carry", "carries", 0.55),
-        ]:
-            is_rz = key.startswith("rz_")
-            bucket = pos_df.filter((pl.col("kind") == kind) & (pl.col("is_redzone") == is_rz))
-            n = bucket.height
-            bucket_rates[key] = round(float(bucket["fp"].sum()) / n, 4) if n > 0 else default
-        coeffs[pos] = bucket_rates
-    return coeffs
+        for pos in SKILL_POSITIONS
+    }
 
 
 def redzone_td_rates(
     play_values: pl.DataFrame, position_by_player: dict[str, str]
 ) -> dict[str, dict[str, float]]:
-    """Four-bucket touchdown probability per opportunity by position.
+    """Touchdown probability per opportunity by position, yard-line bin and kind.
 
-    Same bucket structure as :func:`redzone_usage_coefficients` (red-zone vs other,
-    target vs carry) but for touchdown rate rather than fantasy-point rate — the
-    basis for :mod:`sleeper_ffm.model.regression`'s red-zone-opportunity TD model
-    (backtested out-of-sample by :mod:`sleeper_ffm.evals.backtest` to cut expected-TD
-    error ~19% vs a yardage baseline — 19.3% fitting on 2024, scoring on 2025).
+    Same bucket structure as :func:`redzone_usage_coefficients` but for touchdown rate
+    rather than fantasy-point rate — the basis for :mod:`sleeper_ffm.model.regression`'s
+    opportunity-priced TD model (backtested out-of-sample by
+    :mod:`sleeper_ffm.evals.backtest` to cut expected-TD error ~25% vs a yardage
+    baseline — 24.6% fitting on 2024, scoring on 2025, against 19.3% for the binary
+    red-zone flag these bins replaced).
 
     Args:
         play_values: Output of :func:`pbp_play_value`.
         position_by_player: ``gsis_id -> position`` lookup (from ``load_id_map``).
 
     Returns:
-        ``{pos: {"rz_targets": p, "targets": p, "rz_carries": p, "carries": p}}``,
-        each a touchdown probability in ``[0, 1]``. ``0.0`` for buckets with no
-        observed plays (no fabricated default — unlike the FP-coefficient version,
-        there is no sane non-zero prior for touchdown rate).
+        ``{pos: {"<bin>_targets": p, "<bin>_carries": p, ...}}``, each a touchdown
+        probability in ``[0, 1]``. ``0.0`` for buckets with no observed plays (no
+        fabricated default — unlike the FP-coefficient version, there is no sane
+        non-zero prior for touchdown rate). Rare kinds in a single season — tight-end
+        carries most of all — can land on a handful of plays per bin, so read those
+        rates as noisy rather than as a measured conversion.
     """
-    if play_values.is_empty():
-        zero = {"rz_targets": 0.0, "targets": 0.0, "rz_carries": 0.0, "carries": 0.0}
-        return {pos: dict(zero) for pos in SKILL_POSITIONS}
-
-    with_pos = play_values.with_columns(
-        pl.col("player_id").replace_strict(position_by_player, default=None).alias("position")
-    ).filter(pl.col("position").is_in(list(SKILL_POSITIONS)))
-
-    rates: dict[str, dict[str, float]] = {}
-    for pos in SKILL_POSITIONS:
-        pos_df = with_pos.filter(pl.col("position") == pos)
-        bucket_rates: dict[str, float] = {}
-        for kind, key in [
-            ("target", "rz_targets"),
-            ("target", "targets"),
-            ("carry", "rz_carries"),
-            ("carry", "carries"),
-        ]:
-            is_rz = key.startswith("rz_")
-            bucket = pos_df.filter((pl.col("kind") == kind) & (pl.col("is_redzone") == is_rz))
-            n = bucket.height
-            bucket_rates[key] = round(float(bucket["touchdown"].sum()) / n, 4) if n > 0 else 0.0
-        rates[pos] = bucket_rates
-    return rates
+    stats = (
+        {}
+        if play_values.is_empty()
+        else _bucket_stats(play_values, position_by_player, "touchdown")
+    )
+    return {
+        pos: {key: round(stats.get((pos, kind, label), 0.0), 4) for kind, label, key in BUCKET_KEYS}
+        for pos in SKILL_POSITIONS
+    }
 
 
 def player_redzone_opportunities(play_values: pl.DataFrame, player_id: str) -> dict[str, float]:
-    """One player's red-zone vs other target/carry counts, for :func:`expected_fp`.
+    """One player's target/carry counts per yard-line bin, for :func:`expected_fp`.
 
     Args:
         play_values: Output of :func:`pbp_play_value`.
         player_id: gsis_id to filter to.
 
     Returns:
-        ``{"rz_targets": n, "targets": n, "rz_carries": n, "carries": n}`` — counts
-        by bucket (not totals; "targets"/"carries" here mean non-red-zone only, so
-        they sum cleanly against :func:`redzone_usage_coefficients`).
+        ``{"<bin>_targets": n, "<bin>_carries": n, ...}`` — counts by bucket, keyed to
+        match :func:`redzone_usage_coefficients` and :func:`redzone_td_rates` so the
+        three multiply out cleanly. Not totals: each key counts only that yard-line bin.
     """
-    mine = play_values.filter(pl.col("player_id") == player_id)
+    counts: dict[str, float] = {key: 0.0 for _, _, key in BUCKET_KEYS}
+    mine = play_values.filter(
+        (pl.col("player_id") == player_id) & pl.col("yardline_bin").is_not_null()
+    )
     if mine.is_empty():
-        return {"rz_targets": 0.0, "targets": 0.0, "rz_carries": 0.0, "carries": 0.0}
+        return counts
 
-    def _count(kind: str, is_rz: bool) -> float:
-        return float(mine.filter((pl.col("kind") == kind) & (pl.col("is_redzone") == is_rz)).height)
-
-    return {
-        "rz_targets": _count("target", True),
-        "targets": _count("target", False),
-        "rz_carries": _count("carry", True),
-        "carries": _count("carry", False),
-    }
+    for r in mine.group_by(["kind", "yardline_bin"]).agg(pl.len().alias("n")).iter_rows(named=True):
+        plural = _KIND_PLURAL.get(str(r["kind"]))
+        if plural is not None:
+            counts[f"{r['yardline_bin']}_{plural}"] = float(r["n"])
+    return counts
 
 
 # ---------------------------------------------------------------------------
@@ -810,7 +837,7 @@ def _redzone_xfp(
         if coeffs is None:
             return None
 
-        opps = {"rz_targets": 0.0, "targets": 0.0, "rz_carries": 0.0, "carries": 0.0}
+        opps = {key: 0.0 for _, _, key in BUCKET_KEYS}
         for gsis_id in gsis_ids:
             player_opps = player_redzone_opportunities(play_values, gsis_id)
             for k, v in player_opps.items():
@@ -826,8 +853,8 @@ def _redzone_xfp(
             "coeffs": coeffs,
             "opportunities": opps,
             "label": (
-                "REDZONE-CALIBRATED — usage-value coefficients split by red-zone vs "
-                "other opportunity from play-by-play, still a single-season fit."
+                "YARDLINE-CALIBRATED — usage-value coefficients split by the yard line "
+                "each opportunity came from, still a single-season fit."
             ),
         }
     except Exception as exc:
