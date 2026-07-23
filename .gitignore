@@ -226,6 +226,7 @@ data/nflverse/
 data/findings.jsonl
 data/offers.jsonl
 data/market/
+data/research/
 
 # Eval harness run artifacts (keep the ledger, ignore per-run result dumps)
 evals/runs/*.jsonl
