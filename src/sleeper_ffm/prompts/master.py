@@ -952,19 +952,55 @@ def _draft_context() -> str:
     if not pool:
         return header + "\n(no unrostered rookies or free agents surfaced in the pool this cycle)"
 
+    # Draft-capital base rates (study S6). A board ranked only on projected value says
+    # which prospect is best without saying how often that kind of prospect works out.
+    try:
+        from sleeper_ffm.config import CURRENT_LEAGUE_YEAR
+        from sleeper_ffm.model.player_intel import rookie_hit_rates
+
+        hit_rates = rookie_hit_rates(int(CURRENT_LEAGUE_YEAR))
+    except Exception as exc:
+        log.warning("master: rookie hit rates unavailable (%s)", exc)
+        hit_rates = {}
+
     lines = [
         header,
         "",
         "Best available now — incoming rookie class + unrostered free agents, ranked by model "
-        "value ([R] = rookie/year-1, [FA] = unrostered veteran):",
+        "value ([R] = rookie/year-1, [FA] = unrostered veteran).",
     ]
+    if hit_rates:
+        lines.append(
+            "Rookies carry their NFL draft-capital tier and the measured probability of ever "
+            "producing a startable season here (study S6, career years 1-3, this league's own "
+            "replacement line): tier A = rounds 1-2, 58%; tier B = rounds 3-5, 21%; tier C = "
+            "round 6, undrafted or unknown, 3%. Inside tier A this lineup makes running backs "
+            "far safer than quarterbacks (88% vs 39%) because it starts three backs plus two "
+            "flexes and one quarterback. Weigh a value ranking against these base rates — a "
+            "tier-C prospect ranked highly on projection is still a 3% shot."
+        )
+    lines.append("")
     for i, p in enumerate(pool[:24], start=1):
         tag = "R " if p.is_taxi else "FA"
         gone = pick_no is not None and i < pick_no
         marker = "  ← likely gone before my pick" if gone else ""
+        prior = ""
+        if p.is_taxi:
+            info = hit_rates.get(str(p.player_id))
+            if info is None:
+                prior = " — no draft capital on record (tier C, 3%)"
+            else:
+                rnd = info["round"]
+                where = f"rd {rnd}" if rnd is not None else "undrafted"
+                rate = info["rate"]
+                rate_txt = f"{rate:.0%}" if isinstance(rate, float) else "n/a"
+                prior = f" — {where}, tier {info['tier']} {rate_txt}"
+                pos_rate = info.get("position_rate")
+                if isinstance(pos_rate, float):
+                    prior += f" ({p.position} in this tier: {pos_rate:.0%})"
         lines.append(
             f"  {i:>2}. [{tag}] {p.position:2} {p.name} ({p.team or 'FA'}) — val "
-            f"{p.current_fpar:.0f}{marker}"
+            f"{p.current_fpar:.0f}{prior}{marker}"
         )
     if pick_no is not None:
         lines.append(

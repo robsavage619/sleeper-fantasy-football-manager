@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import polars as pl
+import pytest
 
 from sleeper_ffm.model import player_intel as pi
 
@@ -124,3 +125,55 @@ def test_roster_scoping_filters_to_held_players() -> None:
 
 def test_empty_context_returns_nothing() -> None:
     assert pi.build_roster_intel(pl.DataFrame()) == []
+
+
+def test_rookie_hit_rates_maps_capital_to_tiers(monkeypatch) -> None:
+    """Every drafted rookie gets a base rate; missing capital falls to tier C."""
+    id_map = pl.DataFrame(
+        [
+            {
+                "sleeper_id": 1.0,
+                "position": "RB",
+                "draft_year": 2026.0,
+                "draft_round": 1.0,
+            },
+            {
+                "sleeper_id": 2.0,
+                "position": "QB",
+                "draft_year": 2026.0,
+                "draft_round": 1.0,
+            },
+            {
+                "sleeper_id": 3.0,
+                "position": "WR",
+                "draft_year": 2026.0,
+                "draft_round": 4.0,
+            },
+            {
+                "sleeper_id": 4.0,
+                "position": "TE",
+                "draft_year": 2026.0,
+                "draft_round": None,
+            },
+            {
+                "sleeper_id": 9.0,
+                "position": "WR",
+                "draft_year": 2025.0,
+                "draft_round": 1.0,
+            },
+        ]
+    )
+    monkeypatch.setattr("sleeper_ffm.nflverse.loader.load_id_map", lambda: id_map, raising=True)
+
+    rates = pi.rookie_hit_rates(2026)
+
+    # The 2025 entrant must not appear in a 2026 class.
+    assert set(rates) == {"1", "2", "3", "4"}
+    assert rates["1"]["tier"] == "A"
+    # Same tier, different lineup value: backs are far safer than quarterbacks here.
+    assert rates["1"]["position_rate"] == pytest.approx(0.882)
+    assert rates["2"]["position_rate"] == pytest.approx(0.389)
+    assert rates["3"]["tier"] == "B"
+    # Undrafted collapses to tier C, and position_rate only applies inside tier A.
+    assert rates["4"]["tier"] == "C"
+    assert rates["4"]["position_rate"] is None

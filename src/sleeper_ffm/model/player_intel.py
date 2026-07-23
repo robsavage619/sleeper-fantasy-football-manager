@@ -138,6 +138,54 @@ def draft_tier(draft_round: float | None) -> str:
     return "C"
 
 
+def rookie_hit_rates(draft_year: int) -> dict[str, dict[str, object]]:
+    """Map Sleeper player IDs in one draft class to their S6 hit-rate priors.
+
+    A rookie board ranked purely on projected value invites overconfidence: it
+    says which prospect is best without saying how often that kind of prospect
+    works out at all. This supplies the base rate.
+
+    Args:
+        draft_year: NFL entry year of the class.
+
+    Returns:
+        ``{sleeper_id: {"round", "tier", "rate", "position_rate"}}``. Players
+        without recorded draft capital are treated as tier C, which is what
+        undrafted status actually implies.
+    """
+    from sleeper_ffm.nflverse.loader import load_id_map
+
+    try:
+        id_map = load_id_map()
+    except (FileNotFoundError, OSError) as exc:
+        log.warning("rookie_hit_rates: id_map unavailable (%s)", exc)
+        return {}
+
+    rows = id_map.filter(
+        (pl.col("draft_year") == draft_year)
+        & pl.col("sleeper_id").is_not_null()
+        & pl.col("position").is_in(["QB", "RB", "WR", "TE"])
+    )
+
+    out: dict[str, dict[str, object]] = {}
+    for row in rows.iter_rows(named=True):
+        sleeper_id = row.get("sleeper_id")
+        if sleeper_id is None:
+            continue
+        rnd = row.get("draft_round")
+        rnd_val = float(rnd) if isinstance(rnd, (int, float)) else None
+        tier = draft_tier(rnd_val)
+        rate, _low, _high = ROOKIE_TIERS[tier]
+        position = str(row.get("position") or "")
+        out[str(int(sleeper_id))] = {
+            "round": int(rnd_val) if rnd_val is not None else None,
+            "tier": tier,
+            "rate": rate,
+            "position_rate": TIER_A_BY_POSITION.get(position) if tier == "A" else None,
+        }
+    return out
+
+
 def situation_flags(row: dict[str, object]) -> list[IntelFlag]:
     """Flags from S2 — whether this player's usage history still applies."""
     flags: list[IntelFlag] = []
