@@ -334,6 +334,174 @@ def load_injuries(
     return pl.concat(frames) if frames else pl.DataFrame()
 
 
+# ---------------------------------------------------------------------------
+# Next Gen Stats — tracking-derived separation, air yards, rush-yards-over-expected
+# ---------------------------------------------------------------------------
+
+# NGS is tracking-chip data; nflverse publishes it from 2016 on. Requesting an
+# earlier season returns an empty frame rather than raising, so callers must clamp.
+_NGS_FIRST_SEASON = 2016
+_NGS_STAT_TYPES = ("receiving", "rushing", "passing")
+
+
+def load_ngs(
+    stat_type: str,
+    seasons: list[int] | None = None,
+    force: bool = False,
+) -> pl.DataFrame:
+    """Load Next Gen Stats tracking data for one stat type.
+
+    NGS carries the separation, cushion, air-yards-share and yards-over-expected
+    columns that box scores cannot express — the difference between a receiver
+    who is open and one who is merely targeted.
+
+    Rows with ``week == 0`` are NGS season aggregates, not a real week; they are
+    preserved here and must be filtered by callers doing per-week work.
+
+    Args:
+        stat_type: One of ``receiving``, ``rushing``, ``passing``.
+        seasons: Seasons to pull. Clamped to 2016+, the start of NGS coverage.
+        force: Re-download, ignoring cache.
+
+    Returns:
+        Concatenated NGS DataFrame keyed by ``player_gsis_id``, ``season``, ``week``.
+
+    Raises:
+        ValueError: If ``stat_type`` is not a recognised NGS stat type.
+    """
+    if stat_type not in _NGS_STAT_TYPES:
+        raise ValueError(f"stat_type must be one of {_NGS_STAT_TYPES}, got {stat_type!r}")
+
+    seasons = seasons or list(range(_NGS_FIRST_SEASON, _CURRENT_SEASON + 1))
+    wanted = [s for s in seasons if s >= _NGS_FIRST_SEASON]
+    if skipped := sorted(set(seasons) - set(wanted)):
+        log.info("ngs/%s: seasons %s predate NGS coverage; skipped", stat_type, skipped)
+
+    source = f"nflverse_ngs_{stat_type}"
+    frames: list[pl.DataFrame] = []
+    for season in wanted:
+        dest = NFLVERSE_DIR / "ngs" / stat_type / f"{season}.parquet"
+        if dest.exists() and not force and season <= _CURRENT_SEASON:
+            frames.append(pl.read_parquet(dest))
+            continue
+        try:
+            df = cast(
+                pl.DataFrame,
+                pl.from_pandas(
+                    retry_call(
+                        lambda st=stat_type, s=season: nfl.import_ngs_data(st, [s]),
+                        exceptions=(Exception,),
+                        label=f"ngs/{stat_type}/{season}",
+                    )
+                ),
+            )
+        except Exception as exc:
+            log.warning("ngs/%s/%d: unavailable from nflverse: %s", stat_type, season, exc)
+            if dest.exists():
+                mtime = datetime.fromtimestamp(dest.stat().st_mtime, UTC).date().isoformat()
+                _record_stale(source, f"season {season} fetch failed; serving cache from {mtime}")
+                frames.append(pl.read_parquet(dest))
+            else:
+                _record_stale(source, f"season {season} fetch failed; no cache available")
+            continue
+        if df.is_empty():
+            log.warning("ngs/%s/%d: source returned no rows", stat_type, season)
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_parquet(df, dest)
+        _clear_stale(source)
+        log.info("ngs/%s/%d: %d rows written", stat_type, season, len(df))
+        frames.append(df)
+
+    if not frames:
+        return pl.DataFrame()
+    if len({tuple(f.columns) for f in frames}) == 1:
+        return pl.concat(frames)
+    return pl.concat(frames, how="diagonal_relaxed")
+
+
+# ---------------------------------------------------------------------------
+# Pro Football Reference advanced stats — charted drops, broken tackles, pressure
+# ---------------------------------------------------------------------------
+
+# PFR advanced splits start in 2018 and are keyed by pfr_player_id, which the
+# id_map crosswalk resolves back to gsis_id.
+_PFR_FIRST_SEASON = 2018
+_PFR_STAT_TYPES = ("pass", "rec", "rush", "def")
+
+
+def load_pfr_advanced(
+    stat_type: str,
+    seasons: list[int] | None = None,
+    force: bool = False,
+) -> pl.DataFrame:
+    """Load weekly Pro Football Reference advanced stats for one stat type.
+
+    Supplies charted detail the box score omits — drops, broken tackles, and
+    yards after contact — keyed by ``pfr_player_id``.
+
+    Args:
+        stat_type: One of ``pass``, ``rec``, ``rush``, ``def``.
+        seasons: Seasons to pull. Clamped to 2018+, the start of PFR coverage.
+        force: Re-download, ignoring cache.
+
+    Returns:
+        Concatenated weekly PFR DataFrame.
+
+    Raises:
+        ValueError: If ``stat_type`` is not a recognised PFR stat type.
+    """
+    if stat_type not in _PFR_STAT_TYPES:
+        raise ValueError(f"stat_type must be one of {_PFR_STAT_TYPES}, got {stat_type!r}")
+
+    seasons = seasons or list(range(_PFR_FIRST_SEASON, _CURRENT_SEASON + 1))
+    wanted = [s for s in seasons if s >= _PFR_FIRST_SEASON]
+    if skipped := sorted(set(seasons) - set(wanted)):
+        log.info("pfr/%s: seasons %s predate PFR coverage; skipped", stat_type, skipped)
+
+    source = f"nflverse_pfr_{stat_type}"
+    frames: list[pl.DataFrame] = []
+    for season in wanted:
+        dest = NFLVERSE_DIR / "pfr" / stat_type / f"{season}.parquet"
+        if dest.exists() and not force and season <= _CURRENT_SEASON:
+            frames.append(pl.read_parquet(dest))
+            continue
+        try:
+            df = cast(
+                pl.DataFrame,
+                pl.from_pandas(
+                    retry_call(
+                        lambda st=stat_type, s=season: nfl.import_weekly_pfr(st, [s]),
+                        exceptions=(Exception,),
+                        label=f"pfr/{stat_type}/{season}",
+                    )
+                ),
+            )
+        except Exception as exc:
+            log.warning("pfr/%s/%d: unavailable from nflverse: %s", stat_type, season, exc)
+            if dest.exists():
+                mtime = datetime.fromtimestamp(dest.stat().st_mtime, UTC).date().isoformat()
+                _record_stale(source, f"season {season} fetch failed; serving cache from {mtime}")
+                frames.append(pl.read_parquet(dest))
+            else:
+                _record_stale(source, f"season {season} fetch failed; no cache available")
+            continue
+        if df.is_empty():
+            log.warning("pfr/%s/%d: source returned no rows", stat_type, season)
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_parquet(df, dest)
+        _clear_stale(source)
+        log.info("pfr/%s/%d: %d rows written", stat_type, season, len(df))
+        frames.append(df)
+
+    if not frames:
+        return pl.DataFrame()
+    if len({tuple(f.columns) for f in frames}) == 1:
+        return pl.concat(frames)
+    return pl.concat(frames, how="diagonal_relaxed")
+
+
 _PBP_COLUMNS = [
     "season",
     "week",
@@ -563,10 +731,12 @@ def ingest(
     skip_snaps: bool = False,
     skip_rosters: bool = False,
     skip_status: bool = False,
+    skip_advanced: bool = False,
 ) -> None:
     """Run the full nflverse ingestion pipeline.
 
-    Order: id_map → weekly → seasonal → [snaps] → schedules → [rosters] → [status feeds].
+    Order: id_map → weekly → seasonal → [snaps] → schedules → [rosters] →
+    [status feeds] → [advanced tracking].
 
     Args:
         seasons: Seasons to ingest (default: full historical range).
@@ -576,6 +746,9 @@ def ingest(
         skip_status: Skip the in-season status feeds — injuries, depth charts, and
             play-by-play. These previously loaded lazily on first model access and were
             never force-refreshed by ingest; pulling them here closes that coverage hole.
+        skip_advanced: Skip Next Gen Stats and PFR advanced splits. These back the
+            research studies rather than the live surfaces, so a routine in-season
+            refresh does not need them.
     """
     log.info("=== nflverse ingest start ===")
     load_id_map(force=force)
@@ -591,6 +764,11 @@ def ingest(
         load_injuries(seasons=status_seasons, force=force)
         load_depth_charts(seasons=status_seasons, force=force)
         load_pbp(seasons=status_seasons, force=force)
+    if not skip_advanced:
+        for ngs_type in _NGS_STAT_TYPES:
+            load_ngs(ngs_type, seasons=seasons, force=force)
+        for pfr_type in ("rec", "rush", "pass"):
+            load_pfr_advanced(pfr_type, seasons=seasons, force=force)
     log.info("=== nflverse ingest complete ===")
 
 
