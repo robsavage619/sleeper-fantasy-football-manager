@@ -212,6 +212,63 @@ def _pearson(xs: list[float], ys: list[float]) -> float:
     return sum((p[0] - mx) * (p[1] - my) for p in pairs) / (sx * sy)
 
 
+def team_qb_context(season: int) -> dict[str, float]:
+    """Expected pass-catcher scoring effect of each team's quarterback, in points per game.
+
+    Translates a team's primary quarterback's accuracy into what S3 measured it is
+    worth to his receivers: the effect is per standard deviation of CPOE, so a
+    quarterback one standard deviation above the league mean is credited the
+    per-standard-deviation figure and one below is debited it.
+
+    The result is deliberately expressed as a receiver-facing number rather than a
+    quarterback rating, because that is the decision it informs — whether to buy or
+    sell the pass catchers attached to him.
+
+    Args:
+        season: Season whose quarterback assignments and accuracy to use.
+
+    Returns:
+        ``{team: points_per_game_delta}`` for a WR at that team, relative to a
+        league-average quarterback. Empty when the inputs are unavailable.
+    """
+    from sleeper_ffm.model.context_table import build_team_seasons
+
+    quality = qb_season_quality([season])
+    if quality.is_empty():
+        log.warning("team_qb_context: no QB quality for %d", season)
+        return {}
+
+    mean = _as_float(quality["cpoe"].mean())
+    sd = _as_float(quality["cpoe"].std())
+    if sd == 0:
+        log.warning("team_qb_context: no spread in QB accuracy for %d", season)
+        return {}
+
+    try:
+        teams = build_team_seasons(seasons=[season])
+    except (FileNotFoundError, OSError) as exc:
+        log.warning("team_qb_context: schedules unavailable (%s)", exc)
+        return {}
+    if teams.is_empty():
+        return {}
+
+    cpoe_by_qb = {str(r["player_id"]): float(r["cpoe"]) for r in quality.iter_rows(named=True)}
+    per_sd = QB_QUALITY_PTS_PER_SD
+
+    out: dict[str, float] = {}
+    for row in teams.filter(pl.col("season") == season).iter_rows(named=True):
+        qb_id = row.get("primary_qb_id")
+        cpoe = cpoe_by_qb.get(str(qb_id)) if qb_id is not None else None
+        if cpoe is None:
+            continue
+        out[str(row["team"])] = round((cpoe - mean) / sd * per_sd, 3)
+    return out
+
+
+# S3 headline: points per game a receiver gains per standard deviation of QB accuracy.
+QB_QUALITY_PTS_PER_SD = 0.93
+
+
 def estimate_effect(panel: pl.DataFrame, outcome: str = "d_fp_per_target") -> list[QbEffect]:
     """Regress the change in a receiver outcome on the change in his QB's CPOE.
 

@@ -186,6 +186,42 @@ def rookie_hit_rates(draft_year: int) -> dict[str, dict[str, object]]:
     return out
 
 
+def qb_context_flag(position: str, team: str, delta: float) -> IntelFlag | None:
+    """Flag from S3 — what this player's quarterback situation is worth in points.
+
+    Args:
+        position: Player position; only pass catchers are affected.
+        team: Team abbreviation, used in the wording.
+        delta: Expected points per game versus a league-average quarterback.
+
+    Returns:
+        A flag when the effect is large enough to matter, otherwise ``None`` —
+        a quarterback near league average is not news.
+    """
+    if position not in QB_QUALITY_PTS_PER_SD:
+        return None
+    if abs(delta) < 0.30:
+        return None
+
+    helped = delta > 0
+    season_swing = abs(delta) * 28
+    return IntelFlag(
+        kind="qb_context",
+        severity="ALERT" if abs(delta) >= 1.0 else "WATCH",
+        headline=(
+            f"{team}'s quarterback play is worth {delta:+.2f} pts/game to him "
+            f"({'roughly ' + format(season_swing, '.0f')} points across a 28-game season"
+            f"{' in his favour' if helped else ' against him'})."
+        ),
+        evidence=(
+            "Measured on points per target, not target volume — quarterback quality "
+            "moves efficiency (r=+0.34) and not usage (r=-0.09). Association rather "
+            "than a clean causal estimate, so treat this as an upper bound."
+        ),
+        study="S3",
+    )
+
+
 def situation_flags(row: dict[str, object]) -> list[IntelFlag]:
     """Flags from S2 — whether this player's usage history still applies."""
     flags: list[IntelFlag] = []
@@ -339,6 +375,7 @@ def build_player_intel(
     context_row: dict[str, object],
     archetype: str | None = None,
     is_rookie: bool = False,
+    qb_context: dict[str, float] | None = None,
 ) -> PlayerIntel:
     """Compose every applicable research flag for one player.
 
@@ -347,6 +384,8 @@ def build_player_intel(
             situation-change flags, position, team and age.
         archetype: Archetype label from :mod:`model.research.archetypes`, if known.
         is_rookie: Whether this is the player's entry season.
+        qb_context: ``{team: pts/game}`` from
+            :func:`model.research.qb_quality.team_qb_context`, if available.
 
     Returns:
         The player's intel record, flags ordered most severe first.
@@ -356,6 +395,12 @@ def build_player_intel(
     age = float(age_raw) if isinstance(age_raw, (int, float)) else None
 
     flags = situation_flags(context_row)
+
+    team = str(context_row.get("team") or "")
+    if qb_context and team in qb_context:
+        qb_flag = qb_context_flag(position, team, qb_context[team])
+        if qb_flag is not None:
+            flags.append(qb_flag)
 
     attrition = attrition_flag(position, archetype, age)
     if attrition is not None:
@@ -386,6 +431,7 @@ def build_roster_intel(
     archetypes: pl.DataFrame | None = None,
     season: int | None = None,
     sleeper_ids: set[str] | None = None,
+    qb_context: dict[str, float] | None = None,
 ) -> list[PlayerIntel]:
     """Build intel for players in a context frame.
 
@@ -396,6 +442,7 @@ def build_roster_intel(
         sleeper_ids: Restrict to these Sleeper player IDs — pass a roster to get
             intel about players you actually hold. Omitting it scans the league,
             which is what a waiver or trade-target sweep wants.
+        qb_context: ``{team: pts/game}`` quarterback-quality effects, if available.
 
     Returns:
         Intel records sorted by alert count descending — the players whose
@@ -437,6 +484,7 @@ def build_roster_intel(
                 row,
                 archetype=archetype_by_player.get(player_id),
                 is_rookie=is_rookie,
+                qb_context=qb_context,
             )
         )
 

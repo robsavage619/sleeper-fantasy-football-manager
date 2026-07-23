@@ -544,7 +544,17 @@ def _player_intel_section(my_roster_id: int, top: int = 12) -> str:
             log.warning("master: archetypes unavailable, attrition flags omitted: %s", exc)
             archetypes = None
 
-        intel = build_roster_intel(context, archetypes=archetypes, sleeper_ids=held)
+        try:
+            from sleeper_ffm.model.research.qb_quality import team_qb_context
+
+            qb_context = team_qb_context(int(latest)) if isinstance(latest, (int, float)) else {}
+        except Exception as exc:
+            log.warning("master: QB context unavailable (%s)", exc)
+            qb_context = {}
+
+        intel = build_roster_intel(
+            context, archetypes=archetypes, sleeper_ids=held, qb_context=qb_context
+        )
     except Exception as exc:
         log.warning("master: player intel unavailable: %s", exc)
         return "(degraded — player intel unavailable)"

@@ -89,3 +89,65 @@ def test_empty_sources_return_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(qq, "load_context_table", lambda: pl.DataFrame())
     assert qq.build_panel([2021]).is_empty()
     assert qq.estimate_effect(pl.DataFrame()) == []
+
+
+def test_team_qb_context_scales_by_standard_deviation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A QB one SD above the mean is worth the per-SD figure to his receivers."""
+    quality = pl.DataFrame(
+        {
+            "player_id": ["good", "avg", "bad"],
+            "season": [2025, 2025, 2025],
+            "cpoe": [4.0, 0.0, -4.0],
+            "attempts": [400, 400, 400],
+        }
+    )
+    teams = pl.DataFrame(
+        {
+            "season": [2025, 2025, 2025],
+            "team": ["GOOD", "AVG", "BAD"],
+            "primary_qb_id": ["good", "avg", "bad"],
+        }
+    )
+    monkeypatch.setattr(qq, "qb_season_quality", lambda seasons: quality)
+    monkeypatch.setattr(
+        "sleeper_ffm.model.context_table.build_team_seasons", lambda seasons=None: teams
+    )
+
+    ctx = qq.team_qb_context(2025)
+    sd = 4.0  # population of {4, 0, -4} has sample sd 4.0
+    assert ctx["GOOD"] == pytest.approx(4.0 / sd * qq.QB_QUALITY_PTS_PER_SD, abs=1e-3)
+    assert ctx["AVG"] == pytest.approx(0.0, abs=1e-3)
+    # Symmetric: a bad QB costs what a good one gives.
+    assert ctx["BAD"] == pytest.approx(-ctx["GOOD"], abs=1e-3)
+
+
+def test_team_qb_context_skips_teams_without_a_qualifying_qb(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    quality = pl.DataFrame(
+        {
+            "player_id": ["known"],
+            "season": [2025],
+            "cpoe": [2.0],
+            "attempts": [400],
+        }
+    )
+    teams = pl.DataFrame(
+        {
+            "season": [2025, 2025],
+            "team": ["HAS", "NONE"],
+            "primary_qb_id": ["known", "unknown"],
+        }
+    )
+    monkeypatch.setattr(qq, "qb_season_quality", lambda seasons: quality)
+    monkeypatch.setattr(
+        "sleeper_ffm.model.context_table.build_team_seasons", lambda seasons=None: teams
+    )
+
+    ctx = qq.team_qb_context(2025)
+    assert "NONE" not in ctx
+
+
+def test_team_qb_context_empty_when_no_quality_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(qq, "qb_season_quality", lambda seasons: pl.DataFrame())
+    assert qq.team_qb_context(2025) == {}
