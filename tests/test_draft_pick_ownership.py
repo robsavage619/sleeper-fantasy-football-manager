@@ -109,3 +109,38 @@ def test_no_slot_and_no_trade_data_is_unknown() -> None:
     board = _board(my_slot=None)
     assert board.my_pick_numbers == []
     assert board.picks_until_my_turn is None
+
+
+# ---- drafted-rookie identification ----
+
+
+class _Pick:
+    def __init__(self, player_id: str, roster_id: int = 2) -> None:
+        self.player_id = player_id
+        self.roster_id = roster_id
+
+
+def test_drafted_rookie_is_named_from_the_sleeper_dump() -> None:
+    from sleeper_ffm.draft.assistant import build_my_roster
+
+    board = _board(my_picks=[_Pick("9001")])
+    roster = build_my_roster(
+        board,
+        player_assets=[],
+        sleeper_players={"9001": {"full_name": "Rookie Back", "position": "RB", "age": 21}},
+    )
+
+    (drafted,) = roster.players
+    assert drafted.name == "Rookie Back"
+    assert drafted.position == "RB"
+    assert drafted.age == 21.0
+    assert drafted.is_taxi
+
+
+def test_player_missing_everywhere_still_yields_a_placeholder() -> None:
+    from sleeper_ffm.draft.assistant import build_my_roster
+
+    board = _board(my_picks=[_Pick("9002")])
+    (drafted,) = build_my_roster(board, player_assets=[], sleeper_players={}).players
+    assert drafted.position == "?"
+    assert drafted.current_fpar == 0.0

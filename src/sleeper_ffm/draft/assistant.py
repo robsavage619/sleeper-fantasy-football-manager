@@ -287,6 +287,7 @@ def build_my_roster(
     board: BoardState,
     player_assets: list[PlayerAsset],
     traded_picks: list[PickAsset] | None = None,
+    sleeper_players: dict[str, dict] | None = None,
 ) -> RosterAssets:
     """Build a RosterAssets object for my team from picks made so far.
 
@@ -294,25 +295,52 @@ def build_my_roster(
         board: Current board state.
         player_assets: Full ranked asset list (to look up taken players by id).
         traded_picks: Future picks I hold (from league traded_picks endpoint).
+        sleeper_players: Sleeper player dump, used to name and position rookies
+            who have no nflverse history yet (fetched if None).
     """
     asset_by_id = {p.player_id: p for p in player_assets}
     my_players: list[PlayerAsset] = []
+    unresolved: list[str] = []
+
+    if sleeper_players is None:
+        try:
+            with SleeperClient() as client:
+                sleeper_players = client.players()
+        except Exception as exc:
+            log.warning("build_my_roster: Sleeper dump unavailable: %s", exc)
+            sleeper_players = {}
 
     for pick in board.my_picks:
         if pick.player_id and pick.player_id in asset_by_id:
             my_players.append(asset_by_id[pick.player_id])
         elif pick.player_id:
-            # Player in the draft but not in our nflverse asset list (likely rookie)
+            # Just-drafted rookies have no nflverse history, so they carry no FPAR.
+            # Identify them from the Sleeper dump anyway — an unnamed, position-less
+            # entry is worse than useless in the middle of a draft.
+            player = sleeper_players.get(pick.player_id, {})
+            name = player.get("full_name") or player.get("search_full_name")
+            position = player.get("position") or "?"
+            age = player.get("age")
+            if not name:
+                unresolved.append(pick.player_id)
             my_players.append(
                 PlayerAsset(
                     player_id=pick.player_id,
-                    name=f"Player {pick.player_id}",
-                    position="?",
-                    age=22.0,
-                    current_fpar=0.0,
+                    name=name or f"Player {pick.player_id}",
+                    position=position,
+                    age=float(age) if age else 22.0,
+                    current_fpar=0.0,  # no NFL production to price yet
                     is_taxi=True,  # treat unknown rookies as taxi-level
                 )
             )
+
+    if unresolved:
+        log.warning(
+            "build_my_roster: %d drafted player(s) missing from both nflverse and "
+            "the Sleeper dump, carrying zero value: %s",
+            len(unresolved),
+            unresolved,
+        )
 
     return RosterAssets(
         roster_id=MY_ROSTER_ID,
