@@ -848,7 +848,13 @@ def _from_narrative() -> tuple[str, str, str, str, str]:
         return (degraded, degraded, degraded, degraded, degraded)
 
     sections = ctx.sections
-    league_state = f"Season {ctx.season}, Week {ctx.week} ({ctx.season_type.upper()})."
+    # Sleeper reports week 0 out of season and the context coerces that to 1, so
+    # naming a week here would assert a Week 1 that has not happened yet.
+    league_state = (
+        f"Season {ctx.season}, Week {ctx.week} ({ctx.season_type.upper()})."
+        if ctx.season_type == "regular"
+        else f"Season {ctx.season}, {ctx.season_type.upper()}-SEASON (no games played yet)."
+    )
     roster_lines = sections.get("starters") or []
     bench = sections.get("bench") or []
     my_roster = "Starters:\n" + ("\n".join(roster_lines) if roster_lines else "  (none)")

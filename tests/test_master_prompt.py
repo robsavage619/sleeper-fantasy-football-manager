@@ -12,7 +12,7 @@ from sleeper_ffm.prompts.master import (
 
 def _context() -> BriefingContext:
     return BriefingContext(
-        league_state="Season 2026, Week 1 (OFF).",
+        league_state="Season 2026, OFF-SEASON (no games played yet).",
         my_roster="Starters:\n  QB  Somebody",
         saber_summary="Roster 2 (me): luck +0.10, lineup eff 92.0%, FAAB left 400.",
         intel_feed="  [WATCH] INJURY Somebody (WR ATL) — Questionable.",
