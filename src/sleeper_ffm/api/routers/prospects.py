@@ -17,6 +17,11 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/draft", tags=["draft"])
 
+# Effectively "every prospect CFBD returns" (~5k skill-position players). The
+# loader builds them all before trimming anyway, so asking for the full pool
+# costs nothing and keeps the market re-rank from being handed a bad shortlist.
+_FULL_POOL = 100_000
+
 
 def _rerank_by_market(profiles: list[ProspectProfile]) -> list[ProspectProfile]:
     """Order the board by FantasyCalc dynasty value (1QB), not the search-rank heuristic.
@@ -68,9 +73,13 @@ def draft_prospects(year: int = CURRENT_LEAGUE_YEAR, top: int = 50) -> list[dict
     from sleeper_ffm.cfbd.loader import load_prospects
 
     try:
-        # Pull a wider pool than requested so the market re-rank can lift the true top
-        # names up from deeper in the search-rank ordering before trimming to ``top``.
-        profiles = load_prospects(year=year, top=max(top, 200))
+        # Pull the whole pool, not a pre-trimmed slice. The college heuristic is a
+        # weak cross-player ranker — it cannot tell an elite receiver on a loaded
+        # offence from a target hog at a small school — so trimming on it first
+        # dropped genuine first-round names (Carnell Tate, Jordyn Tyson) before the
+        # market ever got a say. The market re-rank below is the authoritative
+        # ordering, so it has to see everyone; ``top`` is applied after it.
+        profiles = load_prospects(year=year, top=_FULL_POOL)
     except Exception as exc:
         log.exception("load_prospects failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc

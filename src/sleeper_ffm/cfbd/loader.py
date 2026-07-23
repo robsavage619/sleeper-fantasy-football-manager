@@ -154,7 +154,7 @@ def _fetch_usage(year: int, client: httpx.Client) -> list[dict]:
 
 
 def _fetch_recruiting(year: int, client: httpx.Client) -> dict[str, dict]:
-    """Fetch /recruiting/players and return name -> record map."""
+    """Fetch /recruiting/players for one high-school class, name -> record."""
     try:
         resp = client.get(
             f"{CFBD_BASE}/recruiting/players",
@@ -168,6 +168,45 @@ def _fetch_recruiting(year: int, client: httpx.Client) -> dict[str, dict]:
         log.warning("CFBD /recruiting/players request failed: %s", exc)
         return {}
     return {normalize_name(r.get("name", "")): r for r in recruits if r.get("name")}
+
+
+# A player drafted in year N signed with a college several years earlier — three
+# for a true junior, four or five with a redshirt or a fifth year. Querying the
+# draft year (or the college season) returns a class this prospect cannot be in,
+# which is why recruiting rank came back empty for every real prospect.
+_RECRUIT_CLASS_LOOKBACK = (5, 4, 3)
+
+
+def _fetch_recruiting_window(draft_year: int, client: httpx.Client) -> dict[str, dict]:
+    """Merge the high-school classes a draft prospect could plausibly belong to.
+
+    Args:
+        draft_year: The NFL draft class year, e.g. 2026.
+        client: Open HTTP client.
+
+    Returns:
+        ``{normalised_name: recruit_record}``. When a name appears in more than
+        one class the better (numerically lower) ranking wins, so a transfer or
+        reclassification does not downgrade a player.
+    """
+    merged: dict[str, dict] = {}
+    for offset in _RECRUIT_CLASS_LOOKBACK:
+        for name, record in _fetch_recruiting(draft_year - offset, client).items():
+            existing = merged.get(name)
+            if existing is None or _recruit_rank(record) < _recruit_rank(existing):
+                merged[name] = record
+    log.info(
+        "CFBD recruiting: %d prospects across classes %s",
+        len(merged),
+        [draft_year - o for o in _RECRUIT_CLASS_LOOKBACK],
+    )
+    return merged
+
+
+def _recruit_rank(record: dict) -> float:
+    """Recruiting rank as a sortable number; unranked sorts last."""
+    raw = record.get("ranking")
+    return float(raw) if raw else float("inf")
 
 
 def _fetch_player_season_stats(
@@ -214,14 +253,69 @@ def _fetch_player_season_stats(
     return pivoted
 
 
-def _build_sleeper_index(players_dump: dict[str, dict]) -> dict[str, str]:
-    """Return normalised-name -> player_id index from Sleeper dump."""
-    index: dict[str, str] = {}
+def _build_sleeper_index(players_dump: dict[str, dict]) -> dict[tuple[str, str], str]:
+    """Return (normalised name, position) -> player_id for incoming rookies only.
+
+    Matching a college roster against the whole Sleeper dump on name alone
+    collides: a Pittsburgh running back named Caleb Williams inherits the Bears
+    quarterback's id, and with it his market value, which floats a nobody to the
+    top of a market-ranked board. Restricting to players with no NFL experience
+    and keying on position removes both halves of that failure — an established
+    professional is never the right match for a draft prospect.
+
+    Args:
+        players_dump: Sleeper's full player dump.
+
+    Returns:
+        Index over rookie-eligible players only.
+    """
+    index: dict[tuple[str, str], str] = {}
     for pid, p in players_dump.items():
-        fn = p.get("full_name") or p.get("search_full_name")
-        if fn:
-            index[normalize_name(fn)] = pid
+        years_exp = p.get("years_exp")
+        if years_exp is not None and years_exp > 0:
+            continue
+        name = p.get("full_name") or p.get("search_full_name")
+        position = _POS_MAP.get((p.get("position") or "").upper())
+        if name and position:
+            index[(normalize_name(name), position)] = pid
     return index
+
+
+def _usage_rate(usage: dict) -> float:
+    """CFBD's share of team offensive plays the player was involved in.
+
+    Args:
+        usage: One ``/player/usage`` entry.
+
+    Returns:
+        ``usage.overall``, falling back to the passing-downs share.
+    """
+    usage_data = usage.get("usage", {}) or {}
+    return float(usage_data.get("overall", 0) or usage_data.get("passingDowns", 0) or 0)
+
+
+# Yards per reception is wildly unstable in small samples — one long catch reads
+# as elite. Shrink it toward a typical college YPR by reception count, the same
+# empirical-Bayes treatment model.forecast applies to per-game rates. K is the
+# reception count at which the observation and the prior carry equal weight.
+_YPR_PRIOR = 12.5
+_YPR_SHRINK_K = 15.0
+
+
+def _shrink_ypr(ypr: float, receptions: float) -> float:
+    """Shrink a raw yards-per-reception toward the college-average prior.
+
+    Args:
+        ypr: Observed yards per reception.
+        receptions: Receptions the observation rests on.
+
+    Returns:
+        The shrunk rate. A one-catch 75.0 lands near the prior; a full season's
+        worth of catches barely moves.
+    """
+    if receptions <= 0:
+        return 0.0
+    return (receptions * ypr + _YPR_SHRINK_K * _YPR_PRIOR) / (receptions + _YPR_SHRINK_K)
 
 
 def _score_wr_te(
@@ -235,18 +329,19 @@ def _score_wr_te(
     this player was involved in. CFBD does not track targets, so this is a
     play-involvement proxy, not literal target share.
     """
-    usage_data = usage.get("usage", {}) or {}
-    usage_rate = float(usage_data.get("overall", 0) or usage_data.get("passingDowns", 0) or 0)
+    usage_rate = _usage_rate(usage)
 
     receiving = season_stats.get("receiving", {}) or {}
     ypr = float(receiving.get("YPR", 0) or 0)
-    if not ypr and receiving.get("YDS") and receiving.get("REC"):
-        ypr = receiving["YDS"] / receiving["REC"]
+    receptions = float(receiving.get("REC", 0) or 0)
+    if not ypr and receiving.get("YDS") and receptions:
+        ypr = receiving["YDS"] / receptions
+    ypr = _shrink_ypr(ypr, receptions)
 
     rank_bonus = 15 if (recruiting_rank is not None and recruiting_rank < 50) else 0
     raw = usage_rate * 200 + ypr * 3 + rank_bonus
 
-    rationale = f"{usage_rate:.1%} usage rate, {ypr:.1f} YPR"
+    rationale = f"{usage_rate:.1%} usage rate, {ypr:.1f} YPR on {int(receptions)} rec"
     if rank_bonus:
         rationale += f", top-50 recruit (#{recruiting_rank})"
     return usage_rate, ypr, raw, rationale
@@ -430,7 +525,7 @@ def load_prospects(year: int = 2025, top: int = 200) -> list[ProspectProfile]:
 
     with httpx.Client(timeout=20) as http_client:
         usage_list = _fetch_usage(college_season, http_client)
-        recruiting_map = _fetch_recruiting(college_season, http_client)
+        recruiting_map = _fetch_recruiting_window(year, http_client)
         season_stats_map = _fetch_player_season_stats(college_season, http_client)
 
     if not usage_list:
@@ -466,7 +561,7 @@ def load_prospects(year: int = 2025, top: int = 200) -> list[ProspectProfile]:
         college = entry.get("team") or entry.get("school") or ""
         norm_name = normalize_name(name)
 
-        player_id = sleeper_index.get(norm_name)
+        player_id = sleeper_index.get((norm_name, pos))
         recruit = recruiting_map.get(norm_name, {})
         player_season_stats = season_stats_map.get(norm_name, {})
 
@@ -483,7 +578,10 @@ def load_prospects(year: int = 2025, top: int = 200) -> list[ProspectProfile]:
             raw_age = players_dump.get(player_id, {}).get("age")
             age = float(raw_age) if raw_age else None
 
-        usage_rate = 0.0
+        # Every position has a usage share; only the receiver branch used to keep
+        # it, so backs and quarterbacks reported 0.0 on the board while CFBD had
+        # the real figure all along.
+        usage_rate = _usage_rate(entry)
         ypr = 0.0
         rationale = ""
         raw_score = 0.0
@@ -517,11 +615,39 @@ def load_prospects(year: int = 2025, top: int = 200) -> list[ProspectProfile]:
     if not raw_profiles:
         return []
 
-    max_score = max(s for s, _ in raw_profiles) or 1.0
-    results: list[ProspectProfile] = []
+    # Normalise within position, not across the whole board. The three scoring
+    # functions are on incomparable scales — a back's raw score is rushing yards
+    # over ten (~140 for a good season) while a receiver's tops out near 70 — so
+    # one global maximum let backs crowd everyone else out. That is not a ranking
+    # artefact to shrug at: it cut real first-round receivers before the caller
+    # ever saw them. The score now reads "how good is this prospect for his
+    # position", and cross-position ordering comes from the market re-rank in the
+    # prospects router, which is format-correct for this league.
+    best_by_position: dict[str, float] = {}
     for raw_score, profile in raw_profiles:
-        profile.dynasty_prospect_score = round((raw_score / max_score) * 100, 1)
-        results.append(profile)
+        current = best_by_position.get(profile.position, 0.0)
+        best_by_position[profile.position] = max(current, raw_score)
 
-    results.sort(key=lambda p: p.dynasty_prospect_score, reverse=True)
-    return results[:top]
+    scored: list[ProspectProfile] = []
+    for raw_score, profile in raw_profiles:
+        position_best = best_by_position.get(profile.position) or 1.0
+        profile.dynasty_prospect_score = round((raw_score / position_best) * 100, 1)
+        scored.append(profile)
+
+    # Interleave by within-position rank — the best back, then the best receiver,
+    # then the best tight end, and so on — so ``top`` keeps the leaders at every
+    # position instead of whichever position happens to cluster near its own
+    # ceiling. Sorting on the normalised score alone still crowded the board
+    # (128 receivers to 11 backs), which is the same failure in a new costume.
+    by_position: dict[str, list[ProspectProfile]] = {}
+    for profile in scored:
+        by_position.setdefault(profile.position, []).append(profile)
+
+    ranked: list[tuple[int, float, ProspectProfile]] = []
+    for group in by_position.values():
+        group.sort(key=lambda p: p.dynasty_prospect_score, reverse=True)
+        for rank, profile in enumerate(group):
+            ranked.append((rank, -profile.dynasty_prospect_score, profile))
+
+    ranked.sort(key=lambda t: (t[0], t[1]))
+    return [profile for _, _, profile in ranked[:top]]
