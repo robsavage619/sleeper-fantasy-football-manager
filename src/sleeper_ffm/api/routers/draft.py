@@ -94,8 +94,8 @@ def draft_board(top: int = 50, season: int = DEFAULT_VALUE_SEASON) -> dict:
     """Return the live draft board: board state + top available players.
 
     Combines veteran nflverse FPAR with rookie Sleeper search_rank heuristic.
-    Expensive on first call (scores nflverse weekly data). Cached after first run
-    until the process restarts.
+    Expensive on first call (scores nflverse weekly data); the veteran valuation
+    is then TTL-cached, so the frontend's poll does not re-score it every time.
     """
     from sleeper_ffm.draft.assistant import build_full_pool, sync_board
     from sleeper_ffm.model.dynasty import value_player

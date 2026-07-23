@@ -664,9 +664,15 @@ def build_draft_pool(
         with SleeperClient() as c:
             sleeper_players = c.players()
 
-    # Veterans: use nflverse FPAR, filter to unrostered
-    vet_assets = build_player_assets(
-        seasons=seasons, scoring=scoring, sleeper_players=sleeper_players
+    # Veterans: use nflverse FPAR, filter to unrostered. Default league scoring
+    # shares the TTL-cached valuation — the draft board polls every 15 seconds and
+    # re-scoring the weekly data each time is the difference between an instant
+    # board and a multi-second one. A scoring override has to be scored fresh,
+    # since the cache is keyed on seasons alone.
+    vet_assets = (
+        build_player_assets_cached(seasons=seasons, sleeper_players=sleeper_players)
+        if scoring is None
+        else build_player_assets(seasons=seasons, scoring=scoring, sleeper_players=sleeper_players)
     )
     vet_unrostered = [
         asset
