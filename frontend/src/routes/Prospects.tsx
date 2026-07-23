@@ -68,7 +68,11 @@ function ProspectRow({
   scouted?: boolean
 }) {
   const posColor = POS_COLOR[prospect.position] ?? '#6a8098'
-  const showUsage = prospect.position === 'WR' || prospect.position === 'TE'
+  // Usage is a share of team offensive plays, so it applies to every position —
+  // this used to be gated to receivers only because the backend never populated
+  // it for backs and quarterbacks. Drive both columns off the data instead.
+  const showUsage = prospect.usage_rate > 0
+  const showYpr = prospect.yards_per_reception > 0
 
   return (
     <div
@@ -140,7 +144,7 @@ function ProspectRow({
         {showUsage ? `${(prospect.usage_rate * 100).toFixed(1)}%` : '—'}
       </span>
       <span className="px-3 tabular-nums" style={{ fontSize: 13, color: '#d4860c', fontFamily: "'DM Mono', monospace" }}>
-        {showUsage && prospect.yards_per_reception > 0 ? prospect.yards_per_reception.toFixed(1) : '—'}
+        {showYpr ? prospect.yards_per_reception.toFixed(1) : '—'}
       </span>
       <span className="px-3" style={{ whiteSpace: 'nowrap' }}>
         {prospect.recruiting_rank != null ? (

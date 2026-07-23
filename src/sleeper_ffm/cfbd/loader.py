@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 import httpx
 
+from sleeper_ffm.cache import ttl_cache
 from sleeper_ffm.config import CURRENT_LEAGUE_YEAR
 from sleeper_ffm.names import normalize_name
 
@@ -137,6 +138,16 @@ def _fallback_sleeper_prospects(year: int, top: int) -> list[ProspectProfile]:
     return profiles[:top]
 
 
+# A completed college season never changes, and the prospect board is polled
+# repeatedly on draft day, so these three fetches are cached for an hour. Season
+# stats alone is an 11-second request — uncached it dominated every page load.
+# The cache key ignores the HTTP client, which is per-call and irrelevant to the
+# result. Only raw payloads are cached: the profile objects built from them are
+# mutated by the market re-rank, so caching those would corrupt a second call.
+_CFBD_TTL = 3600.0
+
+
+@ttl_cache(ttl=_CFBD_TTL, key=lambda year, client: ("usage", year))
 def _fetch_usage(year: int, client: httpx.Client) -> list[dict]:
     """Fetch /player/usage for the given year."""
     try:
@@ -153,6 +164,7 @@ def _fetch_usage(year: int, client: httpx.Client) -> list[dict]:
         return []
 
 
+@ttl_cache(ttl=_CFBD_TTL, key=lambda year, client: ("recruiting", year))
 def _fetch_recruiting(year: int, client: httpx.Client) -> dict[str, dict]:
     """Fetch /recruiting/players for one high-school class, name -> record."""
     try:
@@ -209,6 +221,7 @@ def _recruit_rank(record: dict) -> float:
     return float(raw) if raw else float("inf")
 
 
+@ttl_cache(ttl=_CFBD_TTL, key=lambda year, client: ("season_stats", year))
 def _fetch_player_season_stats(
     year: int, client: httpx.Client
 ) -> dict[str, dict[str, dict[str, float]]]:
