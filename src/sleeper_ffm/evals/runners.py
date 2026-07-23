@@ -320,7 +320,51 @@ def _calibration_rank_corr(scenario: Scenario) -> CaseResults:
     return results
 
 
+def _situation_carryover(scenario: Scenario) -> CaseResults:
+    """Out-of-sample check on S2: a back's usage carryover is disrupted, a receiver's is not.
+
+    Reads the cached context table (completed seasons are immutable, so the run
+    is deterministic) and re-measures how much prior usage survives a team or
+    coach change, per position. Locks the finding in
+    ``docs/research/study-s2-situation-changes-2026-07-22.md`` against silent
+    regression: if a change to the context table or usage aggregation erases the
+    running-back effect, this fails.
+
+    A missing cache degrades to a non-crashing miss rather than raising, matching
+    ``_redzone_backtest``, so the suite stays green in a data-less checkout.
+    """
+    from sleeper_ffm.model.research.situation_changes import summarize, usage_carryover
+
+    results: CaseResults = {}
+    for case_name, case in scenario.inputs["cases"].items():
+        metric = case.get("metric", "target_share")
+        change = case.get("change", "team_changed")
+        try:
+            table = summarize(usage_carryover(seasons=case.get("seasons")))
+        except (FileNotFoundError, OSError) as exc:
+            results[case_name] = {"unavailable": str(exc)}
+            continue
+        if table.is_empty():
+            results[case_name] = {"unavailable": "context table empty"}
+            continue
+
+        row: dict[str, Any] = {}
+        subset = table.filter((pl.col("metric") == metric) & (pl.col("change") == change))
+        for position in case.get("positions", ["RB", "WR", "TE"]):
+            match = subset.filter(pl.col("position") == position)
+            if match.is_empty():
+                row[f"{position}_gap"] = 0.0
+                row[f"{position}_n"] = 0
+                continue
+            first = match.row(0, named=True)
+            row[f"{position}_gap"] = round(float(first["gap"]), 4)
+            row[f"{position}_n"] = int(first["n_changed"])
+        results[case_name] = row
+    return results
+
+
 ADAPTERS: dict[str, Callable[[Scenario], CaseResults]] = {
+    "situation_carryover": _situation_carryover,
     "trade_acceptance": _trade_acceptance,
     "dynasty_value": _dynasty_value,
     "faab": _faab,

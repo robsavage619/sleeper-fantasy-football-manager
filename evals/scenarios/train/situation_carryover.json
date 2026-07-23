@@ -1,0 +1,31 @@
+{
+  "scenarios": [
+    {
+      "id": "situation.rb_role_does_not_travel",
+      "tier": 1,
+      "engine": "situation_carryover",
+      "rationale": "S2 found that a running back's usage history stops predicting after a team change (corrected gap -0.279, holdout -0.302) while a receiver's survives (holdout -0.006). Any engine change that discounts moved players must keep that asymmetry: discounting receivers as hard as backs would be acting on an effect the data does not support. This re-runs the real measurement from cached parquet and asserts the RB disruption is both material and strictly larger than the WR one. Degrades to a non-crashing miss when the context table is absent.",
+      "inputs": {
+        "cases": {
+          "team_change": {
+            "metric": "target_share",
+            "change": "team_changed",
+            "positions": ["RB", "WR", "TE"]
+          },
+          "coach_change": {
+            "metric": "target_share",
+            "change": "coach_changed",
+            "positions": ["RB", "WR", "TE"]
+          }
+        }
+      },
+      "checks": [
+        {"type": "compare", "left": "team_change.RB_gap", "op": "<", "right": "team_change.WR_gap"},
+        {"type": "range", "case": "team_change", "field": "RB_gap", "min": -0.60, "max": -0.15},
+        {"type": "range", "case": "team_change", "field": "WR_gap", "min": -0.25, "max": 0.05},
+        {"type": "compare", "left": "coach_change.RB_gap", "op": "<", "right": "coach_change.WR_gap"},
+        {"type": "range", "case": "coach_change", "field": "RB_gap", "min": -0.45, "max": -0.10}
+      ]
+    }
+  ]
+}

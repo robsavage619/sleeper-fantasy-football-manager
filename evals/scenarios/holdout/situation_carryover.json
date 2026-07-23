@@ -1,0 +1,25 @@
+{
+  "scenarios": [
+    {
+      "id": "situation.rb_disruption_holds_out_of_sample",
+      "tier": 1,
+      "engine": "situation_carryover",
+      "rationale": "The holdout half of S2. On 2024-25 alone the running-back disruption persists (gap -0.302) while the receiver effect vanishes (-0.006), which is why the engine should discount moved backs and leave receivers alone. Samples are thin here (31 moved backs, 56 moved receivers), so the checks assert direction and sign only — pinning a magnitude to n=31 would encode noise as a requirement.",
+      "inputs": {
+        "cases": {
+          "team_change_holdout": {
+            "metric": "target_share",
+            "change": "team_changed",
+            "seasons": [2024, 2025],
+            "positions": ["RB", "WR"]
+          }
+        }
+      },
+      "checks": [
+        {"type": "compare", "left": "team_change_holdout.RB_gap", "op": "<", "right": "team_change_holdout.WR_gap"},
+        {"type": "range", "case": "team_change_holdout", "field": "RB_gap", "min": -0.80, "max": -0.05},
+        {"type": "range", "case": "team_change_holdout", "field": "RB_n", "min": 15, "max": 500}
+      ]
+    }
+  ]
+}
