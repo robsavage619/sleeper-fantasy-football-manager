@@ -11,8 +11,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # setup-uv publishes full semver releases but only one floating major alias (v7),
+      # so a bare @v8/@v9 does not resolve and the job dies before any step runs.
+      # Pin an exact release and bump it deliberately.
       - name: Install uv
-        uses: astral-sh/setup-uv@v8
+        uses: astral-sh/setup-uv@v9.0.0
         with:
           python-version: "3.12"
           enable-cache: true

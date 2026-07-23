@@ -217,7 +217,14 @@ def _player_bio() -> pl.DataFrame:
     present = [c for c in cols if c in id_map.columns]
     bio = id_map.select(present).filter(pl.col("gsis_id").is_not_null()).unique(subset=["gsis_id"])
     if "birthdate" in bio.columns:
-        bio = bio.with_columns(pl.col("birthdate").cast(pl.Date, strict=False))
+        # Casting String->Date directly is deprecated and goes away in Polars 2.0.
+        # The id_map ships birthdates as strings, so parse rather than cast.
+        birthdate = pl.col("birthdate")
+        if bio.schema["birthdate"] == pl.Utf8:
+            birthdate = birthdate.str.to_date(strict=False)
+        else:
+            birthdate = birthdate.cast(pl.Date, strict=False)
+        bio = bio.with_columns(birthdate.alias("birthdate"))
     return bio
 
 

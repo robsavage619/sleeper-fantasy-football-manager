@@ -94,7 +94,7 @@ def fetch() -> dict[str, float]:
 
 def _height_inches(raw: object) -> int | None:
     """Parse a FantasyCalc height (inches as a string, e.g. '72') to an int."""
-    if raw is None:
+    if not isinstance(raw, (str, int, float)):
         return None
     try:
         return int(float(raw))

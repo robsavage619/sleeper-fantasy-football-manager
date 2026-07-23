@@ -188,8 +188,9 @@ def startsit_cmd(
 ) -> None:
     """Optimal start/sit lineup for the week.
 
-    Projects each roster player's expected points, solves the optimal lineup,
-    and prints recommended changes plus a Claude Code reasoning prompt.
+    Projects each roster player's expected points, solves the optimal lineup, and
+    prints the recommended changes. Reasoning lives in the single master briefing
+    (``GET /ai/briefing``), not in a per-command prompt.
     """
     from rich.console import Console
     from rich.table import Table
@@ -242,9 +243,6 @@ def startsit_cmd(
             f"Current: {rec.current_projected_pts:.1f} pts  "
             f"Gain: [green]+{rec.total_projected_pts - rec.current_projected_pts:.1f}[/green]"
         )
-
-    typer.echo("\n--- CLAUDE CODE PROMPT ---\n")
-    typer.echo(rec.prompt)
 
 
 @app.command("finding")

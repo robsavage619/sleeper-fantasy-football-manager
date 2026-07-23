@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException
+
+if TYPE_CHECKING:
+    from sleeper_ffm.cfbd.loader import ProspectProfile
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/draft", tags=["draft"])
 
 
-def _rerank_by_market(profiles: list) -> list:
+def _rerank_by_market(profiles: list[ProspectProfile]) -> list[ProspectProfile]:
     """Order the board by FantasyCalc dynasty value (1QB), not the search-rank heuristic.
 
     The raw ``dynasty_prospect_score`` is a Sleeper ``search_rank`` proxy, which is
@@ -33,10 +37,15 @@ def _rerank_by_market(profiles: list) -> list:
     if not market:
         return profiles
 
-    max_v = max((market.get(p.player_id, 0.0) for p in profiles), default=0.0) or 1.0
-    keyed: list[tuple[float, object]] = []
+    # A prospect without a Sleeper id can never match the market feed; treat it as
+    # unmatched explicitly rather than relying on a None key missing from the dict.
+    def _market_value(profile: ProspectProfile) -> float:
+        return market.get(profile.player_id, 0.0) if profile.player_id else 0.0
+
+    max_v = max((_market_value(p) for p in profiles), default=0.0) or 1.0
+    keyed: list[tuple[float, ProspectProfile]] = []
     for p in profiles:
-        mv = market.get(p.player_id, 0.0)
+        mv = _market_value(p)
         if mv > 0:
             p.dynasty_prospect_score = round(min(100.0, mv / max_v * 100.0), 1)
             p.rationale = f"Market-anchored: FantasyCalc 1QB dynasty value {mv:.0f}. {p.rationale}"
