@@ -25,7 +25,7 @@ from sleeper_ffm.config import DRAFT_ID, LEAGUE_ID, MY_ROSTER_ID, MY_USER_ID
 from sleeper_ffm.model.dynasty import PickAsset, PlayerAsset, RosterAssets
 from sleeper_ffm.prompts.draft import build_draft_prompt
 from sleeper_ffm.sleeper.client import SleeperClient
-from sleeper_ffm.sleeper.models import DraftPick
+from sleeper_ffm.sleeper.models import DraftPick, TradedPick
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +53,10 @@ class BoardState:
     projection_source_season: str | None = None
     # slot_to_roster_id[slot] = roster_id (1-indexed str keys)
     slot_to_roster_id: dict[str, int] = field(default_factory=dict)
+    # Overall pick numbers I actually own, trade-adjusted across every round.
+    # Empty when the slot order is unknown or the traded-pick fetch failed, in
+    # which case my_pick_numbers falls back to the fixed-slot assumption.
+    owned_pick_numbers: list[int] = field(default_factory=list)
 
     @property
     def total_picks(self) -> int:  # noqa: D102
@@ -74,12 +78,16 @@ class BoardState:
 
     @property
     def my_pick_numbers(self) -> list[int]:
-        """All overall pick numbers that belong to Rob (linear draft, fixed slot).
+        """All overall pick numbers that belong to Rob (linear draft).
 
-        Uses my_slot whether it's Sleeper-confirmed or our own standings-based
-        projection (see order_projected) — empty only when neither is available,
-        i.e. my_slot itself is None.
+        Prefers owned_pick_numbers, which accounts for picks traded away or
+        acquired in every round. The fixed-slot fallback below is only reached
+        when trade data was unavailable (sync_board logs a warning); it is wrong
+        for any round whose pick changed hands, so it is a last resort rather
+        than the normal path.
         """
+        if self.owned_pick_numbers:
+            return self.owned_pick_numbers
         if self.my_slot is None:
             return []
         return [self.my_slot + (r * self.total_teams) for r in range(self.total_rounds)]
@@ -102,6 +110,45 @@ class BoardState:
 
     def is_complete(self) -> bool:  # noqa: D102
         return len(self.picks_made) >= self.total_picks
+
+
+def resolve_owned_picks(
+    slot_to_roster_id: dict[str, int],
+    traded: list[TradedPick],
+    draft_season: str,
+    total_rounds: int,
+    total_teams: int,
+    my_roster_id: int,
+) -> list[int]:
+    """Overall pick numbers owned by ``my_roster_id``, adjusted for traded picks.
+
+    In a linear draft the cell (round, slot) is overall pick
+    ``(round - 1) * total_teams + slot``. A traded pick moves one such cell:
+    ``TradedPick.roster_id`` is the cell's natural owner and ``owner_id`` holds
+    it now. Both directions matter — a pick traded away has to disappear from
+    the list and an acquired pick has to appear in it.
+
+    Args:
+        slot_to_roster_id: Draft slot (1-indexed str key) -> natural owner roster.
+        traded: League traded picks (all seasons; filtered here).
+        draft_season: Season of this draft, e.g. ``"2026"``.
+        total_rounds: Rounds in the draft.
+        total_teams: Teams in the draft.
+        my_roster_id: The roster whose picks to resolve.
+
+    Returns:
+        Sorted overall pick numbers, empty when the slot map is empty.
+    """
+    owner_override = {
+        (tp.round, tp.roster_id): tp.owner_id for tp in traded if tp.season == draft_season
+    }
+    owned: list[int] = []
+    for rnd in range(1, total_rounds + 1):
+        for slot_str, natural_rid in slot_to_roster_id.items():
+            current_owner = owner_override.get((rnd, natural_rid), natural_rid)
+            if current_owner == my_roster_id:
+                owned.append((rnd - 1) * total_teams + int(slot_str))
+    return sorted(owned)
 
 
 def sync_board(
@@ -141,6 +188,19 @@ def sync_board(
     projection_source_season: str | None = None
     my_slot: int | None = None
 
+    # Pick ownership is resolved per (round, slot) below, so trades matter in the
+    # Sleeper-confirmed path just as much as in the projected one.
+    try:
+        with SleeperClient(league_id=league_id) as c2:
+            traded = c2.traded_picks()
+    except Exception as exc:
+        log.warning(
+            "traded_picks fetch failed; pick ownership falls back to the fixed-slot "
+            "assumption and will be wrong for any traded round: %s",
+            exc,
+        )
+        traded = []
+
     if order_confirmed:
         for slot_str, rid in slot_to_roster_id.items():
             if rid == my_roster_id:
@@ -163,18 +223,9 @@ def sync_board(
             slot_to_roster_id = {str(k): v for k, v in projection.slot_to_roster_id.items()}
             natural_owner_by_slot = dict(projection.slot_to_roster_id)
 
-            # Round-1 trade awareness: if my natural round-1 pick was traded away, or
-            # I acquired someone else's, my_slot should reflect who I actually am this
-            # season, not just my natural standings slot. (Rounds 2-4 pick trades are
-            # not modeled here — a pre-existing simplification shared with the
-            # order-confirmed path above, which assumes a fixed slot across all rounds.)
-            try:
-                with SleeperClient(league_id=league_id) as c2:
-                    traded = c2.traded_picks()
-            except Exception as exc:
-                log.warning("draft order projection: traded_picks fetch failed: %s", exc)
-                traded = []
-
+            # Round-1 trade awareness: my_slot is where I pick in round 1, so it
+            # reflects an R1 pick traded away or acquired. Ownership in every
+            # other round flows through owned_pick_numbers below.
             r1_owner_override: dict[int, int] = {}  # natural_owner_roster_id -> current owner
             for tp in traded:
                 if tp.season == draft_season and tp.round == 1:
@@ -190,9 +241,22 @@ def sync_board(
     my_picks = [p for p in picks_made if p.roster_id == my_roster_id]
     taken = {p.player_id for p in picks_made if p.player_id}
 
+    # Only meaningful once the slot map is real: before that Sleeper serves an
+    # identity placeholder, which would resolve to a bogus set of picks.
+    owned_pick_numbers: list[int] = []
+    if order_confirmed or order_projected:
+        owned_pick_numbers = resolve_owned_picks(
+            slot_to_roster_id=slot_to_roster_id,
+            traded=traded,
+            draft_season=draft_season,
+            total_rounds=total_rounds,
+            total_teams=total_teams,
+            my_roster_id=my_roster_id,
+        )
+
     log.info(
         "board sync: %d/%d picks made, order_confirmed=%s, order_projected=%s "
-        "(from %s), my slot=%s, my picks=%d",
+        "(from %s), my slot=%s, my picks=%d, owned pick numbers=%s",
         len(picks_made),
         total_rounds * total_teams,
         order_confirmed,
@@ -200,6 +264,7 @@ def sync_board(
         projection_source_season,
         my_slot,
         len(my_picks),
+        owned_pick_numbers or "fixed-slot fallback",
     )
 
     return BoardState(
@@ -214,6 +279,7 @@ def sync_board(
         order_projected=order_projected,
         projection_source_season=projection_source_season,
         slot_to_roster_id=slot_to_roster_id,
+        owned_pick_numbers=owned_pick_numbers,
     )
 
 

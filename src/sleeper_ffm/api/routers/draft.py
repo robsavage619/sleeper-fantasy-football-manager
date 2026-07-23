@@ -176,6 +176,14 @@ def draft_board(top: int = 50, season: int = DEFAULT_VALUE_SEASON) -> dict:
                 "are unknown."
             )
 
+    if board.owned_pick_numbers and len(board.owned_pick_numbers) != board.total_rounds:
+        owned_rounds = sorted({(n - 1) // board.total_teams + 1 for n in board.owned_pick_numbers})
+        warnings.append(
+            f"You hold {len(board.owned_pick_numbers)} of {board.total_rounds} picks "
+            f"(rounds {', '.join(str(r) for r in owned_rounds)}); the rest changed hands "
+            "in trades. Countdown and survival targeting use your real picks only."
+        )
+
     if board.is_complete():
         status = "complete"
     elif not board.order_confirmed:
@@ -193,10 +201,9 @@ def draft_board(top: int = 50, season: int = DEFAULT_VALUE_SEASON) -> dict:
         "my_slot": board.my_slot,
         "picks_until_my_turn": board.picks_until_my_turn,
         "next_my_pick": board.next_my_pick,
+        "my_pick_numbers": board.my_pick_numbers,
         "data_quality": "DEGRADED" if warnings else "FULL",
         "warnings": warnings,
         "recommendation": _decision_card(players, board.picks_until_my_turn),
         "players": players,
     }
-
-
