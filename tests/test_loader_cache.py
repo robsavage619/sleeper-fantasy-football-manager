@@ -117,3 +117,37 @@ def test_seasonal_returns_empty_when_all_seasons_are_uncovered(tmp_path, monkeyp
 
     monkeypatch.setattr(loader.nfl, "import_seasonal_data", _no_fetch)
     assert loader.load_seasonal(seasons=[2025, 2026]).is_empty()
+
+
+# ---- cross-era schema concatenation ----------------------------------------
+
+
+def test_concat_across_schemas_unions_differing_columns() -> None:
+    a = pl.DataFrame({"season": [2023], "game_type": ["REG"]})
+    b = pl.DataFrame({"season": [2024], "season_type": ["REG"]})
+    out = loader._concat_across_schemas([a, b])
+    assert sorted(out["season"].to_list()) == [2023, 2024]
+    assert {"game_type", "season_type"} <= set(out.columns)
+
+
+def test_concat_across_schemas_handles_empty_input() -> None:
+    assert loader._concat_across_schemas([]).is_empty()
+
+
+def test_depth_charts_exclude_the_snapshot_format(tmp_path, monkeypatch) -> None:
+    # nflverse replaced the weekly feed with a point-in-time snapshot carrying no
+    # season/week. Blending it in would null-fill the keys consumers sort on, so
+    # it must be dropped and flagged rather than silently merged.
+    monkeypatch.setattr(loader, "NFLVERSE_DIR", tmp_path)
+    (tmp_path / "depth_charts").mkdir()
+    pl.DataFrame({"season": [2024], "week": [1.0], "full_name": ["A Player"]}).write_parquet(
+        tmp_path / "depth_charts" / "2024.parquet"
+    )
+    pl.DataFrame({"dt": ["2026-03-14T07:32:09Z"], "player_name": ["A Player"]}).write_parquet(
+        tmp_path / "depth_charts" / "2025.parquet"
+    )
+    loader.clear_stale_fallbacks()
+
+    df = loader.load_depth_charts(seasons=[2024, 2025])
+    assert df["season"].to_list() == [2024]
+    assert "nflverse_depth_charts" in loader.stale_fallbacks()

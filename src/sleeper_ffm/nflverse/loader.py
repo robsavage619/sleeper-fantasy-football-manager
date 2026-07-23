@@ -182,18 +182,34 @@ def load_weekly(
 
     if not frames:
         return _empty_weekly_frame()
-    # Seasons can straddle the nflverse schema boundary: the legacy ``player_stats``
-    # format (≤2023, ~145 cols) and the new ``stats_player`` format (2024+, ~53 cols)
-    # differ in width. ``diagonal_relaxed`` unions columns by name (null-filling the
-    # ones an era lacks) and supertypes shared columns, so cross-era spans concat
-    # instead of raising a ShapeError. Single-season calls are unaffected.
-    if len({tuple(f.columns) for f in frames}) == 1:
-        return pl.concat(frames)
-    return pl.concat(frames, how="diagonal_relaxed")
+    return _concat_across_schemas(frames)
 
 
 def _weekly_path(season: int) -> Path:
     return NFLVERSE_DIR / "weekly" / f"{season}.parquet"
+
+
+def _concat_across_schemas(frames: list[pl.DataFrame]) -> pl.DataFrame:
+    """Concat per-season frames whose schemas may differ across nflverse eras.
+
+    Seasons straddle nflverse schema boundaries — the legacy ``player_stats``
+    format (<=2023) against ``stats_player`` (2024+), ``game_type`` renamed to
+    ``season_type`` in the injury feed, depth charts dropping from 15 columns to
+    12. ``diagonal_relaxed`` unions columns by name (null-filling what an era
+    lacks) and supertypes shared columns, so a cross-era span concatenates
+    instead of raising a ShapeError. Identical schemas take the plain path.
+
+    Args:
+        frames: One frame per season, in request order.
+
+    Returns:
+        The concatenated frame, or an empty frame when there is nothing to join.
+    """
+    if not frames:
+        return pl.DataFrame()
+    if len({tuple(f.columns) for f in frames}) == 1:
+        return pl.concat(frames)
+    return pl.concat(frames, how="diagonal_relaxed")
 
 
 def _atomic_write_parquet(df: pl.DataFrame, dest: Path) -> None:
@@ -323,7 +339,10 @@ def load_injuries(
         df.write_parquet(dest)
         _clear_stale("nflverse_injuries")
         frames.append(df)
-    return pl.concat(frames) if frames else pl.DataFrame()
+    # Same schema drift as load_weekly: nflverse renamed game_type to season_type,
+    # so a multi-season span raised a ShapeError that the callers caught and
+    # reported as "injury history unavailable" while the parquet sat on disk.
+    return _concat_across_schemas(frames)
 
 
 # ---------------------------------------------------------------------------
@@ -591,7 +610,21 @@ def load_depth_charts(
         df.write_parquet(dest)
         _clear_stale("nflverse_depth_charts")
         frames.append(df)
-    return pl.concat(frames) if frames else pl.DataFrame()
+
+    # nflverse replaced the weekly depth-chart feed with a point-in-time snapshot
+    # that carries neither season nor week and renames every column consumers
+    # read. Blending it into the weekly schema would null-fill those keys and
+    # quietly corrupt the result, so drop it and say so — the callers here expect
+    # per-week legacy rows.
+    usable = [f for f in frames if "season" in f.columns and "week" in f.columns]
+    if dropped := len(frames) - len(usable):
+        _record_stale(
+            "nflverse_depth_charts",
+            f"{dropped} season(s) returned nflverse's snapshot format (no season/week "
+            "columns) and were excluded; weekly depth history is incomplete",
+        )
+        log.warning("depth_charts: excluded %d frame(s) in the snapshot format", dropped)
+    return _concat_across_schemas(usable)
 
 
 # ---------------------------------------------------------------------------
