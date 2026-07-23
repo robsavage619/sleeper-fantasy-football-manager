@@ -8,7 +8,7 @@ truth. That is a real correctness signal, not just a change detector.
 
 Three validations live in this module:
 
-    * :func:`run_redzone_backtest` — the original: the opportunity-priced expected-TD
+    * :func:`run_yardline_backtest` — the original: the opportunity-priced expected-TD
       model (trained on one season, each target/carry priced by its yard-line bin) vs.
       a flat yardage baseline, scored out-of-sample. Fully hermetic (on-disk nflverse
       parquet cache only).
@@ -56,9 +56,9 @@ class BacktestResult:
     train_season: int
     eval_season: int
     n_players: int
-    mae_redzone: float
+    mae_yardline: float
     mae_yardage: float
-    improvement_pct: float  # (mae_yardage - mae_redzone) / mae_yardage, as a percentage
+    improvement_pct: float  # (mae_yardage - mae_yardline) / mae_yardage, as a percentage
 
 
 def _play_values(season: int) -> pl.DataFrame:
@@ -82,7 +82,7 @@ def _position_by_player() -> dict[str, str]:
     return out
 
 
-def run_redzone_backtest(
+def run_yardline_backtest(
     train_season: int,
     eval_season: int,
     min_yards: int = _MIN_YARDS,
@@ -102,7 +102,7 @@ def run_redzone_backtest(
         BacktestUnavailableError: If either season lacks cached play-by-play, or no
             player clears ``min_yards`` in the eval season.
     """
-    from sleeper_ffm.model.sabermetrics import player_redzone_opportunities, redzone_td_rates
+    from sleeper_ffm.model.sabermetrics import player_yardline_opportunities, yardline_td_rates
 
     train_rows = _aggregate_rows(train_season)
     eval_rows = _aggregate_rows(eval_season)
@@ -117,10 +117,10 @@ def run_redzone_backtest(
     pos_map = _position_by_player()
 
     # Fit both models on the train season only.
-    trained_rates = redzone_td_rates(train_plays, pos_map)
+    trained_rates = yardline_td_rates(train_plays, pos_map)
     yardage_baselines, _ = compute_td_regression(train_rows, min_yards=min_yards)
 
-    abs_err_rz: list[float] = []
+    abs_err_yl: list[float] = []
     abs_err_yd: list[float] = []
     for r in eval_rows:
         pos = r["position"]
@@ -133,24 +133,24 @@ def run_redzone_backtest(
             continue
 
         actual = r["total_tds"]
-        opps = player_redzone_opportunities(eval_plays, gsis)
-        expected_rz = sum(opps.get(k, 0.0) * pos_rates.get(k, 0.0) for k in opps)
+        opps = player_yardline_opportunities(eval_plays, gsis)
+        expected_yl = sum(opps.get(k, 0.0) * pos_rates.get(k, 0.0) for k in opps)
         expected_yd = r["total_yards"] * yd_rate
-        abs_err_rz.append(abs(actual - expected_rz))
+        abs_err_yl.append(abs(actual - expected_yl))
         abs_err_yd.append(abs(actual - expected_yd))
 
-    n = len(abs_err_rz)
+    n = len(abs_err_yl)
     if n == 0:
         raise BacktestUnavailableError(f"no players cleared {min_yards} yards in {eval_season}")
 
-    mae_rz = sum(abs_err_rz) / n
+    mae_yl = sum(abs_err_yl) / n
     mae_yd = sum(abs_err_yd) / n
-    improvement = ((mae_yd - mae_rz) / mae_yd * 100.0) if mae_yd else 0.0
+    improvement = ((mae_yd - mae_yl) / mae_yd * 100.0) if mae_yd else 0.0
     return BacktestResult(
         train_season=train_season,
         eval_season=eval_season,
         n_players=n,
-        mae_redzone=round(mae_rz, 4),
+        mae_yardline=round(mae_yl, 4),
         mae_yardage=round(mae_yd, 4),
         improvement_pct=round(improvement, 2),
     )
@@ -436,7 +436,7 @@ def run_season_sim_backtest(
 
     DATA LIMITATION -- read this before citing a number from this function:
 
-    Unlike :func:`run_redzone_backtest` and :func:`run_age_curve_backtest`, this
+    Unlike :func:`run_yardline_backtest` and :func:`run_age_curve_backtest`, this
     validation is NOT hermetic. It requires live Sleeper API calls: historical
     per-week matchup scores and the realized playoff bracket have no on-disk cache
     anywhere in this repo (``sleeper/client.py`` disk-caches only the player dump;

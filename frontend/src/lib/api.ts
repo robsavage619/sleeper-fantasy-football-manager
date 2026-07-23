@@ -1176,7 +1176,7 @@ export type RegressionBoard = {
   baselines: Record<string, number | Record<string, number>>
   sell_high: RegressionFlag[]
   buy_low: RegressionFlag[]
-  basis: 'redzone-opportunity' | 'yardage'
+  basis: 'yardline-opportunity' | 'yardage'
   warnings: string[]
 }
 

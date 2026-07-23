@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import polars as pl
 
-from sleeper_ffm.model.regression import compute_redzone_td_regression, compute_td_regression
+from sleeper_ffm.model.regression import compute_td_regression, compute_yardline_td_regression
 
 
 def _row(
@@ -113,7 +113,7 @@ def _play_values(rows: list[tuple[str, str, str, float, float]]) -> pl.DataFrame
     )
 
 
-def test_redzone_td_regression_prices_by_opportunity_not_yardage() -> None:
+def test_yardline_td_regression_prices_by_opportunity_not_yardage() -> None:
     # 'lucky' scores 3 TDs on 3 goal-line targets. League-wide (incl. 'field's 17
     # targets, 2 TDs) the 1-5 rate is 5/20 = 0.25 -> expected = 3*0.25 = 0.75,
     # td_oe = 3 - 0.75 = 2.25 >= the 2.0 flag threshold -> SELL-HIGH.
@@ -124,7 +124,7 @@ def test_redzone_td_regression_prices_by_opportunity_not_yardage() -> None:
     play_values = _play_values(lucky_plays + field_plays)
     rows = [_row("lucky", "WR", 300.0, 3.0, gsis_id="gsis-lucky")]
     position_by_player = {"gsis-lucky": "WR", "gsis-field": "WR"}
-    rates, flags = compute_redzone_td_regression(
+    rates, flags = compute_yardline_td_regression(
         rows, play_values, position_by_player, min_yards=250
     )
     lucky = next(f for f in flags if f.player_id == "lucky")
@@ -133,7 +133,7 @@ def test_redzone_td_regression_prices_by_opportunity_not_yardage() -> None:
     assert lucky.verdict == "SELL-HIGH"
 
 
-def test_redzone_td_regression_separates_goal_line_from_red_zone_edge() -> None:
+def test_yardline_td_regression_separates_goal_line_from_red_zone_edge() -> None:
     # Both players take 4 red-zone targets and score 2 TDs on them, so the old binary
     # bucket priced them identically. 'goalline' takes his from inside the 5, where the
     # league converts 1 in 2; 'edge' from the 11-20, where it converts 1 in 8.
@@ -157,7 +157,7 @@ def test_redzone_td_regression_separates_goal_line_from_red_zone_edge() -> None:
         _row("edge", "WR", 300.0, 2.0, gsis_id="gsis-edge"),
     ]
     positions = {"gsis-noise": "WR", "gsis-goalline": "WR", "gsis-edge": "WR"}
-    rates, flags = compute_redzone_td_regression(
+    rates, flags = compute_yardline_td_regression(
         rows, _play_values(plays), positions, min_yards=250
     )
     assert (rates["WR"]["1-5_targets"], rates["WR"]["11-20_targets"]) == (0.5, 0.125)
@@ -168,8 +168,8 @@ def test_redzone_td_regression_separates_goal_line_from_red_zone_edge() -> None:
     assert by_id["edge"].td_oe == 1.5
 
 
-def test_redzone_td_regression_skips_player_without_gsis_id() -> None:
+def test_yardline_td_regression_skips_player_without_gsis_id() -> None:
     play_values = _play_values([("gsis-a", "target", "1-5", 7.0, 1.0)])
     rows = [_row("a", "WR", 300.0, 1.0, gsis_id="")]
-    _, flags = compute_redzone_td_regression(rows, play_values, {"gsis-a": "WR"}, min_yards=250)
+    _, flags = compute_yardline_td_regression(rows, play_values, {"gsis-a": "WR"}, min_yards=250)
     assert flags == []

@@ -408,7 +408,7 @@ def _bucket_stats(
     }
 
 
-def redzone_usage_coefficients(
+def yardline_usage_coefficients(
     play_values: pl.DataFrame, position_by_player: dict[str, str]
 ) -> dict[str, dict[str, float]]:
     """Points-per-opportunity by position, split by yard-line bin and target vs carry.
@@ -435,12 +435,12 @@ def redzone_usage_coefficients(
     }
 
 
-def redzone_td_rates(
+def yardline_td_rates(
     play_values: pl.DataFrame, position_by_player: dict[str, str]
 ) -> dict[str, dict[str, float]]:
     """Touchdown probability per opportunity by position, yard-line bin and kind.
 
-    Same bucket structure as :func:`redzone_usage_coefficients` but for touchdown rate
+    Same bucket structure as :func:`yardline_usage_coefficients` but for touchdown rate
     rather than fantasy-point rate — the basis for :mod:`sleeper_ffm.model.regression`'s
     opportunity-priced TD model (backtested out-of-sample by
     :mod:`sleeper_ffm.evals.backtest` to cut expected-TD error ~25% vs a yardage
@@ -470,7 +470,7 @@ def redzone_td_rates(
     }
 
 
-def player_redzone_opportunities(play_values: pl.DataFrame, player_id: str) -> dict[str, float]:
+def player_yardline_opportunities(play_values: pl.DataFrame, player_id: str) -> dict[str, float]:
     """One player's target/carry counts per yard-line bin, for :func:`expected_fp`.
 
     Args:
@@ -479,7 +479,7 @@ def player_redzone_opportunities(play_values: pl.DataFrame, player_id: str) -> d
 
     Returns:
         ``{"<bin>_targets": n, "<bin>_carries": n, ...}`` — counts by bucket, keyed to
-        match :func:`redzone_usage_coefficients` and :func:`redzone_td_rates` so the
+        match :func:`yardline_usage_coefficients` and :func:`yardline_td_rates` so the
         three multiply out cleanly. Not totals: each key counts only that yard-line bin.
     """
     counts: dict[str, float] = {key: 0.0 for _, _, key in BUCKET_KEYS}
@@ -784,10 +784,10 @@ def _xfp_block(
         warnings.append("xFP has zero games of evidence.")
     actual = round(float(season_df["fp_sffm"].sum() or 0.0), 2)
 
-    redzone = _redzone_xfp(position, gsis_ids, latest_season, actual)
-    if redzone is not None:
-        redzone["evidence_count"] = games
-        return redzone
+    yardline = _yardline_xfp(position, gsis_ids, latest_season, actual)
+    if yardline is not None:
+        yardline["evidence_count"] = games
+        return yardline
 
     coeffs = usage_coefficients(weekly, scoring).get(position, {"targets": 0.0, "carries": 0.0})
     opps = {
@@ -805,10 +805,10 @@ def _xfp_block(
     }
 
 
-def _redzone_xfp(
+def _yardline_xfp(
     position: str, gsis_ids: set[str] | None, latest_season: int | None, actual_fp: float
 ) -> dict | None:
-    """Red-zone-split xFP for one player, or ``None`` if PBP data isn't available.
+    """Yard-line-split xFP for one player, or ``None`` if PBP data isn't available.
 
     Falls back silently (returning ``None``) on any missing data or fetch error so
     ``_xfp_block`` can drop back to the flat-coefficient model — this is a strictly
@@ -833,13 +833,13 @@ def _redzone_xfp(
             .drop_nulls()
             .iter_rows()
         )
-        coeffs = redzone_usage_coefficients(play_values, position_by_player).get(position)
+        coeffs = yardline_usage_coefficients(play_values, position_by_player).get(position)
         if coeffs is None:
             return None
 
         opps = {key: 0.0 for _, _, key in BUCKET_KEYS}
         for gsis_id in gsis_ids:
-            player_opps = player_redzone_opportunities(play_values, gsis_id)
+            player_opps = player_yardline_opportunities(play_values, gsis_id)
             for k, v in player_opps.items():
                 opps[k] += v
         if sum(opps.values()) == 0:
@@ -858,7 +858,7 @@ def _redzone_xfp(
             ),
         }
     except Exception as exc:
-        log.debug("redzone xfp unavailable: %s", exc)
+        log.debug("yardline xfp unavailable: %s", exc)
         return None
 
 

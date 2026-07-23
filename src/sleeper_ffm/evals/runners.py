@@ -268,33 +268,33 @@ def _mispricing(scenario: Scenario) -> CaseResults:
     return results
 
 
-def _redzone_backtest(scenario: Scenario) -> CaseResults:
-    """Real out-of-sample backtest: red-zone-opportunity vs yardage expected-TD MAE.
+def _yardline_backtest(scenario: Scenario) -> CaseResults:
+    """Real out-of-sample backtest: yard-line-opportunity vs yardage expected-TD MAE.
 
     Unlike the hand-built fixtures above, this reads the on-disk nflverse parquet
     cache (completed seasons are immutable, so the run is deterministic). Missing
     cache degrades to a non-crashing miss (mae 0/0) rather than raising, so the
     suite's "every scenario runs" self-check stays green in a data-less checkout.
     """
-    from sleeper_ffm.evals.backtest import BacktestUnavailableError, run_redzone_backtest
+    from sleeper_ffm.evals.backtest import BacktestUnavailableError, run_yardline_backtest
 
     results: CaseResults = {}
     for case_name, case in scenario.inputs["cases"].items():
         try:
-            r = run_redzone_backtest(
+            r = run_yardline_backtest(
                 train_season=case["train_season"],
                 eval_season=case["eval_season"],
                 min_yards=case.get("min_yards", 250),
             )
             results[case_name] = {
-                "mae_redzone": r.mae_redzone,
+                "mae_yardline": r.mae_yardline,
                 "mae_yardage": r.mae_yardage,
                 "improvement_pct": r.improvement_pct,
                 "n_players": r.n_players,
             }
         except BacktestUnavailableError as exc:
             results[case_name] = {
-                "mae_redzone": 0.0,
+                "mae_yardline": 0.0,
                 "mae_yardage": 0.0,
                 "improvement_pct": 0.0,
                 "n_players": 0,
@@ -331,7 +331,7 @@ def _situation_carryover(scenario: Scenario) -> CaseResults:
     running-back effect, this fails.
 
     A missing cache degrades to a non-crashing miss rather than raising, matching
-    ``_redzone_backtest``, so the suite stays green in a data-less checkout.
+    ``_yardline_backtest``, so the suite stays green in a data-less checkout.
     """
     from sleeper_ffm.model.research.situation_changes import summarize, usage_carryover
 
@@ -373,5 +373,5 @@ ADAPTERS: dict[str, Callable[[Scenario], CaseResults]] = {
     "mispricing": _mispricing,
     "calibration_rank_corr": _calibration_rank_corr,
     "trade_impact": _trade_impact,
-    "redzone_backtest": _redzone_backtest,
+    "yardline_backtest": _yardline_backtest,
 }

@@ -165,7 +165,7 @@ def test_pbp_play_value_null_yardline_gets_no_bin() -> None:
     # A play with no recorded yard line must not be priced as if it came from midfield.
     values = sm.pbp_play_value(_pbp_frame([_pbp_row(rusher="A", yardline_100=None)]), _SCORING)
     assert values["yardline_bin"].to_list() == [None]
-    assert sm.player_redzone_opportunities(values, "A") == {
+    assert sm.player_yardline_opportunities(values, "A") == {
         key: 0.0 for _, _, key in sm.BUCKET_KEYS
     }
 
@@ -176,7 +176,7 @@ def test_pbp_play_value_missing_columns_returns_empty() -> None:
     assert set(empty.columns) == {"player_id", "kind", "yardline_bin", "fp", "touchdown"}
 
 
-def test_redzone_usage_coefficients_splits_by_bucket() -> None:
+def test_yardline_usage_coefficients_splits_by_bucket() -> None:
     # WR "A": one goal-line TD target (7.5 fp) and one own-half incompletion (0 fp).
     pbp = _pbp_frame(
         [
@@ -185,7 +185,7 @@ def test_redzone_usage_coefficients_splits_by_bucket() -> None:
         ]
     )
     values = sm.pbp_play_value(pbp, _SCORING)
-    coeffs = sm.redzone_usage_coefficients(values, {"A": "WR"})
+    coeffs = sm.yardline_usage_coefficients(values, {"A": "WR"})
     assert coeffs["WR"]["1-5_targets"] == 7.5
     assert coeffs["WR"]["41+_targets"] == 0.0
     # Bins with zero observed plays fall back to the flat defaults.
@@ -193,7 +193,7 @@ def test_redzone_usage_coefficients_splits_by_bucket() -> None:
     assert coeffs["RB"]["21-40_carries"] == 0.55
 
 
-def test_redzone_td_rates_price_the_goal_line_above_the_red_zone_edge() -> None:
+def test_yardline_td_rates_price_the_goal_line_above_the_red_zone_edge() -> None:
     # The gradient the old binary red-zone flag collapsed: both plays are "red zone",
     # but one converts and the other does not.
     pbp = _pbp_frame(
@@ -203,12 +203,12 @@ def test_redzone_td_rates_price_the_goal_line_above_the_red_zone_edge() -> None:
         ]
     )
     values = sm.pbp_play_value(pbp, _SCORING)
-    rates = sm.redzone_td_rates(values, {"A": "RB", "B": "RB"})
+    rates = sm.yardline_td_rates(values, {"A": "RB", "B": "RB"})
     assert rates["RB"]["1-5_carries"] == 1.0
     assert rates["RB"]["11-20_carries"] == 0.0
 
 
-def test_player_redzone_opportunities_counts_by_bucket() -> None:
+def test_player_yardline_opportunities_counts_by_bucket() -> None:
     pbp = _pbp_frame(
         [
             _pbp_row(receiver="A", yardline_100=5.0, yards_gained=5.0, touchdown=1.0),
@@ -217,16 +217,16 @@ def test_player_redzone_opportunities_counts_by_bucket() -> None:
         ]
     )
     values = sm.pbp_play_value(pbp, _SCORING)
-    opps = sm.player_redzone_opportunities(values, "A")
+    opps = sm.player_yardline_opportunities(values, "A")
     assert opps == {
         key: {"1-5_targets": 1.0, "41+_targets": 1.0, "1-5_carries": 1.0}.get(key, 0.0)
         for _, _, key in sm.BUCKET_KEYS
     }
 
 
-def test_player_redzone_opportunities_unknown_player_is_zero() -> None:
+def test_player_yardline_opportunities_unknown_player_is_zero() -> None:
     empty = pl.DataFrame(
         schema={"player_id": pl.Utf8, "kind": pl.Utf8, "yardline_bin": pl.Utf8, "fp": pl.Float64}
     )
-    opps = sm.player_redzone_opportunities(empty, "nobody")
+    opps = sm.player_yardline_opportunities(empty, "nobody")
     assert opps == {key: 0.0 for _, _, key in sm.BUCKET_KEYS}

@@ -6,14 +6,14 @@ far fewer is getting unlucky on the same real usage — a buy-low the market has
 caught up to.
 
 Two expected-TD models, picked automatically by data availability (``RegressionBoard.basis``):
-    - **redzone-opportunity** (preferred): each target/carry priced by the observed
-      touchdown probability of its yard-line bin (``sabermetrics.redzone_td_rates``, from
+    - **yardline-opportunity** (preferred): each target/carry priced by the observed
+      touchdown probability of its yard-line bin (``sabermetrics.yardline_td_rates``, from
       play-by-play). Backtested out-of-sample by ``sleeper_ffm.evals.backtest`` (fit on
       one season, scored on the next): expected-TD MAE dropped ~25% vs the yardage
       baseline (24.6% fitting on 2024 and evaluating on 2025, n=235) — where a look came
       from predicts touchdowns much better than raw yardage volume does. The binary
       red-zone flag this replaced managed 19.3% on the same split. Reproduce with the
-      ``regression.redzone_beats_yardage_oos`` tier-1 eval scenario.
+      ``regression.yardline_beats_yardage_oos`` tier-1 eval scenario.
     - **yardage** (fallback): actual TDs minus total yardage x position TD-per-yard
       rate. Used when play-by-play isn't cached for the season.
 
@@ -74,12 +74,12 @@ class RegressionBoard:
     baselines: dict  # position -> rate table (shape depends on `basis`)
     sell_high: list[RegressionFlag]  # most over-expected first
     buy_low: list[RegressionFlag]  # most under-expected first
-    basis: str = "yardage"  # "redzone-opportunity" | "yardage" (PBP unavailable)
+    basis: str = "yardage"  # "yardline-opportunity" | "yardage" (PBP unavailable)
     warnings: list[str] = field(default_factory=list)
 
 
 def _flag_from_expected(r: dict, expected: float) -> RegressionFlag:
-    """Build one player's flag from any expected-TD basis (yardage or red-zone-opportunity)."""
+    """Build one player's flag from any expected-TD basis (yardage or yard-line-opportunity)."""
     from sleeper_ffm.model.dynasty import is_age_declining
 
     pos = r["position"]
@@ -149,7 +149,7 @@ def compute_td_regression(
     return baselines, flags
 
 
-def compute_redzone_td_regression(
+def compute_yardline_td_regression(
     rows: list[dict],
     play_values: pl.DataFrame,
     position_by_player: dict[str, str],
@@ -160,7 +160,7 @@ def compute_redzone_td_regression(
     Where :func:`compute_td_regression` expects TDs from total yardage at a flat
     position rate, this prices each target/carry by the observed touchdown probability
     of the yard-line bin it came from
-    (:func:`sleeper_ffm.model.sabermetrics.redzone_td_rates`). Backtested out-of-sample
+    (:func:`sleeper_ffm.model.sabermetrics.yardline_td_rates`). Backtested out-of-sample
     by :mod:`sleeper_ffm.evals.backtest` (fit on one season, scored on the next):
     expected-TD MAE dropped ~25% vs the yardage baseline (24.6% fitting on 2024 and
     evaluating on 2025) — where a look came from predicts touchdowns much better than
@@ -178,9 +178,9 @@ def compute_redzone_td_regression(
         ``(rates, flags)`` — the per-yard-line-bin TD-rate table by position, and one
         flag per qualifying row.
     """
-    from sleeper_ffm.model.sabermetrics import player_redzone_opportunities, redzone_td_rates
+    from sleeper_ffm.model.sabermetrics import player_yardline_opportunities, yardline_td_rates
 
-    rates = redzone_td_rates(play_values, position_by_player)
+    rates = yardline_td_rates(play_values, position_by_player)
 
     flags: list[RegressionFlag] = []
     for r in rows:
@@ -188,7 +188,7 @@ def compute_redzone_td_regression(
         pos_rates = rates.get(pos)
         if pos_rates is None or r["total_yards"] < min_yards or not r.get("gsis_id"):
             continue
-        opps = player_redzone_opportunities(play_values, r["gsis_id"])
+        opps = player_yardline_opportunities(play_values, r["gsis_id"])
         expected = sum(opps.get(k, 0.0) * pos_rates.get(k, 0.0) for k in opps)
         flags.append(_flag_from_expected(r, expected))
     return rates, flags
@@ -276,7 +276,7 @@ def _live_player_status() -> dict[str, dict]:
         return {}
 
 
-def _redzone_regression_inputs(
+def _yardline_regression_inputs(
     season: int,
 ) -> tuple[pl.DataFrame, dict[str, str]] | None:
     """Load PBP + position lookup for the yard-line TD model, or None if unavailable."""
@@ -301,14 +301,14 @@ def _redzone_regression_inputs(
         )
         return play_values, position_by_player
     except Exception as exc:
-        log.debug("regression: red-zone PBP inputs unavailable (%s)", exc)
+        log.debug("regression: yard-line PBP inputs unavailable (%s)", exc)
         return None
 
 
 def build_regression(season: int | None = None, top: int = 15) -> RegressionBoard:
     """Build the regression board for a season.
 
-    Uses the red-zone-opportunity TD model (backtested more accurate than yardage)
+    Uses the yard-line-opportunity TD model (backtested more accurate than yardage)
     when play-by-play is available for the season, falling back to the yardage
     baseline otherwise — see ``RegressionBoard.basis``.
 
@@ -330,11 +330,11 @@ def build_regression(season: int | None = None, top: int = 15) -> RegressionBoar
             season=season, baselines={}, sell_high=[], buy_low=[], warnings=warnings
         )
 
-    redzone_inputs = _redzone_regression_inputs(season)
-    if redzone_inputs is not None:
-        play_values, position_by_player = redzone_inputs
-        baselines, flags = compute_redzone_td_regression(rows, play_values, position_by_player)
-        basis = "redzone-opportunity"
+    yardline_inputs = _yardline_regression_inputs(season)
+    if yardline_inputs is not None:
+        play_values, position_by_player = yardline_inputs
+        baselines, flags = compute_yardline_td_regression(rows, play_values, position_by_player)
+        basis = "yardline-opportunity"
     else:
         baselines, flags = compute_td_regression(rows)
         basis = "yardage"

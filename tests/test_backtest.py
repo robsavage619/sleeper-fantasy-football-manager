@@ -1,6 +1,6 @@
 """Out-of-sample backtests — substantiate docstring claims rather than asserting them.
 
-Red-zone and age-curve backtests read only the on-disk nflverse parquet cache (2024 +
+Yard-line and age-curve backtests read only the on-disk nflverse parquet cache (2024 +
 2025) and skip cleanly if that cache is absent. The season-sim backtest requires live
 Sleeper API calls (see its docstring for why no on-disk cache exists) and skips
 cleanly on any network/data unavailability, same pattern as test_reconciliation.py.
@@ -13,21 +13,21 @@ import pytest
 from sleeper_ffm.evals.backtest import (
     BacktestUnavailableError,
     run_age_curve_backtest,
-    run_redzone_backtest,
     run_season_sim_backtest,
+    run_yardline_backtest,
     trade_acceptance_validation_status,
 )
 
 
-def test_redzone_beats_yardage_out_of_sample() -> None:
+def test_yardline_beats_yardage_out_of_sample() -> None:
     try:
-        result = run_redzone_backtest(train_season=2024, eval_season=2025)
+        result = run_yardline_backtest(train_season=2024, eval_season=2025)
     except BacktestUnavailableError as exc:
         pytest.skip(f"backtest data unavailable: {exc}")
 
     assert result.n_players > 50, "too few players for a meaningful backtest"
     # The core claim: opportunity-priced MAE is strictly lower than the yardage baseline.
-    assert result.mae_redzone < result.mae_yardage
+    assert result.mae_yardline < result.mae_yardage
     assert result.improvement_pct > 5.0  # docstrings cite ~25%; guard well below that
 
 
