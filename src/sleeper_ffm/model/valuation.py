@@ -413,11 +413,15 @@ def build_rookie_assets(
     return sorted(assets, key=lambda p: p.current_fpar, reverse=True)
 
 
+# Recency-weighted blend for the two-season default, derived from the configured
+# value season so it rolls over on its own. Hardcoded season keys went stale
+# silently: the year after a rollover the newer season would miss the map and
+# fall to the 1/n default, weighting the OLDER season more heavily (0.565/0.435).
+_PRIOR_SEASON_WEIGHT = 0.35
+_LATEST_SEASON_WEIGHT = 0.65
 _SEASON_WEIGHTS: dict[int, float] = {
-    # Recency-weighted blend for two-season default: older/newer
-    # Weights are renormalized to available seasons at runtime.
-    2024: 0.35,
-    2025: 0.65,
+    DEFAULT_VALUE_SEASON - 1: _PRIOR_SEASON_WEIGHT,
+    DEFAULT_VALUE_SEASON: _LATEST_SEASON_WEIGHT,
 }
 
 
