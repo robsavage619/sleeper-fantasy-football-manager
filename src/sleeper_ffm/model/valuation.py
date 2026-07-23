@@ -27,7 +27,7 @@ from sleeper_ffm.config import DATA_DIR, DEFAULT_VALUE_SEASON
 from sleeper_ffm.market.blend import FC_TO_FPAR_SCALE
 from sleeper_ffm.model.dynasty import PlayerAsset
 from sleeper_ffm.names import normalize_name
-from sleeper_ffm.nflverse.loader import load_id_map, load_weekly
+from sleeper_ffm.nflverse.loader import load_id_map, load_pbp, load_weekly
 from sleeper_ffm.scoring.engine import load_scoring, score, stats_from_nflverse
 
 if TYPE_CHECKING:
@@ -111,8 +111,109 @@ def score_weekly(
     if reg.is_empty():
         return _empty_scored_weekly()
 
+    reg = _attach_long_td_bonuses(reg, seasons)
+
     fps = [score(stats_from_nflverse(row), scoring) for row in reg.iter_rows(named=True)]
     return reg.with_columns(pl.Series("fp_sffm", fps, dtype=pl.Float64))
+
+
+# Length threshold for the long-touchdown bonuses. A box score records that a
+# touchdown happened, not how far it travelled, so these can only come from
+# play-by-play — without them the *_td_40p bonuses silently score as zero.
+_TD40_YARDS = 40
+
+# Earliest season with play-by-play coverage. Older seasons score without long-TD
+# bonuses, which understates them; the gap is logged rather than hidden.
+_PBP_FIRST_SEASON = 2016
+
+
+@ttl_cache(key=lambda seasons: tuple(sorted(seasons)))
+def long_td_counts(seasons: list[int]) -> pl.DataFrame:
+    """Count each player's 40+ yard touchdowns per week, split by scoring type.
+
+    Args:
+        seasons: Seasons to scan. Seasons without play-by-play coverage are skipped.
+
+    Returns:
+        ``player_id`` / ``season`` / ``week`` rows carrying ``rec_td_40p``,
+        ``rush_td_40p`` and ``pass_td_40p`` counts. Empty when no pbp is cached.
+    """
+    covered = [s for s in seasons if s >= _PBP_FIRST_SEASON]
+    if not covered:
+        return _empty_long_td_frame()
+
+    try:
+        pbp = load_pbp(seasons=covered)
+    except (FileNotFoundError, OSError) as exc:
+        log.warning("long_td_counts: play-by-play unavailable (%s); long-TD bonuses omitted", exc)
+        return _empty_long_td_frame()
+    if pbp.is_empty():
+        return _empty_long_td_frame()
+
+    big = pbp.filter(
+        pl.col("season_type").eq("REG")
+        & pl.col("touchdown").eq(1)
+        & pl.col("yards_gained").ge(_TD40_YARDS)
+    )
+    if big.is_empty():
+        return _empty_long_td_frame()
+
+    def _side(mask: pl.Expr, id_col: str, alias: str) -> pl.DataFrame:
+        return (
+            big.filter(mask & pl.col(id_col).is_not_null())
+            .group_by(["season", "week", id_col])
+            .len(alias)
+            .rename({id_col: "player_id"})
+        )
+
+    rec = _side(pl.col("pass_touchdown").eq(1), "receiver_player_id", "rec_td_40p")
+    rush = _side(pl.col("rush_touchdown").eq(1), "rusher_player_id", "rush_td_40p")
+    passing = _side(pl.col("pass_touchdown").eq(1), "passer_player_id", "pass_td_40p")
+
+    merged = rec.join(rush, on=["season", "week", "player_id"], how="full", coalesce=True).join(
+        passing, on=["season", "week", "player_id"], how="full", coalesce=True
+    )
+    return merged.with_columns(
+        pl.col(["rec_td_40p", "rush_td_40p", "pass_td_40p"]).fill_null(0).cast(pl.Int64)
+    )
+
+
+def _empty_long_td_frame() -> pl.DataFrame:
+    return pl.DataFrame(
+        schema={
+            "season": pl.Int64,
+            "week": pl.Int64,
+            "player_id": pl.Utf8,
+            "rec_td_40p": pl.Int64,
+            "rush_td_40p": pl.Int64,
+            "pass_td_40p": pl.Int64,
+        }
+    )
+
+
+def _attach_long_td_bonuses(reg: pl.DataFrame, seasons: list[int]) -> pl.DataFrame:
+    """Join per-week long-touchdown counts onto weekly rows so ``score`` can pay them."""
+    counts = long_td_counts(seasons)
+    bonus_cols = ["rec_td_40p", "rush_td_40p", "pass_td_40p"]
+
+    if counts.is_empty():
+        return reg.with_columns([pl.lit(0, dtype=pl.Int64).alias(c) for c in bonus_cols])
+
+    uncovered = sorted(s for s in seasons if s < _PBP_FIRST_SEASON)
+    if uncovered:
+        log.info(
+            "long-TD bonuses unavailable for seasons %s (pbp starts %d); those seasons "
+            "score without them",
+            uncovered,
+            _PBP_FIRST_SEASON,
+        )
+
+    joined = reg.join(
+        counts.cast({"season": reg.schema["season"], "week": reg.schema["week"]}),
+        on=["player_id", "season", "week"],
+        how="left",
+    )
+    return joined.with_columns([pl.col(c).fill_null(0) for c in bonus_cols])
 
 
 def compute_season_totals(
@@ -422,8 +523,7 @@ def build_player_assets(
     missing = [s for s in seasons if s not in available_seasons]
     if missing:
         log.warning(
-            "seasons %s requested but not available (nflverse data missing); "
-            "blend uses %s only",
+            "seasons %s requested but not available (nflverse data missing); blend uses %s only",
             missing,
             available_seasons,
         )

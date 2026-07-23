@@ -9,9 +9,12 @@ Two input shapes are supported:
 - **nflverse weekly rows** via :func:`stats_from_nflverse`, which maps columns to Sleeper keys.
 
 Threshold bonuses (100/200-yd, 300/400 pass-yd, 25-completion, 20-carry) are derived here.
-Length-based TD bonuses (``*_td_40p``) require per-play data and are read from the input when
-present (Sleeper provides them); the nflverse aggregate path leaves them at 0 — a documented,
-small under-credit for 40+ yard TDs, corrected once play-by-play is wired.
+Length-based TD bonuses (``*_td_40p``) cannot be — a box score records that a touchdown
+happened, not how far it travelled — so they are read from the input when present. Sleeper
+supplies them directly; the nflverse path gets them from play-by-play via
+``model.valuation.long_td_counts``, which ``score_weekly`` joins on before scoring. A source
+that omits them scores zero for them, which understates bonus scoring by roughly a fifth to
+a third (see docs/research/study-s1-bonus-decomposition-2026-07-22.md).
 """
 
 from __future__ import annotations
@@ -43,6 +46,13 @@ _NFLVERSE_TO_SLEEPER: dict[str, str] = {
     "receiving_tds": "rec_td",
     "receiving_2pt_conversions": "rec_2pt",
 }
+# Long-touchdown bonus counts, passed straight through when the caller supplies them.
+# These cannot be derived from an aggregate stat line — a box score records that a
+# touchdown happened, not how far it travelled — so they arrive already counted from
+# play-by-play (see ``model.valuation.long_td_counts``). A source that omits them
+# scores zero for them, which is the historical behaviour.
+_LONG_TD_KEYS = ("pass_td_40p", "rush_td_40p", "rec_td_40p")
+
 # Fumbles (recovered by own team still cost -1.0 in Sleeper's "fum" setting).
 # Old nfl_data_py format uses "fumbles"; new stats_player format uses "fumbles_total".
 # They don't coexist in the same row, so mapping both is safe (only one fires per row).
@@ -78,6 +88,11 @@ def stats_from_nflverse(row: Mapping[str, object]) -> dict[str, float]:
         val = _as_float(row.get(col))
         if val is not None and not _is_nan(val):
             stats[key] = stats.get(key, 0.0) + val
+
+    for key in _LONG_TD_KEYS:
+        val = _as_float(row.get(key))
+        if val is not None and not _is_nan(val) and val:
+            stats[key] = val
 
     fum_total = 0.0
     for col in _FUMBLE_TOTAL_COLS:
