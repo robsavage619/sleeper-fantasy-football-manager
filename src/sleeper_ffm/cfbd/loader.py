@@ -420,14 +420,21 @@ def load_prospects(year: int = 2025, top: int = 200) -> list[ProspectProfile]:
 
     from sleeper_ffm.sleeper.client import SleeperClient
 
+    # A draft class is scouted on the college season it just finished, so the
+    # 2026 class means 2025 tape. Querying the draft year itself asks for a
+    # season that has not been played, which returns nothing at all.
+    college_season = year - 1
+
     with httpx.Client(timeout=20) as http_client:
-        usage_list = _fetch_usage(year, http_client)
-        recruiting_map = _fetch_recruiting(year, http_client)
-        season_stats_map = _fetch_player_season_stats(year, http_client)
+        usage_list = _fetch_usage(college_season, http_client)
+        recruiting_map = _fetch_recruiting(college_season, http_client)
+        season_stats_map = _fetch_player_season_stats(college_season, http_client)
 
     if not usage_list:
         log.warning(
-            "No CFBD usage data returned for year=%s; using Sleeper prospect fallback",
+            "No CFBD usage data returned for college season %s (%s draft class); "
+            "using Sleeper prospect fallback",
+            college_season,
             year,
         )
         return _fallback_sleeper_prospects(year=year, top=top)
