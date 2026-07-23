@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import polars as pl
 
-from sleeper_ffm.model.player_profile import _fantasy_summary, _season_summaries, _weekly_rows
+from sleeper_ffm.model.player_profile import (
+    _fantasy_summary,
+    _filter_snap_rows,
+    _season_summaries,
+    _weekly_rows,
+)
 
 
 def test_player_profile_aggregates_scored_weekly_rows() -> None:
@@ -56,3 +61,33 @@ def test_player_profile_aggregates_scored_weekly_rows() -> None:
     assert seasons[0]["target_share"] == 17.5
     assert summary["boom_weeks"] == 1
     assert summary["bust_weeks"] == 1
+
+
+def _snaps() -> pl.DataFrame:
+    # One row per season, offense_pct rising over time — a veteran whose early
+    # career looks nothing like the window the profile actually asked for.
+    return pl.DataFrame(
+        [
+            {"player": "Vet Back", "team": "LAC", "season": season, "week": 1, "offense_pct": pct}
+            for season, pct in [
+                (2019, 0.10),
+                (2020, 0.20),
+                (2023, 0.80),
+                (2024, 0.90),
+                (2025, 1.00),
+            ]
+        ]
+    )
+
+
+def test_filter_snap_rows_limits_to_requested_seasons() -> None:
+    identity = {"name": "Vet Back", "team": "LAC"}
+    rows = _filter_snap_rows(_snaps(), identity, [2023, 2024, 2025])
+    assert sorted(rows["season"].to_list()) == [2023, 2024, 2025]
+    # Career average would be 60%; the requested window averages 90%.
+    assert round(rows["offense_pct"].mean() * 100, 1) == 90.0
+
+
+def test_filter_snap_rows_without_seasons_keeps_every_row() -> None:
+    identity = {"name": "Vet Back", "team": "LAC"}
+    assert len(_filter_snap_rows(_snaps(), identity, [])) == 5

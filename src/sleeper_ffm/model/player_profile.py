@@ -297,7 +297,7 @@ def _usage_snapshot(
 
     try:
         snaps = load_snaps(seasons=seasons)
-        snap_rows = _filter_snap_rows(snaps, identity)
+        snap_rows = _filter_snap_rows(snaps, identity, seasons)
         if not snap_rows.is_empty():
             usage["avg_snap_pct"] = round(_float(snap_rows["offense_pct"].mean()) * 100, 1)
             latest_snap = snap_rows.sort(["season", "week"]).tail(5)
@@ -308,7 +308,10 @@ def _usage_snapshot(
     return usage
 
 
-def _filter_snap_rows(snaps: pl.DataFrame, identity: dict) -> pl.DataFrame:
+def _filter_snap_rows(snaps: pl.DataFrame, identity: dict, seasons: list[int]) -> pl.DataFrame:
+    # load_snaps returns a superset of the requested seasons (one shared parquet
+    # holding every season ever ingested), so the season filter belongs here —
+    # without it avg_snap_pct averages a veteran's whole career.
     if snaps.is_empty() or "player" not in snaps.columns:
         return snaps
     name = normalize_name(str(identity["name"]))
@@ -316,6 +319,8 @@ def _filter_snap_rows(snaps: pl.DataFrame, identity: dict) -> pl.DataFrame:
     rows = snaps.filter(
         pl.col("player").map_elements(normalize_name, return_dtype=pl.Utf8).eq(name)
     )
+    if seasons and "season" in rows.columns:
+        rows = rows.filter(pl.col("season").is_in(seasons))
     if team and team != "FA" and "team" in rows.columns:
         team_rows = rows.filter(pl.col("team") == team)
         if not team_rows.is_empty():
@@ -403,9 +408,7 @@ def _filter_gsis_or_name(
         filters.append(pl.col("gsis_id").is_in(sorted(gsis_ids)))
     if name_col in frame.columns:
         name = normalize_name(str(identity["name"]))
-        filters.append(
-            pl.col(name_col).map_elements(normalize_name, return_dtype=pl.Utf8).eq(name)
-        )
+        filters.append(pl.col(name_col).map_elements(normalize_name, return_dtype=pl.Utf8).eq(name))
     if not filters:
         return frame.head(0)
     expr = filters[0]
