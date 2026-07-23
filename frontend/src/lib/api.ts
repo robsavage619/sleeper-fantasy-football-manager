@@ -1427,6 +1427,32 @@ export type NegotiationBrief = {
   warnings: string[]
 }
 
+/** One research-backed statement about a player (studies S2-S6). */
+export interface IntelFlag {
+  kind: string
+  severity: 'ALERT' | 'WATCH' | 'INFO'
+  headline: string
+  /** The measured effect behind the claim, so it can be audited rather than trusted. */
+  evidence: string
+  study: string
+}
+
+export interface PlayerIntel {
+  player_id: string
+  name: string
+  position: string
+  team: string
+  age: number | null
+  archetype: string | null
+  flags: IntelFlag[]
+}
+
+export interface PlayerIntelResponse {
+  roster_id: number
+  scope: 'roster' | 'league'
+  players: PlayerIntel[]
+}
+
 export const api = {
   draftBoard: (top = 50, season?: number) =>
     get<DraftBoard>(`/draft/board?top=${top}${season ? `&season=${season}` : ''}`),
@@ -1457,6 +1483,8 @@ export const api = {
   waiverCandidates: (top = 25) => get<WaiverCandidate[]>(`/season/waivers?top=${top}`),
   playerProfile: (playerId: string) =>
     get<PlayerProfile>(`/players/${encodeURIComponent(playerId)}/profile`),
+  playerIntel: (rosterId?: number) =>
+    get<PlayerIntelResponse>(`/intel/players${rosterId != null ? `?roster_id=${rosterId}` : ''}`),
   startSit: (week = 0, season?: number) =>
     get<StartSitRec>(`/season/startsit?week=${week}${season ? `&season=${season}` : ''}`),
   ownerProfiles: () => get<OwnerProfile[]>('/owners/profiles'),

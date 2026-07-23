@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { PlayerProfileDrawer } from '@/components/PlayerProfileDrawer'
+import { PlayerIntelDrawer } from '@/components/PlayerIntelDrawer'
 import { InfoTip, PlayerHeadshot, POS_COLOR, StackBar } from '@/components/viz'
 import { api, type MyRosterPlayer } from '@/lib/api'
 import { GLOSSARY } from '@/lib/glossary'
@@ -229,6 +230,7 @@ function PositionGroup({
 
 export function Roster() {
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null)
+  const [intelOpen, setIntelOpen] = useState(false)
   const { data, isLoading, error } = useQuery({
     queryKey: ['my-roster'],
     queryFn: () => api.myRoster(),
@@ -262,6 +264,22 @@ export function Roster() {
           >
             MY ROSTER
           </h1>
+          <button
+            onClick={() => setIntelOpen(true)}
+            className="tracking-[0.2em] uppercase"
+            style={{
+              fontSize: 10,
+              color: '#00b8cc',
+              background: 'none',
+              border: '1px solid #24344f',
+              padding: '5px 10px',
+              cursor: 'pointer',
+              alignSelf: 'center',
+            }}
+            title="Situation research: when a player's track record has stopped applying"
+          >
+            Player Intel
+          </button>
           {data && (
             <div className="flex items-baseline gap-3">
               <span
@@ -350,6 +368,7 @@ export function Roster() {
           ))}
         </div>
       )}
+      <PlayerIntelDrawer open={intelOpen} rosterId={data?.roster_id} onClose={() => setIntelOpen(false)} />
       <PlayerProfileDrawer
         playerId={selectedPlayerId}
         onClose={() => setSelectedPlayerId(null)}
