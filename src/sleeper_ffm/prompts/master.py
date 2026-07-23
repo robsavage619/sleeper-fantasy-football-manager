@@ -922,11 +922,27 @@ def _draft_context() -> str:
     if board.is_complete():
         return "(draft complete — no live picks)"
 
+    # Spell out every pick I actually hold. Naming only the next one lets a plan
+    # be built around a round whose pick was traded away.
+    owned = board.my_pick_numbers
+    if owned and len(owned) != board.total_rounds:
+        rounds = sorted({(n - 1) // board.total_teams + 1 for n in owned})
+        pick_inventory = (
+            f" I hold {len(owned)} of {board.total_rounds} picks this draft — overall "
+            f"{', '.join(str(n) for n in owned)} (rounds {', '.join(str(r) for r in rounds)}). "
+            "The missing rounds were traded away, so do not plan a pick in them."
+        )
+    elif owned:
+        pick_inventory = f" My picks: overall {', '.join(str(n) for n in owned)}."
+    else:
+        pick_inventory = ""
+
     pick_no: int | None
     if board.order_confirmed:
         header = (
             f"Live draft: pick {board.current_pick_no}/{board.total_picks} "
             f"(round {board.current_round}), {board.picks_until_my_turn} picks until my turn."
+            f"{pick_inventory}"
         )
         pick_no = board.next_my_pick or board.current_pick_no
     elif board.order_projected and board.my_slot is not None:
@@ -936,9 +952,10 @@ def _draft_context() -> str:
             f"verified convention (reverse of the full final standings from the prior completed "
             f"season, {board.projection_source_season}) — under that rule my projected slot is "
             f"{board.my_slot}, with pick {board.next_my_pick} overall "
-            f"({board.picks_until_my_turn} picks away). Treat this as a strong projection, not an "
-            "official Sleeper-confirmed slot — a name recommended as 'the pick' must account for "
-            "how many picks happen before this projected turn, since top names may not survive."
+            f"({board.picks_until_my_turn} picks away).{pick_inventory} Treat this as a strong "
+            "projection, not an official Sleeper-confirmed slot — a name recommended as 'the "
+            "pick' must account for how many picks happen before this projected turn, since top "
+            "names may not survive."
         )
         pick_no = board.next_my_pick
     else:
