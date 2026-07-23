@@ -498,7 +498,7 @@ You are the AI GM for {my_name}'s dynasty squad. Given the context above:
 4. **Dynasty Outlook**: Is this a win-now week, or should I think long-term?
    Any asset I should be moving while the market is right?
 
-Post findings via: `sffm finding post --kind narrative --body '<json>'`
+Post findings via: `sffm finding narrative --body '<json>'`
 where JSON has keys: `startsit`, `waiver_add`, `waiver_drop`, `trade_proposal`,
 `dynasty_angle`, `urgency` (LOW / MED / HIGH).
 """

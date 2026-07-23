@@ -2,7 +2,7 @@
 
 Assembles a structured prompt for Claude Code to reason over a draft pick decision.
 Output goes directly to Claude Code (chat or ``claude -p``); Claude posts the
-finding back via ``sffm finding post``.
+finding back via ``sffm finding draft``.
 
 Context packaged:
   - Current pick number, round, roster construction state
@@ -164,7 +164,7 @@ Respond with:
 - **Roster note**: one sentence on how this pick fits the roster construction arc
 - **Run alert** (only if relevant): which position is being drafted fast and what that means
 
-Post your finding via: ``sffm finding post --kind draft --body '<json>'``
+Post your finding via: ``sffm finding draft --body '<json>'``
 where the JSON has keys: ``pick``, ``alternatives``, ``roster_note``, ``run_alert`` (nullable).
 """
 

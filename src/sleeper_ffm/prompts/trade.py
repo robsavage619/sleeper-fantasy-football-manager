@@ -239,6 +239,6 @@ Respond with:
 - **Pick arbitrage**: should Rob hold picks or convert here?
 - **Counter** (only if COUNTER): what asset swap makes this fair?
 
-Post your finding via: ``sffm finding post --kind trade --body '<json>'``
+Post your finding via: ``sffm finding trade --body '<json>'``
 where JSON has keys: ``verdict``, ``value_read``, ``pick_arbitrage``, ``counter`` (nullable).
 """

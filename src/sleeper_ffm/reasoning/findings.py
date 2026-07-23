@@ -9,7 +9,7 @@ Findings are stored in-memory (current session) and also persisted to
 ``api/routers/findings.py`` wraps this store.
 
 Usage from CLI / Claude Code:
-    ``sffm finding post --type draft --body '{"recommendation": "take CJ Stroud"}'``
+    ``sffm finding draft --body '{"recommendation": "take CJ Stroud"}'``
 """
 
 from __future__ import annotations
