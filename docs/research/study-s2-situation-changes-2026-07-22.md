@@ -82,8 +82,43 @@ Same measurement, holding the player on his team and changing the play-caller:
 
 A back does not have to move to lose his role — a new play-caller is nearly as
 disruptive as a new team. Quarterback changes are the mildest of the three
-disruptions for pass catchers (WR gap −0.074), which is mildly surprising and
-worth its own study.
+disruptions for pass catchers (WR gap −0.074).
+
+#### Correction: "mildest" describes role stability, not fantasy value
+
+The Q5 literature review challenged that reading, and it is right to. PFF's
+QB-tier study finds WR1 target *volume* barely moves across quarterback tiers
+(8.1 to 7.6 per game, 6%) while fantasy points per target fall 20% and the
+probability of a top-10 finish collapses from 53% to 3%. If that holds, measuring
+target share and concluding "quarterback changes matter least" mistakes a
+statement about role for a statement about value.
+
+Re-running the same carryover test on fantasy points per game instead of target
+share:
+
+| Position | metric | gap (changed − stable) |
+|---|---|---|
+| WR | target share | −0.071 |
+| WR | fantasy points/game | **−0.095** |
+| TE | target share | −0.153 |
+| TE | fantasy points/game | −0.082 |
+
+For receivers the points damage is modestly larger than the usage damage, in the
+direction the literature predicts, though the extra penalty is small (0.024). For
+tight ends it reverses — usage is disrupted more than scoring.
+
+But the deeper point is that this still does not test PFF's claim, and neither
+did the original. PFF measures a **level** effect (a bad quarterback makes his
+receivers score less), while everything here measures **carryover** (whether last
+year's production still predicts this year's). A receiver whose scoring is
+uniformly depressed by a bad quarterback can have perfectly stable carryover: high
+correlation, large loss. The two are close to orthogonal.
+
+So the corrected claim is narrower: a quarterback change is the mildest of the
+three disruptions *to a pass catcher's role*. Whether it is mild in points is
+untested here, and the published evidence suggests it is not. Measuring the level
+effect needs a quarterback-quality variable — CPOE and EPA per dropback from the
+NGS passing data ingested this session — which is exactly what study S3 is for.
 
 ## The null worth acting on: vacated opportunity does not transfer
 
@@ -150,7 +185,11 @@ measurement — a named alternative explanation was tested and did not survive.
 - The control group is not clean: a "stayer" whose team changed coordinators
   without changing head coach counts as stable here, because the context table
   tracks head coach only. Real play-caller churn is undercounted, which if
-  anything biases the measured coaching effect downward.
+  anything biases the measured coaching effect downward. The Q4 review sharpens
+  this — head coaches frequently retain play-calling over a new coordinator
+  (Stefanski, Shanahan, Coen, Moore), so the flag is closer to "coaching-staff
+  title changed" than "the person calling plays changed". The −0.216 coaching
+  effect is therefore probably an underestimate.
 - Holdout samples are thin (31 moved backs, 56 moved receivers). Direction is
   well supported; magnitudes are not precise.
 - Age is controlled by stratification rather than by a model, so residual
