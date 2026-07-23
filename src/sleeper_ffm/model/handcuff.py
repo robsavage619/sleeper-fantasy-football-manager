@@ -101,13 +101,23 @@ def classify_status(backup_id: str | None, backup_owner: str) -> str:
 
 
 def _latest_depth_rows(season: int) -> list[dict]:
-    """Return the most-recent depth-chart snapshot per team as plain rows."""
+    """Return the most-recent depth-chart state per team as plain rows.
+
+    Reads the loader's normalised (legacy) column names, which both nflverse
+    depth-chart eras map onto. Recency prefers the newer feed's exact capture
+    timestamp: a week can hold several captures, and mixing them stacks
+    overlapping charts so a starter reads as his own backup.
+    """
     dc = load_depth_charts(seasons=[season])
-    needed = {"team", "pos_abb", "pos_rank", "gsis_id", "dt"}
+    needed = {"club_code", "depth_position", "depth_team", "gsis_id"}
     if dc.is_empty() or not needed.issubset(dc.columns):
         return []
-    latest = dc.group_by("team").agg(pl.col("dt").max().alias("_mdt"))
-    dc = dc.join(latest, on="team").filter(pl.col("dt") == pl.col("_mdt"))
+
+    recency = "dt" if "dt" in dc.columns else "week" if "week" in dc.columns else None
+    if recency is None:
+        return []
+    latest = dc.group_by("club_code").agg(pl.col(recency).max().alias("_latest"))
+    dc = dc.join(latest, on="club_code").filter(pl.col(recency) == pl.col("_latest"))
 
     id_map = load_id_map()
     id_slim = (
@@ -122,16 +132,21 @@ def _latest_depth_rows(season: int) -> list[dict]:
 
     rows: list[dict] = []
     for r in dc.iter_rows(named=True):
-        pos = r.get("pos_abb")
-        if pos not in SKILL_POSITIONS or r.get("pos_rank") is None:
+        pos = r.get("depth_position")
+        rank = r.get("depth_team")
+        if pos not in SKILL_POSITIONS or rank is None:
             continue
+        try:
+            rank_int = int(rank)
+        except (TypeError, ValueError):
+            continue  # legacy rows occasionally carry a non-numeric depth slot
         rows.append(
             {
-                "team": r.get("team"),
+                "team": r.get("club_code"),
                 "position": pos,
-                "rank": int(r["pos_rank"]),
+                "rank": rank_int,
                 "sid": r.get("sleeper_id_str"),
-                "name": r.get("player_name") or r.get("sleeper_id_str") or "?",
+                "name": r.get("full_name") or r.get("sleeper_id_str") or "?",
             }
         )
     return rows

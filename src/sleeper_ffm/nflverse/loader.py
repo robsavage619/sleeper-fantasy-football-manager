@@ -31,6 +31,7 @@ from urllib.request import Request, urlopen
 import nfl_data_py as nfl
 import polars as pl
 
+from sleeper_ffm.cache import ttl_cache
 from sleeper_ffm.config import NFLVERSE_DIR
 from sleeper_ffm.net import retry_call
 
@@ -611,20 +612,108 @@ def load_depth_charts(
         _clear_stale("nflverse_depth_charts")
         frames.append(df)
 
-    # nflverse replaced the weekly depth-chart feed with a point-in-time snapshot
-    # that carries neither season nor week and renames every column consumers
-    # read. Blending it into the weekly schema would null-fill those keys and
-    # quietly corrupt the result, so drop it and say so — the callers here expect
-    # per-week legacy rows.
-    usable = [f for f in frames if "season" in f.columns and "week" in f.columns]
-    if dropped := len(frames) - len(usable):
+    # nflverse replaced the weekly depth-chart feed with a timestamped one. It is
+    # still a time series (hundreds of captures across a season), just keyed on a
+    # capture time rather than season/week, with every column consumers read
+    # renamed. Normalise it onto the legacy schema rather than dropping it.
+    normalised = [_normalize_depth_snapshot(f) for f in frames]
+    usable = [f for f in normalised if not f.is_empty()]
+    if dropped := len(normalised) - len(usable):
         _record_stale(
             "nflverse_depth_charts",
-            f"{dropped} season(s) returned nflverse's snapshot format (no season/week "
-            "columns) and were excluded; weekly depth history is incomplete",
+            f"{dropped} season(s) could not be normalised onto the weekly depth schema "
+            "and were excluded; depth history is incomplete",
         )
-        log.warning("depth_charts: excluded %d frame(s) in the snapshot format", dropped)
+        log.warning("depth_charts: excluded %d unnormalisable frame(s)", dropped)
     return _concat_across_schemas(usable)
+
+
+# New-format depth chart column -> legacy name. pos_rank is the player's order at
+# his position, which is exactly what the legacy depth_team string encoded.
+_DEPTH_SNAPSHOT_RENAMES = {
+    "team": "club_code",
+    "player_name": "full_name",
+    "pos_abb": "depth_position",
+    "pos_rank": "depth_team",
+}
+
+
+def _normalize_depth_snapshot(df: pl.DataFrame) -> pl.DataFrame:
+    """Map nflverse's timestamped depth-chart format onto the legacy weekly schema.
+
+    The new feed drops ``season``/``week`` for a ``dt`` capture timestamp and
+    renames the columns every caller reads. Season and week are recovered by
+    locating each capture in the NFL schedule, so the result sorts and filters
+    exactly like the older per-week rows.
+
+    Args:
+        df: One season's depth-chart frame, either format.
+
+    Returns:
+        The frame in legacy shape. Already-legacy frames pass through untouched;
+        a frame in neither shape comes back empty so the caller can flag it.
+    """
+    if "season" in df.columns and "week" in df.columns:
+        return df
+    if "dt" not in df.columns:
+        return pl.DataFrame()
+
+    out = df.rename({k: v for k, v in _DEPTH_SNAPSHOT_RENAMES.items() if k in df.columns})
+    if "depth_team" in out.columns:
+        out = out.with_columns(pl.col("depth_team").cast(pl.Utf8))
+    if "depth_position" in out.columns and "position" not in out.columns:
+        out = out.with_columns(pl.col("depth_position").alias("position"))
+
+    captured = pl.col("dt").str.slice(0, 10).str.to_date(strict=False)
+    out = out.with_columns(captured.alias("_captured_on")).drop_nulls("_captured_on")
+    if out.is_empty():
+        return pl.DataFrame()
+
+    weeks = _schedule_week_index()
+    if weeks.is_empty():
+        # Without the schedule there is no honest week to assign, and inventing
+        # one would corrupt the ordering every consumer relies on.
+        log.warning("depth_charts: schedule unavailable; cannot date the snapshot feed")
+        return pl.DataFrame()
+
+    # Each capture belongs to the most recent week that had already kicked off.
+    out = (
+        out.sort("_captured_on")
+        .join_asof(weeks.sort("_week_start"), left_on="_captured_on", right_on="_week_start")
+        .drop_nulls(["season", "week"])
+    )
+    if out.is_empty():
+        return pl.DataFrame()
+
+    # The new feed captures several times a week; the legacy schema this maps onto
+    # is one row per player per week. Without collapsing to the last capture in
+    # each week, consumers that take "the latest depth chart" get several
+    # overlapping ones stacked together and read a player as his own backup.
+    key = [c for c in ("season", "week", "club_code", "gsis_id", "full_name") if c in out.columns]
+    if key:
+        out = out.sort("dt").unique(subset=key, keep="last", maintain_order=True)
+    return out.drop(["_captured_on", "_week_start"])
+
+
+@ttl_cache(key=lambda: "depth_week_index")
+def _schedule_week_index() -> pl.DataFrame:
+    """First kickoff date of every NFL week, for dating the depth-chart feed."""
+    try:
+        schedules = load_schedules()
+    except Exception as exc:
+        log.warning("depth_charts: schedule load failed: %s", exc)
+        return pl.DataFrame()
+    needed = {"season", "week", "gameday"}
+    if schedules.is_empty() or not needed.issubset(schedules.columns):
+        return pl.DataFrame()
+    return (
+        schedules.select(["season", "week", "gameday"])
+        .with_columns(pl.col("gameday").str.to_date(strict=False).alias("_week_start"))
+        .drop_nulls("_week_start")
+        .group_by(["season", "week"])
+        .agg(pl.col("_week_start").min())
+        .sort("_week_start")
+    )
 
 
 # ---------------------------------------------------------------------------

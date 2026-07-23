@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 import polars as pl
 import pytest
 
@@ -134,20 +136,81 @@ def test_concat_across_schemas_handles_empty_input() -> None:
     assert loader._concat_across_schemas([]).is_empty()
 
 
-def test_depth_charts_exclude_the_snapshot_format(tmp_path, monkeypatch) -> None:
-    # nflverse replaced the weekly feed with a point-in-time snapshot carrying no
-    # season/week. Blending it in would null-fill the keys consumers sort on, so
-    # it must be dropped and flagged rather than silently merged.
+def test_depth_charts_merge_both_formats(tmp_path, monkeypatch) -> None:
+    # The two eras have to come back as one frame: the newer timestamped feed is
+    # normalised onto the weekly schema rather than dropped, so a season served in
+    # the new format is not silently missing from depth history.
     monkeypatch.setattr(loader, "NFLVERSE_DIR", tmp_path)
+    monkeypatch.setattr(
+        loader,
+        "_schedule_week_index",
+        lambda: pl.DataFrame({"season": [2025], "week": [1], "_week_start": [date(2025, 9, 4)]}),
+    )
     (tmp_path / "depth_charts").mkdir()
     pl.DataFrame({"season": [2024], "week": [1.0], "full_name": ["A Player"]}).write_parquet(
         tmp_path / "depth_charts" / "2024.parquet"
     )
-    pl.DataFrame({"dt": ["2026-03-14T07:32:09Z"], "player_name": ["A Player"]}).write_parquet(
-        tmp_path / "depth_charts" / "2025.parquet"
-    )
+    pl.DataFrame(
+        {"dt": ["2025-09-10T07:32:09Z"], "player_name": ["B Player"], "team": ["ARI"]}
+    ).write_parquet(tmp_path / "depth_charts" / "2025.parquet")
     loader.clear_stale_fallbacks()
 
     df = loader.load_depth_charts(seasons=[2024, 2025])
-    assert df["season"].to_list() == [2024]
-    assert "nflverse_depth_charts" in loader.stale_fallbacks()
+    assert sorted(df["season"].to_list()) == [2024, 2025]
+    assert "nflverse_depth_charts" not in loader.stale_fallbacks()
+
+
+# ---- depth-chart snapshot normalisation ------------------------------------
+
+
+def _snapshot_frame() -> pl.DataFrame:
+    """nflverse's newer timestamped depth-chart shape."""
+    return pl.DataFrame(
+        {
+            # One capture inside week 1, one after week 2 kicks off.
+            "dt": ["2025-09-08T07:00:00Z", "2025-09-12T07:00:00Z"],
+            "team": ["ARI", "ARI"],
+            "player_name": ["Trey McBride", "Trey McBride"],
+            "pos_abb": ["TE", "TE"],
+            "pos_rank": [1, 1],
+            "gsis_id": ["00-0037741", "00-0037741"],
+        }
+    )
+
+
+def _week_index() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "season": [2025, 2025],
+            "week": [1, 2],
+            "_week_start": [date(2025, 9, 4), date(2025, 9, 11)],
+        }
+    )
+
+
+def test_snapshot_format_is_mapped_onto_the_weekly_schema(monkeypatch) -> None:
+    monkeypatch.setattr(loader, "_schedule_week_index", lambda: _week_index())
+    out = loader._normalize_depth_snapshot(_snapshot_frame())
+
+    assert {"season", "week", "club_code", "full_name", "depth_position"} <= set(out.columns)
+    # Each capture lands in the most recent week that had already kicked off.
+    assert sorted(out["week"].to_list()) == [1, 2]
+    assert out["club_code"].unique().to_list() == ["ARI"]
+    # depth_team carried the position rank as a string in the legacy feed.
+    assert out["depth_team"].dtype == pl.Utf8
+
+
+def test_legacy_frames_pass_through_untouched() -> None:
+    legacy = pl.DataFrame({"season": [2024], "week": [1.0], "full_name": ["A Player"]})
+    assert loader._normalize_depth_snapshot(legacy).equals(legacy)
+
+
+def test_unrecognised_shape_yields_empty_rather_than_garbage() -> None:
+    assert loader._normalize_depth_snapshot(pl.DataFrame({"nonsense": [1]})).is_empty()
+
+
+def test_snapshot_without_a_schedule_is_dropped_not_guessed(monkeypatch) -> None:
+    # Inventing a week number would corrupt the ordering every consumer sorts on,
+    # so an unavailable schedule must drop the frame instead.
+    monkeypatch.setattr(loader, "_schedule_week_index", lambda: pl.DataFrame())
+    assert loader._normalize_depth_snapshot(_snapshot_frame()).is_empty()
