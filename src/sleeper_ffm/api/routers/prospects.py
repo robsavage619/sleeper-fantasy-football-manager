@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException
 
+from sleeper_ffm.config import CURRENT_LEAGUE_YEAR
+
 if TYPE_CHECKING:
     from sleeper_ffm.cfbd.loader import ProspectProfile
 
@@ -56,7 +58,7 @@ def _rerank_by_market(profiles: list[ProspectProfile]) -> list[ProspectProfile]:
 
 
 @router.get("/prospects")
-def draft_prospects(year: int = 2025, top: int = 50) -> list[dict]:
+def draft_prospects(year: int = CURRENT_LEAGUE_YEAR, top: int = 50) -> list[dict]:
     """Return top dynasty prospects, ordered by market-anchored (1QB) dynasty value.
 
     Args:
@@ -79,7 +81,7 @@ def draft_prospects(year: int = 2025, top: int = 50) -> list[dict]:
 
 @router.get("/prospects/scouting-prompts")
 def prospect_scouting_prompts_batch(
-    year: int = 2026,
+    year: int = CURRENT_LEAGUE_YEAR,
     top: int = 50,
     offset: int = 0,
     limit: int = 8,
@@ -146,7 +148,7 @@ def prospect_scouting(
     name: str,
     position: str,
     college: str = "",
-    year: int = 2025,
+    year: int = CURRENT_LEAGUE_YEAR,
     age: float | None = None,
     player_id: str | None = None,
     recruiting_rank: int | None = None,
@@ -194,7 +196,7 @@ def prospect_scouting_prompt(
     name: str,
     position: str,
     college: str = "",
-    year: int = 2025,
+    year: int = CURRENT_LEAGUE_YEAR,
     age: float | None = None,
     player_id: str | None = None,
     recruiting_rank: int | None = None,

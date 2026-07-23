@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 import httpx
 
+from sleeper_ffm.config import CURRENT_LEAGUE_YEAR
 from sleeper_ffm.names import normalize_name
 
 log = logging.getLogger(__name__)
@@ -74,7 +75,9 @@ def _fallback_sleeper_prospects(year: int, top: int) -> list[ProspectProfile]:
     """Build a prospect board from Sleeper rookie dynasty rankings."""
     from sleeper_ffm.sleeper.client import SleeperClient
 
-    max_years_exp = 0 if year >= 2026 else 1
+    # The incoming class still has years_exp 0; an earlier class has already
+    # played a season, so allow one more year of experience for those.
+    max_years_exp = 0 if year >= CURRENT_LEAGUE_YEAR else 1
     with SleeperClient() as client:
         players_dump = client.players()
 
