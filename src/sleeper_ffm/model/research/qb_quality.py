@@ -265,8 +265,14 @@ def team_qb_context(season: int) -> dict[str, float]:
     return out
 
 
-# S3 headline: points per game a receiver gains per standard deviation of QB accuracy.
-QB_QUALITY_PTS_PER_SD = 0.93
+# S3 headline: points per game a pass catcher gains per standard deviation of QB
+# accuracy, by position. This study owns these figures — changing them means
+# re-running S3, and consumers (model.player_intel) import rather than restate
+# them so the two cannot drift apart.
+QB_QUALITY_PTS_PER_SD_BY_POSITION: dict[str, float] = {"WR": 0.93, "TE": 0.48}
+
+# team_qb_context is expressed receiver-facing, so the WR figure is the headline.
+QB_QUALITY_PTS_PER_SD = QB_QUALITY_PTS_PER_SD_BY_POSITION["WR"]
 
 
 def estimate_effect(panel: pl.DataFrame, outcome: str = "d_fp_per_target") -> list[QbEffect]:

@@ -177,3 +177,48 @@ def test_rookie_hit_rates_maps_capital_to_tiers(monkeypatch) -> None:
     # Undrafted collapses to tier C, and position_rate only applies inside tier A.
     assert rates["4"]["tier"] == "C"
     assert rates["4"]["position_rate"] is None
+
+
+# ---- frozen study effect sizes -------------------------------------------
+#
+# These tables are snapshots of studies S2-S6. They are literals by design, but
+# nothing recomputes them, so the guard here is that they stay internally
+# coherent and stay wired to the study module that owns them.
+
+
+def test_qb_quality_effect_is_shared_with_the_study_that_produced_it() -> None:
+    from sleeper_ffm.model.research import qb_quality
+
+    assert pi.QB_QUALITY_PTS_PER_SD is qb_quality.QB_QUALITY_PTS_PER_SD_BY_POSITION
+    # The study's WR headline and the per-position table cannot disagree.
+    assert pi.QB_QUALITY_PTS_PER_SD["WR"] == qb_quality.QB_QUALITY_PTS_PER_SD
+
+
+def test_rookie_tiers_are_ordered_and_bracketed_by_their_intervals() -> None:
+    rates = [pi.ROOKIE_TIERS[t][0] for t in ("A", "B", "C")]
+    assert rates == sorted(rates, reverse=True), "draft capital must not invert"
+    for tier, (rate, lo, hi) in pi.ROOKIE_TIERS.items():
+        assert lo <= rate <= hi, f"tier {tier} rate outside its Wilson interval"
+        assert 0.0 <= lo <= hi <= 1.0
+
+
+def test_tier_a_position_rates_are_probabilities() -> None:
+    assert set(pi.TIER_A_BY_POSITION) == {"RB", "WR", "TE", "QB"}
+    assert all(0.0 <= v <= 1.0 for v in pi.TIER_A_BY_POSITION.values())
+
+
+def test_attrition_table_is_complete_and_probabilistic() -> None:
+    expected_bands = {"22-24", "25-27", "28+"}
+    seen_bands: dict[tuple[str, str], set[str]] = {}
+    for (position, archetype, band), rate in pi.ATTRITION.items():
+        assert 0.0 <= rate <= 1.0, f"{position}/{archetype}/{band} is not a probability"
+        seen_bands.setdefault((position, archetype), set()).add(band)
+    for key, bands in seen_bands.items():
+        assert bands == expected_bands, f"{key} is missing an age band"
+
+
+def test_rb_situation_change_gaps_are_penalties() -> None:
+    # S2 found a carryover penalty for backs who move; a positive value here
+    # would silently invert the situation-change flag.
+    assert pi.RB_TEAM_CHANGE_GAP < 0
+    assert pi.RB_COACH_CHANGE_GAP < 0

@@ -33,6 +33,10 @@ from dataclasses import dataclass, field
 
 import polars as pl
 
+from sleeper_ffm.model.research.qb_quality import (
+    QB_QUALITY_PTS_PER_SD_BY_POSITION as QB_QUALITY_PTS_PER_SD,
+)
+
 log = logging.getLogger(__name__)
 
 # --- Effect sizes from the studies. Changing these means re-running the study. ---
@@ -75,8 +79,9 @@ ROOKIE_TIERS: dict[str, tuple[float, float, float]] = {
 # S6: hit rate inside tier A by position — a property of this lineup, not of football.
 TIER_A_BY_POSITION: dict[str, float] = {"RB": 0.882, "WR": 0.568, "TE": 0.481, "QB": 0.389}
 
-# S3: receiver points per game gained per standard deviation of QB accuracy.
-QB_QUALITY_PTS_PER_SD: dict[str, float] = {"WR": 0.93, "TE": 0.48}
+# S3's receiver points per standard deviation of QB accuracy is imported at the
+# top of this module from the study that produced it, rather than restated here
+# as the other tables are — two copies of 0.93 were free to drift apart.
 
 
 @dataclass
