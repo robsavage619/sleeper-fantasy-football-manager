@@ -108,6 +108,27 @@ weaker still (r = 0.05). **Incoming running backs are genuinely hard to forecast
 from either direction** — which is itself the actionable result, since the market
 prices them as though their track record carries.
 
+#### The mixture explanation, tested and rejected
+
+The table above covers players who *arrived*. A reasonable objection, raised by
+the Q3 literature review, is that this measures the wrong group: opportunity
+vacated by a departing star may go to the incumbent promoted behind him rather
+than to an outside signing, in which case the near-null would be an artifact of
+pooling two different mechanisms.
+
+It is not. For incumbents the right question is whether vacated opportunity
+predicts their usage *gain*, and it does not:
+
+| Position | incumbents (n) | r, vacated → usage gain | arrivals, r → usage level |
+|---|---|---|---|
+| WR | 799 | +0.062 | +0.181 |
+| RB | 488 | +0.031 | +0.047 |
+| TE | 425 | +0.121 | +0.058 |
+
+Incumbents are *weaker* than arrivals, not stronger. The null holds on both sides
+of the split, which makes it considerably more robust than the original single
+measurement — a named alternative explanation was tested and did not survive.
+
 ## What should change
 
 1. **Discount a running back's usage history when he changes team or coach.**
