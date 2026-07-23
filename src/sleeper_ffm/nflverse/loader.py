@@ -283,20 +283,12 @@ def load_snaps(
 
     Returns:
         Snap count DataFrame with ``player_id``, ``season``, ``week``, ``offense_snaps``, etc.
+        Season-aware, so the frame covers *at least* the requested seasons — callers
+        that need exactly one season must filter on ``season`` themselves.
     """
     seasons = seasons or list(range(_FIRST_SEASON, _CURRENT_SEASON + 1))
     dest = NFLVERSE_DIR / "snaps.parquet"
-    if dest.exists() and not force:
-        log.info("snaps: loading from cache")
-        return pl.read_parquet(dest)
-
-    log.info("snaps: fetching seasons %s...", seasons)
-    df_raw = nfl.import_snap_counts(seasons)
-    df = cast(pl.DataFrame, pl.from_pandas(df_raw))
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    df.write_parquet(dest)
-    log.info("snaps: %d rows written", len(df))
-    return df
+    return _load_season_aware_single_file(dest, seasons, force, nfl.import_snap_counts)
 
 
 def load_injuries(
@@ -607,6 +599,12 @@ def load_depth_charts(
 # ---------------------------------------------------------------------------
 
 
+# nfl_data_py's import_seasonal_data reads the legacy player_stats_{year} release,
+# which nflverse stopped publishing after 2024 (2025 is a hard 404). Requesting it
+# raises rather than returning empty, so callers must clamp like load_ngs does.
+_SEASONAL_LAST_SEASON = 2024
+
+
 def load_seasonal(
     seasons: list[int] | None = None,
     force: bool = False,
@@ -614,25 +612,23 @@ def load_seasonal(
     """Load per-player seasonal totals.
 
     Args:
-        seasons: Seasons to pull (default: ``_FIRST_SEASON`` - ``_CURRENT_SEASON``).
+        seasons: Seasons to pull (default: ``_FIRST_SEASON`` - ``_SEASONAL_LAST_SEASON``).
         force: Re-download all, ignoring cache.
 
     Returns:
-        Seasonal stats DataFrame.
+        Seasonal stats DataFrame covering at least the requested seasons that fall
+        within nflverse's legacy-format coverage. Seasons past
+        ``_SEASONAL_LAST_SEASON`` are skipped; use ``load_weekly`` for those.
     """
-    seasons = seasons or list(range(_FIRST_SEASON, _CURRENT_SEASON + 1))
-    dest = NFLVERSE_DIR / "seasonal.parquet"
-    if dest.exists() and not force:
-        log.info("seasonal: loading from cache")
-        return pl.read_parquet(dest)
+    seasons = seasons or list(range(_FIRST_SEASON, _SEASONAL_LAST_SEASON + 1))
+    wanted = [s for s in seasons if s <= _SEASONAL_LAST_SEASON]
+    if skipped := sorted(set(seasons) - set(wanted)):
+        log.info("seasonal: seasons %s postdate legacy player_stats coverage; skipped", skipped)
+    if not wanted:
+        return pl.DataFrame()
 
-    log.info("seasonal: fetching seasons %s...", seasons)
-    df_raw = nfl.import_seasonal_data(seasons)
-    df = cast(pl.DataFrame, pl.from_pandas(df_raw))
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    df.write_parquet(dest)
-    log.info("seasonal: %d rows written", len(df))
-    return df
+    dest = NFLVERSE_DIR / "seasonal.parquet"
+    return _load_season_aware_single_file(dest, wanted, force, nfl.import_seasonal_data)
 
 
 # ---------------------------------------------------------------------------
