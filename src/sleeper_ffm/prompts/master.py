@@ -84,6 +84,7 @@ class BriefingContext:
     title_equity: str = ""
     contention: str = ""
     regression: str = ""
+    player_intel: str = ""
     handcuffs: str = ""
     wire_watch: str = ""
     early_claims: str = ""
@@ -180,6 +181,17 @@ Players whose touchdown output ran ahead of or behind their yardage volume last 
 Over-expected scorers are sell-high candidates (TD rate tends to correct down); under-
 expected are buy-lows on real, unlucky usage. A lean to time the market, not a verdict.
 {context.regression}
+
+## Player Intel (situation research — when a track record stops applying)
+Findings from this engine's own studies on why players produce, applied to the roster.
+Each flag carries the measured effect behind it, so weigh them by the evidence rather
+than by how confident the wording sounds. The three that should actually move a call:
+a running back who changed team or play-caller has a usage history that no longer
+predicts him — widen his range rather than cutting his projection; a pass catcher with
+a new quarterback loses points *per target* while his target count holds, so treat it
+as an efficiency event; and attrition risk is about whether a player is startable at
+all next season, which is a separate question from how much he declines.
+{context.player_intel}
 
 ## Trade Candidates (raw positional angles — directional only, not value-balanced)
 {context.trade_candidates}
@@ -302,6 +314,7 @@ def gather_briefing_context(my_roster_id: int = MY_ROSTER_ID) -> BriefingContext
         title_equity=_title_equity_section(my_roster_id),
         contention=_contention_section(my_roster_id),
         regression=_regression_section(),
+        player_intel=_player_intel_section(my_roster_id),
         handcuffs=_handcuff_section(my_roster_id),
         wire_watch=_wire_watch_section(my_roster_id),
         early_claims=_early_claim_section(my_roster_id),
@@ -500,6 +513,61 @@ def _handcuff_section(my_roster_id: int) -> str:
         f"    {s.backup_name} ({s.position} {s.team}) behind {s.starter_name} [{s.starter_owner}]"
         for s in hc.leverage_stashes[:6]
     ] or ["    (none available)"]
+    return "\n".join(lines)
+
+
+def _player_intel_section(my_roster_id: int, top: int = 12) -> str:
+    """Research-backed situation flags for rostered players (studies S2-S6)."""
+    try:
+        from sleeper_ffm.model.context_table import load_context_table
+        from sleeper_ffm.model.player_intel import build_roster_intel
+        from sleeper_ffm.model.research.archetypes import build as build_archetypes
+        from sleeper_ffm.sleeper.client import SleeperClient
+
+        context = load_context_table()
+        if context.is_empty():
+            return "  (no context table — run `sffm ingest` to build it)"
+
+        with SleeperClient() as client:
+            rosters = client.rosters()
+        mine = next((r for r in rosters if r.roster_id == my_roster_id), None)
+        held = {str(p) for p in (mine.players if mine else [])}
+        if not held:
+            return "  (roster empty or unavailable — no players to report intel on)"
+
+        try:
+            latest = context["season"].max()
+            if not isinstance(latest, (int, float)):
+                raise ValueError(f"context table has no usable season: {latest!r}")
+            archetypes = build_archetypes([int(latest)])
+        except Exception as exc:
+            log.warning("master: archetypes unavailable, attrition flags omitted: %s", exc)
+            archetypes = None
+
+        intel = build_roster_intel(context, archetypes=archetypes, sleeper_ids=held)
+    except Exception as exc:
+        log.warning("master: player intel unavailable: %s", exc)
+        return "(degraded — player intel unavailable)"
+
+    flagged = [i for i in intel if i.flags]
+    if not flagged:
+        return "  (no situation flags — no rostered player changed team, coach or quarterback)"
+
+    lines: list[str] = []
+    for record in flagged[:top]:
+        header = f"  {record.name} ({record.position}"
+        if record.team:
+            header += f", {record.team}"
+        if record.age is not None:
+            header += f", age {record.age:.0f}"
+        if record.archetype:
+            header += f", {record.archetype.replace('_', ' ')}"
+        lines.append(header + ")")
+        for flag in record.flags:
+            lines.append(f"    [{flag.severity}] {flag.headline}")
+            lines.append(f"      evidence ({flag.study}): {flag.evidence}")
+    if len(flagged) > top:
+        lines.append(f"  ... and {len(flagged) - top} more flagged players")
     return "\n".join(lines)
 
 
