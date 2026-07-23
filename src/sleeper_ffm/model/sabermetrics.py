@@ -615,6 +615,37 @@ def _usage_quality(season_df: pl.DataFrame, position: str, snaps: list[float]) -
     }
 
 
+def _no_nfl_history_note(player_id: str, position: str) -> str:
+    """Explain an empty nflverse result, naming a rookie as a rookie.
+
+    Args:
+        player_id: Sleeper player id.
+        position: Player position, for the college line.
+
+    Returns:
+        A warning describing why there is nothing to analyse.
+    """
+    try:
+        from sleeper_ffm.cfbd.loader import college_context
+
+        college = college_context().get(player_id)
+    except Exception as exc:
+        log.warning("college context lookup failed for %s: %s", player_id, exc)
+        college = None
+
+    if college is None:
+        return "No weekly nflverse rows matched this player."
+
+    usage = college.get("usage_rate") or 0.0
+    school = college.get("college") or "college"
+    return (
+        f"Incoming rookie — no NFL snaps yet, so the NFL-derived metrics below are "
+        f"empty by definition. College: {position or 'skill'} at {school}, "
+        f"{usage:.1%} of team offensive plays. See the prospect board for the full "
+        "scouting picture."
+    )
+
+
 def build_player_sabermetrics(
     player_id: str, seasons: list[int] | None = None
 ) -> PlayerSabermetrics:
@@ -646,7 +677,11 @@ def build_player_sabermetrics(
     player_weekly = _filter_player_weekly(weekly, gsis_ids, name)
 
     if player_weekly.is_empty():
-        warnings.append("No weekly nflverse rows matched this player.")
+        # An incoming rookie has no NFL snaps to analyse, which is a fact about
+        # where he is in his career, not a failure to find his data. Saying
+        # "no rows matched" for the headline name of a rookie draft reads as a
+        # broken pipeline.
+        warnings.append(_no_nfl_history_note(player_id, position))
         return PlayerSabermetrics(
             player_id=player_id,
             name=name,

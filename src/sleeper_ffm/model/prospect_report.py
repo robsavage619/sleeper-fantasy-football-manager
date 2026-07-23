@@ -194,6 +194,31 @@ def _derive_signals(
                 }
             )
 
+    # 6b. Offensive role — the share the counting stats above cannot express.
+    # Forty catches means one thing as the focus of a good offence and another as
+    # the only option on a bad one; this is the number that tells them apart.
+    usage = (college or {}).get("usage_rate") or 0.0
+    if usage > 0:
+        tone = "positive" if usage >= 0.25 else "neutral" if usage >= 0.15 else "caution"
+        detail = f"{usage:.1%} of team offensive plays"
+        if usage < 0.15:
+            detail += " — a complementary role, not a focal point"
+        signals.append({"label": "Offensive role", "detail": detail, "tone": tone})
+
+    # 6c. Recruiting pedigree — carried since the loader scores it, but it never
+    # reached the fast-read summary that most decisions are made from.
+    rank = (college or {}).get("recruiting_rank")
+    if rank is not None:
+        stars = (college or {}).get("stars")
+        star_note = f", {stars}-star" if stars else ""
+        if rank <= 50:
+            tone, label = "positive", "Blue-chip recruit"
+        elif rank <= 250:
+            tone, label = "neutral", "Recruited pedigree"
+        else:
+            tone, label = "caution", "Low-rated recruit"
+        signals.append({"label": label, "detail": f"national #{rank}{star_note}", "tone": tone})
+
     # 7. Youth — a young producer is the dynasty premium.
     if age is not None and age <= 21.0:
         signals.append({"label": "Young for class", "detail": f"age {age:.1f}", "tone": "positive"})
@@ -257,10 +282,15 @@ def _build_college(
     year: int,
     recruiting_rank: int | None,
     stars: int | None,
+    usage_rate: float = 0.0,
+    yards_per_reception: float = 0.0,
 ) -> dict:
     """Real per-season college production from keyless ESPN box scores.
 
     No API key required — sportsdataverse publishes ESPN box parquet on GitHub.
+    CFBD's usage share rides along: the box scores are counting stats, so they
+    cannot say whether forty catches came from being the focus of a good offence
+    or the only option on a bad one. Usage is the share that answers that.
     """
     try:
         from sleeper_ffm.college.cfb_box import college_history
@@ -270,13 +300,31 @@ def _build_college(
         log.warning("prospect_report: college history failed: %s", exc)
         seasons = []
 
+    # has_data gates the whole section for both consumers, so deriving it from
+    # box scores alone silently threw away recruiting pedigree and usage for any
+    # prospect ESPN failed to name-match.
+    has_data = bool(seasons) or recruiting_rank is not None or usage_rate > 0
+
     return {
         "source": "ESPN box (sportsdataverse)" if seasons else None,
-        "has_data": bool(seasons),
+        "has_data": has_data,
         "seasons": seasons,
         "recruiting_rank": recruiting_rank,
         "stars": stars,
+        "usage_rate": usage_rate,
+        "yards_per_reception": yards_per_reception,
     }
+
+
+def _college_lookup(player_id: str, year: int) -> dict:
+    """College context for one prospect, empty when CFBD is unavailable."""
+    try:
+        from sleeper_ffm.cfbd.loader import college_context
+
+        return college_context(year).get(player_id) or {}
+    except Exception as exc:
+        log.warning("prospect_report: college context lookup failed: %s", exc)
+        return {}
 
 
 def build_scouting_report(
@@ -290,6 +338,8 @@ def build_scouting_report(
     recruiting_rank: int | None = None,
     stars: int | None = None,
     dynasty_prospect_score: float = 0.0,
+    usage_rate: float = 0.0,
+    yards_per_reception: float = 0.0,
 ) -> dict[str, Any]:
     """Assemble the full multi-source scouting report for one prospect."""
     market = _build_market(player_id)
@@ -301,11 +351,25 @@ def build_scouting_report(
     except Exception as exc:
         log.warning("prospect_report: combine lookup failed: %s", exc)
 
+    # Callers holding a ProspectProfile pass the college figures straight in; the
+    # per-prospect endpoints only get query params, so resolve from the player id
+    # rather than making every caller thread five more fields through.
+    if player_id and not (usage_rate or recruiting_rank):
+        resolved = _college_lookup(player_id, year)
+        usage_rate = usage_rate or resolved.get("usage_rate", 0.0)
+        yards_per_reception = yards_per_reception or resolved.get("yards_per_reception", 0.0)
+        if recruiting_rank is None:
+            recruiting_rank = resolved.get("recruiting_rank")
+        if stars is None:
+            stars = resolved.get("stars")
+
     college_block = _build_college(
         name=name,
         year=year,
         recruiting_rank=recruiting_rank,
         stars=stars,
+        usage_rate=usage_rate,
+        yards_per_reception=yards_per_reception,
     )
 
     player_timeline = market.get("player_timeline") if market else None
@@ -402,6 +466,8 @@ def build_scouting_prompt(
     recruiting_rank: int | None = None,
     stars: int | None = None,
     dynasty_prospect_score: float = 0.0,
+    usage_rate: float = 0.0,
+    yards_per_reception: float = 0.0,
 ) -> str:
     """Assemble the report, then format it into a Claude Code scouting prompt."""
     from sleeper_ffm.prompts.prospect_scouting import build_prospect_scouting_prompt
@@ -416,6 +482,8 @@ def build_scouting_prompt(
         recruiting_rank=recruiting_rank,
         stars=stars,
         dynasty_prospect_score=dynasty_prospect_score,
+        usage_rate=usage_rate,
+        yards_per_reception=yards_per_reception,
     )
     return build_prospect_scouting_prompt(
         name=name,

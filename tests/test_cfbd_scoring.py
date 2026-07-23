@@ -143,3 +143,63 @@ def test_backs_do_not_crowd_out_other_positions(monkeypatch) -> None:
     got = loader.load_prospects(year=2026, top=12)
     positions = {p.position for p in got}
     assert {"RB", "WR", "TE"} <= positions, f"a position was crowded out: {positions}"
+
+
+# ---- college context helper ----
+
+
+def test_college_context_keys_on_sleeper_id_and_drops_unmatched(monkeypatch) -> None:
+    from sleeper_ffm.cfbd import loader
+
+    matched = loader.ProspectProfile(
+        player_id="13287",
+        name="Jeremiyah Love",
+        position="RB",
+        college="Notre Dame",
+        year=2026,
+        age=21.0,
+        usage_rate=0.292,
+        yards_per_reception=0.0,
+        breakout_age=None,
+        recruiting_rank=79,
+        stars=4,
+        dynasty_prospect_score=100.0,
+        rationale="",
+    )
+    unmatched = loader.ProspectProfile(
+        player_id=None,
+        name="Deep Sleeper",
+        position="WR",
+        college="Nowhere State",
+        year=2026,
+        age=22.0,
+        usage_rate=0.10,
+        yards_per_reception=11.0,
+        breakout_age=None,
+        recruiting_rank=None,
+        stars=None,
+        dynasty_prospect_score=10.0,
+        rationale="",
+    )
+    monkeypatch.setattr(loader, "load_prospects", lambda **_k: [matched, unmatched])
+
+    ctx = loader.college_context(2026)
+    assert set(ctx) == {"13287"}
+    entry = ctx["13287"]
+    # The name is required: consumers list prospects, not anonymous schools.
+    assert entry["name"] == "Jeremiyah Love"
+    assert entry["position"] == "RB"
+    assert entry["usage_rate"] == 0.292
+    assert entry["recruiting_rank"] == 79
+
+
+def test_college_context_degrades_to_empty(monkeypatch) -> None:
+    from sleeper_ffm.cfbd import loader
+
+    def _boom(**_k):
+        raise RuntimeError("CFBD down")
+
+    monkeypatch.setattr(loader, "load_prospects", _boom)
+    # A missing college feed must read as "no college data", never as an error
+    # that takes down the draft board mid-draft.
+    assert loader.college_context(2026) == {}

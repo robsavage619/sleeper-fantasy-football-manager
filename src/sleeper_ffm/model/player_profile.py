@@ -39,6 +39,8 @@ class PlayerProfile:
     depth: dict | None
     data_quality: str
     warnings: list[str] = field(default_factory=list)
+    # Populated only for incoming rookies, who have no NFL history to show.
+    college: dict | None = None
 
 
 def build_player_profile(player_id: str, seasons: list[int] | None = None) -> PlayerProfile:
@@ -58,7 +60,8 @@ def build_player_profile(player_id: str, seasons: list[int] | None = None) -> Pl
     scoring = load_scoring()
     weekly = score_weekly(seasons=seasons, scoring=scoring)
     player_weekly = _filter_player_weekly(weekly, gsis_ids, identity)
-    if player_weekly.is_empty():
+    college = _college_snapshot(player_id) if player_weekly.is_empty() else None
+    if player_weekly.is_empty() and college is None:
         warnings.append("No nflverse weekly stat history found for this player.")
 
     weekly_rows = _weekly_rows(player_weekly)
@@ -82,7 +85,32 @@ def build_player_profile(player_id: str, seasons: list[int] | None = None) -> Pl
         depth=depth,
         data_quality=data_quality,
         warnings=warnings,
+        college=college,
     )
+
+
+def _college_snapshot(player_id: str) -> dict | None:
+    """College production for a player with no NFL history yet.
+
+    An incoming rookie has never taken an NFL snap, so an empty nflverse result
+    is the correct answer rather than a data fault — but reporting it as one
+    leaves the drawer showing zeroes for the very players a rookie draft is
+    about. Their college season is the record that exists.
+
+    Args:
+        player_id: Sleeper player id.
+
+    Returns:
+        College context, or None when this player is not in the draft class
+        (i.e. a genuine gap rather than a rookie).
+    """
+    try:
+        from sleeper_ffm.cfbd.loader import college_context
+
+        return college_context().get(player_id)
+    except Exception as exc:
+        log.warning("college context lookup failed for %s: %s", player_id, exc)
+        return None
 
 
 def _profile_seasons() -> list[int]:

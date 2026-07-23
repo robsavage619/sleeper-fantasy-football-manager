@@ -129,6 +129,8 @@ def prospect_scouting_prompts_batch(
                 recruiting_rank=p.recruiting_rank,
                 stars=p.stars,
                 dynasty_prospect_score=p.dynasty_prospect_score,
+                usage_rate=p.usage_rate,
+                yards_per_reception=p.yards_per_reception,
             )
         except Exception as exc:  # one bad prospect must not sink the page
             log.warning("scouting prompt failed for %s: %s", p.name, exc)

@@ -1012,6 +1012,17 @@ def _draft_context() -> str:
             "flexes and one quarterback. Weigh a value ranking against these base rates — a "
             "tier-C prospect ranked highly on projection is still a 3% shot."
         )
+    # College context for the incoming class. Without it the reasoning is asked to
+    # rank rookies on a value number alone, blind to whether a prospect led his
+    # offence or was a complementary piece.
+    try:
+        from sleeper_ffm.cfbd.loader import college_context
+
+        college_by_id = college_context()
+    except Exception as exc:
+        log.warning("master: college context unavailable (%s)", exc)
+        college_by_id = {}
+
     lines.append("")
     for i, p in enumerate(pool[:24], start=1):
         tag = "R " if p.is_taxi else "FA"
@@ -1031,9 +1042,21 @@ def _draft_context() -> str:
                 pos_rate = info.get("position_rate")
                 if isinstance(pos_rate, float):
                     prior += f" ({p.position} in this tier: {pos_rate:.0%})"
+        college = college_by_id.get(p.player_id) or {}
+        college_note = ""
+        if college:
+            bits = []
+            if college.get("college"):
+                bits.append(str(college["college"]))
+            if college.get("usage_rate"):
+                bits.append(f"{college['usage_rate']:.0%} of team plays")
+            if college.get("recruiting_rank") is not None:
+                bits.append(f"#{college['recruiting_rank']} recruit")
+            if bits:
+                college_note = " — " + ", ".join(bits)
         lines.append(
             f"  {i:>2}. [{tag}] {p.position:2} {p.name} ({p.team or 'FA'}) — val "
-            f"{p.current_fpar:.0f}{prior}{marker}"
+            f"{p.current_fpar:.0f}{prior}{college_note}{marker}"
         )
     if pick_no is not None:
         lines.append(
@@ -1044,10 +1067,57 @@ def _draft_context() -> str:
 
 
 def _prospect_context() -> str:
-    """Short prospect-watch pointer (deep dives run per-prospect via /prospects)."""
-    return (
+    """College standouts for the incoming class, plus the prospect-watch brief.
+
+    This used to be instruction text alone, which asked for prospect verdicts
+    while supplying nothing to form them from. The names below are the ones whose
+    college role stands out, which is a different question from the value ranking
+    in the draft pool — the point is the disagreements between the two.
+    """
+    brief = (
         "Flag any name worth a full scouting dive in `prospect_notes` with a one-line verdict — "
         "draw from the [R] rookies in the draft pool above and from young stashes already on my "
         "roster (taxi squad, buried-but-talented bench). Deep per-player scouting runs via the "
         "prospect surface; here just surface who deserves that dive and why."
     )
+
+    try:
+        from sleeper_ffm.cfbd.loader import college_context
+
+        college = college_context()
+    except Exception as exc:
+        log.warning("master: prospect college context unavailable (%s)", exc)
+        return brief
+
+    # Usage is not comparable across positions — a quarterback touches roughly
+    # 60% of his team's plays by definition and a receiver 12%, so one combined
+    # ranking is all quarterbacks and says nothing. Rank inside each position.
+    by_position: dict[str, list[dict]] = {}
+    for c in college.values():
+        if c.get("usage_rate"):
+            by_position.setdefault(str(c.get("position") or "??"), []).append(c)
+    if not by_position:
+        return brief
+
+    lines = [
+        "Biggest college offensive role by position (share of team plays). Usage is only "
+        "comparable within a position. This is a different question from the value ranking "
+        "above — where the two disagree is the interesting part:",
+    ]
+    for position in ("RB", "WR", "TE", "QB"):
+        group = sorted(by_position.get(position, []), key=lambda c: c["usage_rate"], reverse=True)[
+            :4
+        ]
+        if not group:
+            continue
+        lines.append(f"  {position}:")
+        for c in group:
+            rank = c.get("recruiting_rank")
+            pedigree = f", #{rank} recruit" if rank is not None else ", unranked recruit"
+            lines.append(
+                f"    {c.get('name', 'unknown')} ({c.get('college') or 'unknown'}) — "
+                f"{c['usage_rate']:.0%}{pedigree}"
+            )
+    lines.append("")
+    lines.append(brief)
+    return "\n".join(lines)

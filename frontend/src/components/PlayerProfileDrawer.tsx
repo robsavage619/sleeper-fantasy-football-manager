@@ -289,6 +289,47 @@ function Metric({ label, value, sub, info }: { label: string; value: string; sub
   )
 }
 
+function CollegeSection({ college }: { college: NonNullable<PlayerProfile['college']> }) {
+  // Shown for incoming rookies only. The NFL-derived sections below are empty
+  // for them by definition, so this is the record that actually exists.
+  return (
+    <Section title="College">
+      <div className="flex items-baseline gap-2" style={{ marginBottom: 8 }}>
+        <span style={{ color: '#e8eef6', fontSize: 15, fontWeight: 600 }}>{college.college}</span>
+        <span style={{ color: '#6a8098', fontSize: 11 }}>incoming rookie — no NFL snaps yet</span>
+      </div>
+      <div className="flex flex-wrap gap-x-6 gap-y-2" style={{ fontSize: 12 }}>
+        <span style={{ color: '#8aa0b8' }}>
+          Usage{' '}
+          <span style={{ color: '#1a9b5e', fontFamily: "'DM Mono', monospace" }}>
+            {(college.usage_rate * 100).toFixed(1)}%
+          </span>{' '}
+          of team plays
+        </span>
+        {college.yards_per_reception > 0 && (
+          <span style={{ color: '#8aa0b8' }}>
+            YPR{' '}
+            <span style={{ color: '#d4860c', fontFamily: "'DM Mono', monospace" }}>
+              {college.yards_per_reception.toFixed(1)}
+            </span>
+          </span>
+        )}
+        {college.recruiting_rank != null && (
+          <span style={{ color: '#8aa0b8' }}>
+            Recruit{' '}
+            <span style={{ color: '#e8eef6', fontFamily: "'DM Mono', monospace" }}>
+              #{college.recruiting_rank}
+            </span>
+            {college.stars != null && (
+              <span style={{ color: '#d4860c' }}> {'★'.repeat(college.stars)}</span>
+            )}
+          </span>
+        )}
+      </div>
+    </Section>
+  )
+}
+
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section style={{ borderTop: '1px solid #162035', padding: '14px 18px' }}>
@@ -425,7 +466,9 @@ function ProfileBody({ profile }: { profile: PlayerProfile }) {
         )}
       </Section>
 
-      <Section title="Usage">
+      {/* Named NFL Usage for a rookie so it cannot be read as the college usage
+          shown below it — one of these is real and the other is structurally zero. */}
+      <Section title={profile.college ? 'NFL Usage (no snaps yet)' : 'Usage'}>
         <div className="grid grid-cols-3 gap-2">
           <Metric label="Recent Tgt/G" value={profile.usage.recent_targets_per_game.toFixed(1)} />
           <Metric label="Recent Car/G" value={profile.usage.recent_carries_per_game.toFixed(1)} />
@@ -445,6 +488,8 @@ function ProfileBody({ profile }: { profile: PlayerProfile }) {
           </div>
         )}
       </Section>
+
+      {profile.college && <CollegeSection college={profile.college} />}
 
       <AnalyticsSection playerId={profile.player_id} />
 

@@ -119,6 +119,17 @@ def draft_board(top: int = 50, season: int = DEFAULT_VALUE_SEASON) -> dict:
         log.warning("draft board: FC market fetch failed; STEAL/REACH signals disabled")
         market_values = {}
 
+    # College context for the incoming class. Rookies dominate a dynasty rookie
+    # draft board and carry no NFL production, so without this their rows are the
+    # emptiest on the screen you are actually drafting from.
+    try:
+        from sleeper_ffm.cfbd.loader import college_context
+
+        college_by_id = college_context()
+    except Exception as exc:
+        log.warning("draft board: college context unavailable (%s)", exc)
+        college_by_id = {}
+
     players = []
     for p in pool[:top]:
         # STEAL/REACH compares age-adjusted dynasty value (not age-blind current
@@ -137,6 +148,7 @@ def draft_board(top: int = 50, season: int = DEFAULT_VALUE_SEASON) -> dict:
                     signal = "STEAL"
                 elif diff_pct < -25:
                     signal = "REACH"
+        college = college_by_id.get(p.player_id) or {}
         players.append(
             {
                 "player_id": p.player_id,
@@ -150,6 +162,10 @@ def draft_board(top: int = 50, season: int = DEFAULT_VALUE_SEASON) -> dict:
                 "market_fpar": market_fpar,
                 "divergence_pct": diff_pct,
                 "signal": signal,
+                "college": college.get("college"),
+                "college_usage_rate": college.get("usage_rate"),
+                "recruiting_rank": college.get("recruiting_rank"),
+                "recruiting_stars": college.get("stars"),
             }
         )
 

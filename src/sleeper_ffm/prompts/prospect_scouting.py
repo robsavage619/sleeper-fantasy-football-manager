@@ -181,11 +181,15 @@ def _format_college(college: dict | None) -> str:
                 f"{passing['interceptions']} INT / {passing['comp_pct']}% ({passing['ypa']} YPA)"
             )
         lines.append(f"  {row['season']}: {'; '.join(parts)}")
+    # Share of team offensive plays — the counting stats above cannot say whether
+    # the production came from a leading role or a thin depth chart.
+    if college.get("usage_rate"):
+        lines.append(f"  Offensive role: {college['usage_rate']:.1%} of team plays")
     if college.get("recruiting_rank"):
-        lines.append(
-            f"  Recruiting: #{college['recruiting_rank']} national, {college.get('stars')}-star"
-        )
-    return "\n".join(lines)
+        stars = college.get("stars")
+        star_note = f", {stars}-star" if stars else ""
+        lines.append(f"  Recruiting: #{college['recruiting_rank']} national{star_note}")
+    return "\n".join(lines) if lines else "  (no college production data found)"
 
 
 def _format_roster_fit(fit: dict | None, position: str) -> str:

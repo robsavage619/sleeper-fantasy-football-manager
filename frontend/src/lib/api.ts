@@ -148,6 +148,11 @@ export type DraftPlayer = {
   market_fpar: number | null
   divergence_pct: number | null
   signal: 'STEAL' | 'REACH' | 'HOLD'
+  /** College context — present for incoming rookies matched to the draft class. */
+  college: string | null
+  college_usage_rate: number | null
+  recruiting_rank: number | null
+  recruiting_stars: number | null
 }
 
 export type OfferLogEntry = {
@@ -313,6 +318,14 @@ export type PlayerProfile = {
   } | null
   data_quality: 'FULL' | 'DEGRADED'
   warnings: string[]
+  /** Present only for incoming rookies, who have no NFL history to show yet. */
+  college: {
+    college: string
+    usage_rate: number
+    yards_per_reception: number
+    recruiting_rank: number | null
+    stars: number | null
+  } | null
 }
 
 export type PlayerSeasonSummary = {

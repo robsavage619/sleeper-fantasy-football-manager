@@ -11,6 +11,7 @@ const TABLE_COLS = [
   { label: 'POS', className: 'py-2 px-2 w-14' },
   { label: 'AGE', className: 'py-2 px-2 w-12' },
   { label: 'TEAM', className: 'py-2 px-2 w-14' },
+  { label: 'COLLEGE', className: 'py-2 px-2 w-40' },
   { label: 'FPAR', className: 'py-2 px-2 w-16 text-right' },
   { label: 'MKT', className: 'py-2 px-2 w-16 text-right' },
   { label: 'DYNASTY', className: 'py-2 pl-2 pr-4 w-20 text-right' },
@@ -155,6 +156,25 @@ function PlayerRow({
       </td>
       <td className="py-2.5 px-2" style={{ fontSize: 12, color: '#3d5070' }}>
         {player.team || 'FA'}
+      </td>
+      <td className="py-2.5 px-2" style={{ fontSize: 11 }}>
+        {player.college ? (
+          <span className="flex items-baseline gap-1.5" style={{ whiteSpace: 'nowrap' }}>
+            <span style={{ color: '#8aa0b8' }}>{player.college}</span>
+            {player.college_usage_rate != null && player.college_usage_rate > 0 && (
+              <span style={{ color: '#1a9b5e', fontFamily: "'DM Mono', monospace" }}>
+                {(player.college_usage_rate * 100).toFixed(0)}%
+              </span>
+            )}
+            {player.recruiting_rank != null && (
+              <span style={{ color: '#3d5070', fontFamily: "'DM Mono', monospace" }}>
+                #{player.recruiting_rank}
+              </span>
+            )}
+          </span>
+        ) : (
+          <span style={{ color: '#2a3a50' }}>—</span>
+        )}
       </td>
       <td
         className="py-2.5 px-2 text-right tabular-nums"

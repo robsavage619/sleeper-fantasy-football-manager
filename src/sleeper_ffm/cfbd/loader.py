@@ -510,6 +510,10 @@ def fetch_season_history(
     return history
 
 
+# Effectively "no trim" — CFBD returns ~5k skill-position players for a season.
+_ALL_PROSPECTS = 100_000
+
+
 def load_prospects(year: int = 2025, top: int = 200) -> list[ProspectProfile]:
     """Fetch CFBD data and return scored dynasty prospect profiles.
 
@@ -664,3 +668,41 @@ def load_prospects(year: int = 2025, top: int = 200) -> list[ProspectProfile]:
 
     ranked.sort(key=lambda t: (t[0], t[1]))
     return [profile for _, _, profile in ranked[:top]]
+
+
+def college_context(year: int = CURRENT_LEAGUE_YEAR) -> dict[str, dict]:
+    """Sleeper player id -> college context for one draft class.
+
+    The shared lookup for every surface that shows an incoming rookie. Returns
+    plain dicts rather than :class:`ProspectProfile` objects on purpose: the
+    prospects router mutates profiles in place when it re-ranks by market, and
+    handing the same mutable objects to other callers would let one surface's
+    re-ranking leak into another's.
+
+    Args:
+        year: Draft class year.
+
+    Returns:
+        ``{sleeper_player_id: {college, usage_rate, yards_per_reception,
+        recruiting_rank, stars}}``. Empty when CFBD is unavailable — callers
+        should treat a miss as "no college data", not as an error.
+    """
+    try:
+        profiles = load_prospects(year=year, top=_ALL_PROSPECTS)
+    except Exception as exc:
+        log.warning("college context unavailable for %s: %s", year, exc)
+        return {}
+
+    return {
+        p.player_id: {
+            "name": p.name,
+            "position": p.position,
+            "college": p.college,
+            "usage_rate": p.usage_rate,
+            "yards_per_reception": p.yards_per_reception,
+            "recruiting_rank": p.recruiting_rank,
+            "stars": p.stars,
+        }
+        for p in profiles
+        if p.player_id
+    }
